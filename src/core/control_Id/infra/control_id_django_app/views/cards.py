@@ -1,10 +1,11 @@
 from rest_framework import viewsets, status
-from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.response import Response
 from src.core.control_Id.infra.control_id_django_app.models.cards import Card
 from src.core.control_Id.infra.control_id_django_app.serializers.cards import CardSerializer
+from src.core.control_Id.infra.control_id_django_app.sync_mixins import CardSyncMixin
 
-class CardViewSet(viewsets.ModelViewSet):
+class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer
     filterset_fields = ['id', 'value', 'user']
@@ -20,7 +21,7 @@ class CardViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
 
-            # Cadastro remoto da biometria
+            # Cadastro remoto de rfid
             response = self.remote_enroll(
                 user_id=instance.user_id,
                 type="card",

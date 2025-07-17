@@ -1,9 +1,9 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from ..models import Template
-from ..serializers import TemplateSerializer
-from ..sync_mixins import TemplateSyncMixin
+from src.core.control_Id.infra.control_id_django_app.models.template import Template
+from src.core.control_Id.infra.control_id_django_app.serializers.template import TemplateSerializer
+from src.core.control_Id.infra.control_id_django_app.sync_mixins import TemplateSyncMixin
 
 class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     queryset = Template.objects.all()
