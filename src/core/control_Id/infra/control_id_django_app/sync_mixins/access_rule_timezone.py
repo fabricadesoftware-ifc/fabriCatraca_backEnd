@@ -1,4 +1,4 @@
-from src.core.seedwork.infra.sync_mixins import CatracaSyncMixin
+from src.core.__seedwork__.infra.sync_mixins import CatracaSyncMixin
 
 class AccessRuleTimeZoneSyncMixin(CatracaSyncMixin):
     def load_objects(self, object_type, fields=None, order_by=None):

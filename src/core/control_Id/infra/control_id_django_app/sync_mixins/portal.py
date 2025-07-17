@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.response import Response
 from django.db import transaction
-from src.core.seedwork.infra.catraca_sync import CatracaSyncMixin
+from src.core.__seedwork__.infra.catraca_sync import CatracaSyncMixin
 from ..models.portal import Portal
 
 class PortalSyncMixin(CatracaSyncMixin):

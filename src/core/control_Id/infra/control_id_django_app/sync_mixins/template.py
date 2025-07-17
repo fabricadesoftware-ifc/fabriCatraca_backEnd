@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.response import Response
-from src.core.seedwork.infra.sync_mixins import CatracaSyncMixin
+from src.core.__seedwork__.infra.sync_mixins import CatracaSyncMixin
 
 class TemplateSyncMixin(CatracaSyncMixin):
     def sync(self, request):

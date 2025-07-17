@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import User
 from .serializers import UserSerializer
-from src.core.seedwork.infra.sync_mixins import CatracaSyncMixin
+from src.core.__seedwork__.infra.sync_mixins import CatracaSyncMixin
 
 class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
     queryset = User.objects.all()
