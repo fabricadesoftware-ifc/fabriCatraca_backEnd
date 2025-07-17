@@ -1,14 +1,16 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import User
-from .serializers import UserSerializer
-from src.core.seedwork.infra.sync_mixins import CatracaSyncMixin
+from ..models.timezone import TimeZone
+from ..serializers.timezone import TimeZoneSerializer
+from ..sync_mixins.timezone import TimeZoneSyncMixin
 
-class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    depth = 1
+class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
+    queryset = TimeZone.objects.all()
+    serializer_class = TimeZoneSerializer
+    filterset_fields = ['id', 'name']
+    search_fields = ['name']
+    ordering_fields = ['id', 'name']
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -16,10 +18,9 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
         instance = serializer.save()
 
         # Criar na catraca
-        response = self.create_objects("users", [{
+        response = self.create_objects("time_zones", [{
             "id": instance.id,
-            "name": instance.name,
-            "registration": instance.registration
+            "name": instance.name
         }])
 
         if response.status_code != status.HTTP_201_CREATED:
@@ -36,13 +37,12 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
 
         # Atualizar na catraca
         response = self.update_objects(
-            "users",
+            "time_zones",
             [{
                 "id": instance.id,
-                "name": instance.name,
-                "registration": instance.registration
+                "name": instance.name
             }],
-            {"users": {"id": instance.id}}
+            {"time_zones": {"id": instance.id}}
         )
 
         if response.status_code != status.HTTP_200_OK:
@@ -55,8 +55,8 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
 
         # Deletar na catraca
         response = self.destroy_objects(
-            "users",
-            {"users": {"id": instance.id}}
+            "time_zones",
+            {"time_zones": {"id": instance.id}}
         )
 
         if response.status_code != status.HTTP_204_NO_CONTENT:
@@ -69,27 +69,23 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def sync(self, request):
         try:
-            # Carregar usuários da catraca
+            # Carregar da catraca
             catraca_objects = self.load_objects(
-                "users",
-                fields=["id", "name", "registration"],
+                "time_zones",
+                fields=["id", "name"],
                 order_by=["id"]
             )
 
-            # Apagar todos os usuários do banco local
-            User.objects.all().delete()
+            # Apagar todos do banco local
+            TimeZone.objects.all().delete()
 
-            # Cadastrar usuários da catraca no banco local
+            # Cadastrar da catraca no banco local
             for data in catraca_objects:
-                User.objects.create(
-                    id=data["id"],
-                    name=data["name"],
-                    registration=data.get("registration", "")
-                )
+                TimeZone.objects.create(**data)
 
             return Response({
                 "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} usuários"
+                "message": f"Sincronizadas {len(catraca_objects)} zonas de tempo"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

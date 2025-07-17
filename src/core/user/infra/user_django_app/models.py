@@ -8,6 +8,7 @@ class User(AbstractUser):
     registration = models.CharField(max_length=50, blank=True, null=True)
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=255, null=True, blank=True)
+    user_type_id = models.IntegerField(null=True, blank=True, help_text="Visitantes terão id 1, usuarios cadastrados serão nulo")
     
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["name"]

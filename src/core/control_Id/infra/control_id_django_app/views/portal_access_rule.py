@@ -1,14 +1,16 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import User
-from .serializers import UserSerializer
-from src.core.seedwork.infra.sync_mixins import CatracaSyncMixin
+from ..models.portal_access_rule import PortalAccessRule
+from ..serializers.portal_access_rule import PortalAccessRuleSerializer
+from ..sync_mixins.portal_access_rule import PortalAccessRuleSyncMixin
 
-class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    depth = 1
+class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
+    queryset = PortalAccessRule.objects.all()
+    serializer_class = PortalAccessRuleSerializer
+    filterset_fields = ['portal_id', 'access_rule_id']
+    search_fields = ['portal_id', 'access_rule_id']
+    ordering_fields = ['portal_id', 'access_rule_id']
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -16,10 +18,9 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
         instance = serializer.save()
 
         # Criar na catraca
-        response = self.create_objects("users", [{
-            "id": instance.id,
-            "name": instance.name,
-            "registration": instance.registration
+        response = self.create_objects("portal_access_rules", [{
+            "portal_id": instance.portal_id_id,
+            "access_rule_id": instance.access_rule_id_id
         }])
 
         if response.status_code != status.HTTP_201_CREATED:
@@ -36,13 +37,12 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
 
         # Atualizar na catraca
         response = self.update_objects(
-            "users",
+            "portal_access_rules",
             [{
-                "id": instance.id,
-                "name": instance.name,
-                "registration": instance.registration
+                "portal_id": instance.portal_id_id,
+                "access_rule_id": instance.access_rule_id_id
             }],
-            {"users": {"id": instance.id}}
+            {"portal_access_rules": {"portal_id": instance.portal_id_id, "access_rule_id": instance.access_rule_id_id}}
         )
 
         if response.status_code != status.HTTP_200_OK:
@@ -55,8 +55,8 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
 
         # Deletar na catraca
         response = self.destroy_objects(
-            "users",
-            {"users": {"id": instance.id}}
+            "portal_access_rules",
+            {"portal_access_rules": {"portal_id": instance.portal_id_id, "access_rule_id": instance.access_rule_id_id}}
         )
 
         if response.status_code != status.HTTP_204_NO_CONTENT:
@@ -69,27 +69,27 @@ class UserViewSet(CatracaSyncMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def sync(self, request):
         try:
-            # Carregar usuários da catraca
+            # Carregar da catraca
             catraca_objects = self.load_objects(
-                "users",
-                fields=["id", "name", "registration"],
-                order_by=["id"]
+                "portal_access_rules",
+                fields=["id","portal_id", "access_rule_id"],
+                order_by=["portal_id", "access_rule_id"]
             )
 
-            # Apagar todos os usuários do banco local
-            User.objects.all().delete()
+            # Apagar todos do banco local
+            PortalAccessRule.objects.all().delete()
 
-            # Cadastrar usuários da catraca no banco local
+            # Cadastrar da catraca no banco local
             for data in catraca_objects:
-                User.objects.create(
+                PortalAccessRule.objects.create(
                     id=data["id"],
-                    name=data["name"],
-                    registration=data.get("registration", "")
+                    portal_id=data["portal_id"],
+                    access_rule_id=data["access_rule_id"]
                 )
 
             return Response({
                 "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} usuários"
+                "message": f"Sincronizadas {len(catraca_objects)} associações portal-regra"
             })
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Template, TimeZone, TimeSpan, AccessRule, UserAccessRule, AccessRuleTimeZone, PortalAccessRule
+from .models import Template, TimeZone, TimeSpan, AccessRule, UserAccessRule, AccessRuleTimeZone, PortalAccessRule, Portal
 
 class TemplateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -24,7 +24,7 @@ class AccessRuleSerializer(serializers.ModelSerializer):
 class UserAccessRuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserAccessRule
-        fields = ['user', 'access_rule']
+        fields = ['user_id', 'access_rule_id']
 
 class AccessRuleTimeZoneSerializer(serializers.ModelSerializer):
     class Meta:
@@ -34,4 +34,9 @@ class AccessRuleTimeZoneSerializer(serializers.ModelSerializer):
 class PortalAccessRuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = PortalAccessRule
-        fields = ['portal_id', 'access_rule']
+        fields = ['portal_id', 'access_rule_id']
+
+class PortalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Portal
+        fields = ['id', 'name']

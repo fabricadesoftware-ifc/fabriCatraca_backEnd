@@ -8,7 +8,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-1hcva@86wwffkgbj7a!rr&7%r*3-nw7=w5u0sxz0dh__qtbq%j'
+SECRET_KEY = os.getenv("SECRET_KEY", 'django-insecure-nice_key')
 
 MODE = os.getenv("MODE")
 DEBUG = os.getenv("DEBUG", "False")
@@ -65,22 +65,14 @@ AUTH_USER_MODEL = "user_django_app.User"
 SAFE_DELETE_FIELD_NAME = "deleted_at"
 
 REST_FRAMEWORK = {
-    # 'DEFAULT_THROTTLE_CLASSES': [
-    #     'rest_framework.throttling.AnonRateThrottle',
-    #     'rest_framework.throttling.UserRateThrottle'
-    # ],
-    # 'DEFAULT_THROTTLE_RATES': {
-    #     'anon': '5/min',
-    #     'user': '50/day'
-    # },
-    # "DEFAULT_AUTHENTICATION_CLASSES": (
-    #     "rest_framework_simplejwt.authentication.JWTAuthentication",
-    # ),
-    "DEFAULT_PERMISSION_CLASSES": [
-       "rest_framework.permissions.IsAuthenticatedOrReadOnly",
-    ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 10,
 }
 
 SIMPLE_JWT = {
@@ -171,6 +163,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 INTERNAL_IPS = ["127.0.0.1", "localhost", "0.0.0.0"]
 
-CATRAKA_URL = 'http://191.52.62.21'  # IP da sua catraca
-CATRAKA_USER = 'admin'
-CATRAKA_PASS = 'admin'
+CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
+CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')
+CATRAKA_PASS = os.getenv("CATRAKA_PASS", 'nice_pass')
