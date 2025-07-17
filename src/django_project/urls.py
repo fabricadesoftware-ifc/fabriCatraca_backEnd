@@ -18,7 +18,7 @@ urlpatterns = [
     path('api/', api_root, name='api-root'),
     path('api/users/', include('src.core.user.infra.user_django_app.urls')),
     path('api/control_id/', include('src.core.control_Id.infra.control_id_django_app.urls')),
-    path('admin/', admin.site.urls),
+    path('api/admin/', admin.site.urls),
     path('', lambda request: redirect('api/', permanent=True)),
 ]
 
