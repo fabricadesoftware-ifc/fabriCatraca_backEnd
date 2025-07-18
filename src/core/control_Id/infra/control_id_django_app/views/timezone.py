@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from ..models.timezone import TimeZone
 from ..serializers.timezone import TimeZoneSerializer
-from ..sync_mixins.timezone import TimeZoneSyncMixin
+from ..sync_mixins.time_zone import TimeZoneSyncMixin
 
 class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
     queryset = TimeZone.objects.all()
@@ -38,10 +38,10 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
         # Atualizar na catraca
         response = self.update_objects(
             "time_zones",
-            [{
+            {
                 "id": instance.id,
                 "name": instance.name
-            }],
+            },
             {"time_zones": {"id": instance.id}}
         )
 

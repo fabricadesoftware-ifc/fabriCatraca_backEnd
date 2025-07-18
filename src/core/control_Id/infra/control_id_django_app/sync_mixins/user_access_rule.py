@@ -1,6 +1,6 @@
-from src.core.__seedwork__.infra.sync_mixins import CatracaSyncMixin
+from src.core.__seedwork__.infra import ControlIDSyncMixin
 
-class UserAccessRuleSyncMixin(CatracaSyncMixin):
+class UserAccessRuleSyncMixin(ControlIDSyncMixin):
     def load_objects(self, object_type, fields=None, order_by=None):
         """Carrega associações usuário-regra da catraca"""
         return super().load_objects(

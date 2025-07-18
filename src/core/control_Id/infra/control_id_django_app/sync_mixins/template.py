@@ -1,8 +1,8 @@
 from rest_framework import status
 from rest_framework.response import Response
-from src.core.__seedwork__.infra.sync_mixins import CatracaSyncMixin
+from src.core.__seedwork__.infra import ControlIDSyncMixin
 
-class TemplateSyncMixin(CatracaSyncMixin):
+class TemplateSyncMixin(ControlIDSyncMixin):
     def sync(self, request):
         try:
             # Carregar da catraca

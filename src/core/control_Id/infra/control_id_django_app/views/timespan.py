@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from ..models.timespan import TimeSpan
 from ..serializers.timespan import TimeSpanSerializer
-from ..sync_mixins.timespan import TimeSpanSyncMixin
+from ..sync_mixins.time_span import TimeSpanSyncMixin
 
 class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
     queryset = TimeSpan.objects.all()
@@ -50,7 +50,7 @@ class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
         # Atualizar na catraca
         response = self.update_objects(
             "time_spans",
-            [{
+            {
                 "id": instance.id,
                 "time_zone_id": instance.time_zone_id,
                 "start": instance.start,
@@ -65,7 +65,7 @@ class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
                 "hol1": instance.hol1,
                 "hol2": instance.hol2,
                 "hol3": instance.hol3
-            }],
+            },
             {"time_spans": {"id": instance.id}}
         )
 

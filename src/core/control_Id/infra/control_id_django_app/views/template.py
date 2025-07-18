@@ -90,13 +90,13 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         response = self.session.post(
             f"{self.base_url}/modify_objects.fcgi",
             json={
-                "templates": [{
+                "templates": {
                     "id": instance.id,
                     "user_id": instance.user_id,
                     "template": instance.template,
                     "finger_type": instance.finger_type,
                     "finger_position": instance.finger_position
-                }],
+                },
                 "where": {
                     "templates": {"id": instance.id}
                 }

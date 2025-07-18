@@ -36,12 +36,10 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         instance = serializer.save()
         
         # Atualizar na catraca
-        response = self.update_objects("portals", [{
+        response = self.update_objects("portals", {
             "id": instance.id,
             "name": instance.name
-        }],
-            {"portals": {"id": instance.id}}
-        )
+        }, {"portals": {"id": instance.id}})
         
         if response.status_code != status.HTTP_200_OK:
             return response

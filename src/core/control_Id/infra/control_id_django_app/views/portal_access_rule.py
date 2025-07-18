@@ -38,10 +38,10 @@ class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
         # Atualizar na catraca
         response = self.update_objects(
             "portal_access_rules",
-            [{
+            {
                 "portal_id": instance.portal_id_id,
                 "access_rule_id": instance.access_rule_id_id
-            }],
+            },
             {"portal_access_rules": {"portal_id": instance.portal_id_id, "access_rule_id": instance.access_rule_id_id}}
         )
 

@@ -4,7 +4,7 @@ from typing import Dict, List, Any
 from rest_framework.response import Response
 from rest_framework import status
 
-class CatracaSyncMixin:
+class ControlIDSyncMixin:
     """
     Mixin para sincronização com a catraca.
     Fornece funcionalidades básicas de comunicação com a API da catraca.
@@ -79,7 +79,7 @@ class CatracaSyncMixin:
         except requests.RequestException as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def update_objects(self, object_name: str, values: List[Dict[str, Any]], where: Dict[str, Any]) -> Response:
+    def update_objects(self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]) -> Response:
         """
         Atualiza objetos na catraca.
         Args:
@@ -92,13 +92,14 @@ class CatracaSyncMixin:
         try:
             sess = self.login()
             response = requests.post(
-                f"{self.catraka_url}/update_objects.fcgi?session={sess}",
+                f"{self.catraka_url}/modify_objects.fcgi?session={sess}",
                 json={
                     "object": object_name,
                     "values": values,
                     "where": where
                 }
             )
+            print(response.json())
             response.raise_for_status()
             return Response({"success": True})
         except requests.RequestException as e:

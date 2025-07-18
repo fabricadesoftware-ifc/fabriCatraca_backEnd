@@ -40,12 +40,12 @@ class AccessRuleViewSet(AccessRuleSyncMixin, viewsets.ModelViewSet):
         # Atualizar na catraca
         response = self.update_objects(
             "access_rules",
-            [{
+            {
                 "id": instance.id,
                 "name": instance.name,
                 "type": instance.type,
                 "priority": instance.priority
-            }],
+            },
             {"access_rules": {"id": instance.id}}
         )
 

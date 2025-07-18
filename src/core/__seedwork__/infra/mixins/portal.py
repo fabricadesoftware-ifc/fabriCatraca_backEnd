@@ -1,8 +1,7 @@
-from rest_framework import status
-from rest_framework.response import Response
+from src.core.__seedwork__.infra import ControlIDSyncMixin
 from django.db import transaction
-from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
-from ..models.portal import Portal
+from rest_framework.response import Response
+from rest_framework import status
 
 class PortalSyncMixin(ControlIDSyncMixin):
     def create_in_catraca(self, instance):
@@ -15,10 +14,10 @@ class PortalSyncMixin(ControlIDSyncMixin):
     def update_in_catraca(self, instance):
         response = self.update_objects(
             "portals",
-            [{
+            {
                 "id": instance.id,
                 "name": instance.name
-            }],
+            },
             {"portals": {"id": instance.id}}
         )
         return response
@@ -32,6 +31,8 @@ class PortalSyncMixin(ControlIDSyncMixin):
     
     def sync_from_catraca(self):
         try:
+            from src.core.control_Id.infra.control_id_django_app.models import Portal
+            
             catraca_objects = self.load_objects("portals")
 
             with transaction.atomic():
@@ -45,3 +46,4 @@ class PortalSyncMixin(ControlIDSyncMixin):
             })
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+        

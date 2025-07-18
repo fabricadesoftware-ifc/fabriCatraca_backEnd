@@ -40,10 +40,10 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
         # Atualizar na catraca
         response = self.update_objects(
             "access_rule_time_zones",
-            [{
+            {
                 "access_rule_id": instance.access_rule_id_id,
                 "time_zone_id": instance.time_zone_id_id
-            }],
+            },
             {"access_rule_time_zones": {"access_rule_id": instance.access_rule_id_id, "time_zone_id": instance.time_zone_id_id}}
         )
 

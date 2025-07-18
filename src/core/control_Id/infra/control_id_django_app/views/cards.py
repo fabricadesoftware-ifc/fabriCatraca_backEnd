@@ -79,11 +79,11 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
         instance = serializer.save()
 
         # Atualizar na catraca
-        response = self.update_objects("cards", [{
+        response = self.update_objects("cards", {
             "id": instance.id,
             "user_id": instance.user_id,
             "value": instance.value
-        }], {"id": instance.id})
+        }, {"id": instance.id})
 
 
         if response.status_code != status.HTTP_200_OK:

@@ -40,10 +40,10 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
         # Atualizar na catraca
         response = self.update_objects(
             "user_access_rules",
-            [{
+            {
                 "user_id": instance.user_id_id,
                 "access_rule_id": instance.access_rule_id_id
-            }],
+            },
             {"user_access_rules": {"user_id": instance.user_id_id, "access_rule_id": instance.access_rule_id_id}}
         )
 
