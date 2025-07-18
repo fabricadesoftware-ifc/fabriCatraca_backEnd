@@ -10,6 +10,7 @@ from .views import (
     AccessRuleViewSet, UserAccessRuleViewSet, AccessRuleTimeZoneViewSet,
     PortalViewSet, PortalAccessRuleViewSet, CardViewSet
 )
+from .views.device import DeviceViewSet
 
 router = DefaultRouter()
 router.register(r'templates', TemplateViewSet)
@@ -21,6 +22,7 @@ router.register(r'access_rule_time_zones', AccessRuleTimeZoneViewSet)
 router.register(r'portals', PortalViewSet)
 router.register(r'portal_access_rules', PortalAccessRuleViewSet)
 router.register(r'cards', CardViewSet)
+router.register(r'devices', DeviceViewSet)
 
 @api_view(['GET'])
 def control_id_root(request, format=None):
@@ -34,6 +36,7 @@ def control_id_root(request, format=None):
         'portals': reverse('portal-list', request=request, format=format),
         'portal_access_rules': reverse('portalaccessrule-list', request=request, format=format),
         'cards': reverse('card-list', request=request, format=format),
+        'devices': reverse('device-list', request=request, format=format),
     })
 
 urlpatterns = [

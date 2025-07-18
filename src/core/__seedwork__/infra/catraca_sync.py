@@ -1,8 +1,9 @@
 from django.conf import settings
 import requests
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from rest_framework.response import Response
 from rest_framework import status
+from django.conf import settings
 
 class ControlIDSyncMixin:
     """
@@ -12,9 +13,32 @@ class ControlIDSyncMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.session = None
-        self.catraka_url = settings.CATRAKA_URL
-        self.catraka_user = settings.CATRAKA_USER
-        self.catraka_pass = settings.CATRAKA_PASS
+        self._device = None
+        self._use_default_config = settings.DEBUG
+
+    @property
+    def device(self):
+        """Retorna o dispositivo atual ou busca o dispositivo padrão"""
+        if self._device is None and self._use_default_config:
+            # Usa configurações do settings.py como fallback
+            return type('Device', (), {
+                'ip': settings.CATRAKA_URL,
+                'username': settings.CATRAKA_USER,
+                'password': settings.CATRAKA_PASS
+            })
+        return self._device
+
+    def set_device(self, device):
+        """Define o dispositivo para usar nas operações"""
+        self._device = device
+        self._use_default_config = False
+        self.session = None  # Força novo login
+        return self
+
+    def get_url(self, endpoint: str) -> str:
+        """Constrói a URL para a API"""
+        base_url = f"http://{self.device.ip}" if not self.device.ip.startswith(('http://', 'https://')) else self.device.ip
+        return f"{base_url}/{endpoint}"
 
     def login(self) -> str:
         """
@@ -24,10 +48,17 @@ class ControlIDSyncMixin:
         """
         if self.session:
             return self.session
-        response = requests.post(f"{self.catraka_url}/login.fcgi", json={
-            "login": self.catraka_user,
-            "password": self.catraka_pass
-        })
+
+        if not self.device:
+            raise ValueError("Nenhum dispositivo configurado e nenhum dispositivo padrão encontrado")
+
+        response = requests.post(
+            self.get_url("login.fcgi"), 
+            json={
+                "login": self.device.username,
+                "password": self.device.password
+            }
+        )
         response.raise_for_status()
         self.session = response.json().get("session")
         return self.session
@@ -51,7 +82,7 @@ class ControlIDSyncMixin:
             payload["order_by"] = order_by
 
         response = requests.post(
-            f"{self.catraka_url}/load_objects.fcgi?session={sess}",
+            self.get_url(f"load_objects.fcgi?session={sess}"),
             json=payload
         )
         if response.status_code != 200:
@@ -71,7 +102,7 @@ class ControlIDSyncMixin:
         try:
             sess = self.login()
             response = requests.post(
-                f"{self.catraka_url}/create_objects.fcgi?session={sess}",
+                self.get_url(f"create_objects.fcgi?session={sess}"),
                 json={"object": object_name, "values": values}
             )
             response.raise_for_status()
@@ -92,14 +123,13 @@ class ControlIDSyncMixin:
         try:
             sess = self.login()
             response = requests.post(
-                f"{self.catraka_url}/modify_objects.fcgi?session={sess}",
+                self.get_url(f"modify_objects.fcgi?session={sess}"),
                 json={
                     "object": object_name,
                     "values": values,
                     "where": where
                 }
             )
-            print(response.json())
             response.raise_for_status()
             return Response({"success": True})
         except requests.RequestException as e:
@@ -117,7 +147,7 @@ class ControlIDSyncMixin:
         try:
             sess = self.login()
             response = requests.post(
-                f"{self.catraka_url}/destroy_objects.fcgi?session={sess}",
+                self.get_url(f"destroy_objects.fcgi?session={sess}"),
                 json={"object": object_name, "where": where}
             )
             response.raise_for_status()
@@ -150,7 +180,7 @@ class ControlIDSyncMixin:
             
             # Faz a requisição com timeout explícito
             response = requests.post(
-                f"{self.catraka_url}/remote_enroll.fcgi?session={sess}",
+                self.get_url(f"remote_enroll.fcgi?session={sess}"),
                 json=payload,
                 timeout=30
             )
