@@ -2,50 +2,46 @@ from rest_framework import status
 from rest_framework.response import Response
 from django.db import transaction
 from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
-from ..models.portal import Portal
+from src.core.control_Id.infra.control_id_django_app.models import Area
 
-class PortalSyncMixin(ControlIDSyncMixin):
+class AreaSyncMixin(ControlIDSyncMixin):
     def create_in_catraca(self, instance):
-        response = self.create_objects("portals", [{
+        response = self.create_objects("areas", [{
             "id": instance.id,
-            "name": instance.name,
-            "area_from_id": instance.area_from_id.id,
-            "area_to_id": instance.area_to_id.id
+            "name": instance.name
         }])
         return response
     
     def update_in_catraca(self, instance):
         response = self.update_objects(
-            "portals",
+            "areas",
             [{
                 "id": instance.id,
-                "name": instance.name,
-                "area_from_id": instance.area_from_id.id,
-                "area_to_id": instance.area_to_id.id
+                "name": instance.name
             }],
-            {"portals": {"id": instance.id}}
+            {"areas": {"id": instance.id}}
         )
         return response
     
     def delete_in_catraca(self, instance):
         response = self.destroy_objects(
-            "portals",
-            {"portals": {"id": instance.id}}
+            "areas",
+            {"areas": {"id": instance.id}}
         )
         return response
     
     def sync_from_catraca(self):
         try:
-            catraca_objects = self.load_objects("portals")
+            catraca_objects = self.load_objects("areas")
 
             with transaction.atomic():
-                Portal.objects.all().delete()
+                Area.objects.all().delete()
                 for data in catraca_objects:
-                    Portal.objects.create(**data)
+                    Area.objects.create(**data)
 
             return Response({
                 "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} portais"
+                "message": f"Sincronizados {len(catraca_objects)} áreas"
             })
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

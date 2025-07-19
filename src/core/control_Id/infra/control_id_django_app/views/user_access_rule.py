@@ -67,32 +67,3 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
         # Deletar no banco local
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "user_access_rules",
-                fields=["user_id", "access_rule_id"],
-                order_by=["user_id", "access_rule_id"]
-            )
-
-            # Apagar todos do banco local
-            UserAccessRule.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            for data in catraca_objects:
-                user = User.objects.get(id=data["user_id"])
-                access_rule = AccessRule.objects.get(id=data["access_rule_id"])
-                UserAccessRule.objects.create(
-                    user_id=user,
-                    access_rule_id=access_rule
-                )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} associações usuário-regra"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

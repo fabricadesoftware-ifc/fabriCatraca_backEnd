@@ -1,9 +1,12 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
+from rest_framework.decorators import action
+
 from ..models.timezone import TimeZone
 from ..serializers.timezone import TimeZoneSerializer
 from ..sync_mixins.time_zone import TimeZoneSyncMixin
+from ..models.device import Device
 
 class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
     queryset = TimeZone.objects.all()
@@ -15,17 +18,32 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
 
-        # Criar na catraca
-        response = self.create_objects("time_zones", [{
-            "id": instance.id,
-            "name": instance.name
-        }])
-
-        if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
-            return response
+        with transaction.atomic():
+            # Primeiro cria no banco
+            instance = serializer.save()
+            
+            # Depois replica para todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            if not devices:
+                instance.delete()
+                return Response({
+                    "error": "Nenhuma catraca ativa encontrada"
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.create_objects("time_zones", [{
+                    "id": instance.id,
+                    "name": instance.name
+                }])
+                
+                if response.status_code != status.HTTP_201_CREATED:
+                    instance.delete()
+                    return Response({
+                        "error": f"Erro ao criar zona de tempo na catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -33,59 +51,53 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
 
-        # Atualizar na catraca
-        response = self.update_objects(
-            "time_zones",
-            {
-                "id": instance.id,
-                "name": instance.name
-            },
-            {"time_zones": {"id": instance.id}}
-        )
-
-        if response.status_code != status.HTTP_200_OK:
-            return response
+        with transaction.atomic():
+            # Primeiro atualiza no banco
+            instance = serializer.save()
+            
+            # Depois atualiza em todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.update_objects(
+                    "time_zones",
+                    {
+                        "id": instance.id,
+                        "name": instance.name
+                    },
+                    {"time_zones": {"id": instance.id}}
+                )
+                
+                if response.status_code != status.HTTP_200_OK:
+                    return Response({
+                        "error": f"Erro ao atualizar zona de tempo na catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
 
         return Response(serializer.data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        # Deletar na catraca
-        response = self.destroy_objects(
-            "time_zones",
-            {"time_zones": {"id": instance.id}}
-        )
+        with transaction.atomic():
+            # Remove de todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.destroy_objects(
+                    "time_zones",
+                    {"time_zones": {"id": instance.id}}
+                )
+                
+                if response.status_code != status.HTTP_204_NO_CONTENT:
+                    return Response({
+                        "error": f"Erro ao deletar zona de tempo da catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
 
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            return response
-
-        # Deletar no banco local
-        instance.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "time_zones",
-                fields=["id", "name"],
-                order_by=["id"]
-            )
-
-            # Apagar todos do banco local
-            TimeZone.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            for data in catraca_objects:
-                TimeZone.objects.create(**data)
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} zonas de tempo"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+            # Se removeu de todas as catracas, remove do banco
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)

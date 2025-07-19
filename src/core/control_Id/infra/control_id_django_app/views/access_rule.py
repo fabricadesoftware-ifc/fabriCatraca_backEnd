@@ -69,27 +69,3 @@ class AccessRuleViewSet(AccessRuleSyncMixin, viewsets.ModelViewSet):
         # Deletar no banco local
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "access_rules",
-                fields=["id", "name", "type", "priority"],
-                order_by=["id"]
-            )
-
-            # Apagar todos do banco local
-            AccessRule.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            for data in catraca_objects:
-                AccessRule.objects.create(**data)
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} regras de acesso"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

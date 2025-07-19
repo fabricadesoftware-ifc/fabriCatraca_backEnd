@@ -1,82 +1,96 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
+
 from src.core.control_Id.infra.control_id_django_app.models.template import Template
 from src.core.control_Id.infra.control_id_django_app.serializers.template import TemplateSerializer
 from src.core.control_Id.infra.control_id_django_app.sync_mixins import TemplateSyncMixin
+from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     queryset = Template.objects.all()
     serializer_class = TemplateSerializer
-    filterset_fields = ['id', 'user']
-    search_fields = ['user__name']
-    ordering_fields = ['id', 'user']
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
+        """
+        Cria um template biométrico.
+        Parâmetros:
+            enrollment_device_id: ID da catraca para fazer o cadastro (obrigatório)
+        """
+        enrollment_device_id = request.data.get('enrollment_device_id')
         
+        if not enrollment_device_id:
+            return Response({
+                "error": "É necessário especificar uma catraca para cadastro (enrollment_device_id)"
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
         try:
-            # Garantir que a sessão está inicializada
-            self.login()
-
-            serializer = self.get_serializer(data=request.data)
+            # Define a catraca para cadastro
+            enrollment_device = Device.objects.get(id=enrollment_device_id)
+            self.set_device(enrollment_device)
+            
+            # Primeiro cria no banco para ter o ID
+            serializer = self.get_serializer(data={
+                "user": request.data.get('user')
+            })
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
-
-            # Cadastro remoto da biometria
+            
+            # Faz o cadastro remoto
             response = self.remote_enroll(
-                user_id=instance.user_id,
-                type="biometry",
+                user_id=instance.user.id,
+                type="finger",
                 save=False,  # Não salvar na catraca ainda
                 sync=True
             )
-
-            if not response.ok:
-                instance.delete()  # Reverte se falhar
+            
+            if response.status_code != status.HTTP_200_OK:
+                instance.delete()  # Remove do banco se falhar na catraca
                 return Response({
                     "error": "Erro no cadastro remoto",
                     "details": response.json() if response.content else str(response)
                 }, status=response.status_code)
-
-            try:
-                data = response.json()
-            except ValueError:
-                instance.delete()
-                return Response({
-                    "error": "Resposta inválida da catraca",
-                    "details": response.content.decode() if response.content else None
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-            # Criar template na catraca
-            template_response = self.create_objects("templates", [{
-                "user_id": instance.user_id,
-                "template": data["template"],
-                "finger_type": data.get("finger_type", 0),
-                "finger_position": data.get("finger_position", 0)
-            }])
-
-            if not template_response.ok:
-                instance.delete()
-                return Response({
-                    "error": "Erro ao salvar template",
-                    "details": template_response.json() if template_response.content else str(template_response)
-                }, status=template_response.status_code)
-
-            # Atualizar o template no banco local
-            instance.template = data["template"]
-            instance.finger_type = data.get("finger_type", 0)
-            instance.finger_position = data.get("finger_position", 0)
-            instance.save()
-
-            return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            if 'instance' in locals():
-                instance.delete()
+                
+            template_data = response.json()
+            
+            with transaction.atomic():
+                # Atualiza o template com os dados da catraca
+                instance.template = template_data["template"]
+                instance.save()
+                
+                # Cadastra em todas as catracas ativas
+                devices = Device.objects.filter(is_active=True)
+                
+                for device in devices:
+                    self.set_device(device)
+                    
+                    create_response = self.create_objects("templates", [{
+                        "id": instance.id,
+                        "user_id": instance.user.id,
+                        "template": instance.template
+                    }])
+                    
+                    if create_response.status_code != status.HTTP_201_CREATED:
+                        # Se falhar em alguma catraca, reverte tudo
+                        instance.delete()
+                        return Response({
+                            "error": f"Erro ao criar template na catraca {device.name}",
+                            "details": create_response.data
+                        }, status=create_response.status_code)
+                    
+                    # Adiciona a relação com a catraca
+                    instance.devices.add(device)
+                
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+                
+        except Device.DoesNotExist:
             return Response({
-                "error": "Erro interno",
+                "error": f"Catraca com ID {enrollment_device_id} não encontrada"
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "error": "Erro ao processar template",
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -84,88 +98,54 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
-
-        # Atualizar na catraca
-        response = self.session.post(
-            f"{self.base_url}/modify_objects.fcgi",
-            json={
-                "templates": {
-                    "id": instance.id,
-                    "user_id": instance.user_id,
-                    "template": instance.template,
-                    "finger_type": instance.finger_type,
-                    "finger_position": instance.finger_position
-                },
-                "where": {
-                    "templates": {"id": instance.id}
-                }
-            }
-        )
-
-        if response.status_code != status.HTTP_200_OK:
-            return Response({"error": response.text}, status=response.status_code)
-
+        
+        with transaction.atomic():
+            # Atualiza o template no banco
+            instance = serializer.save()
+            
+            # Atualiza em todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.update_objects(
+                    "templates",
+                    [{
+                        "id": instance.id,
+                        "user_id": instance.user.id,
+                        "template": instance.template
+                    }],
+                    {"templates": {"id": instance.id}}
+                )
+                if response.status_code != status.HTTP_200_OK:
+                    return Response({
+                        "error": f"Erro ao atualizar template na catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
+                
+                # Atualiza a relação com a catraca
+                instance.devices.add(device)
+        
         return Response(serializer.data)
 
     def destroy(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-
-            # Garantir que a sessão está inicializada
-            self.login()
-
-            # Deletar na catraca
-            response = self.destroy_objects("templates", {"templates": {"id": instance.id}})
-
-            if response.status_code != status.HTTP_204_NO_CONTENT:
-                error_data = {}
-                try:
-                    if hasattr(response, 'data'):
-                        error_data = response.data
-                    elif hasattr(response, 'json'):
-                        error_data = response.json()
-                except:
-                    error_data = {"message": "Erro ao deletar template na catraca"}
-
-                return Response(error_data, status=response.status_code)
-
-            # Deletar no banco local
-            instance.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        except Exception as e:
-            return Response({
-                "error": "Erro interno",
-                "details": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "templates",
-                fields=["id", "user_id", "template", "finger_type", "finger_position"],
-                order_by=["id"]
-            )
-
-            # Apagar todos do banco local
-            Template.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            for data in catraca_objects:
-                Template.objects.create(
-                    id=data["id"],
-                    user_id=data["user_id"],
-                    template=data["template"],
-                    finger_type=data.get("finger_type", 0),
-                    finger_position=data.get("finger_position", 0)
+        instance = self.get_object()
+        
+        with transaction.atomic():
+            # Remove de todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.destroy_objects(
+                    "templates",
+                    {"templates": {"id": instance.id}}
                 )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} templates"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+                if response.status_code != status.HTTP_204_NO_CONTENT:
+                    return Response({
+                        "error": f"Erro ao deletar template da catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
+            
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT) 

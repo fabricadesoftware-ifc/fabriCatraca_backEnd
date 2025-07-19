@@ -1,74 +1,96 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db import transaction
+
 from src.core.control_Id.infra.control_id_django_app.models.cards import Card
 from src.core.control_Id.infra.control_id_django_app.serializers.cards import CardSerializer
 from src.core.control_Id.infra.control_id_django_app.sync_mixins import CardSyncMixin
+from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer
-    filterset_fields = ['id', 'value', 'user']
-    search_fields = ['value', 'user__name']
-    ordering_fields = ['id', 'value', 'user']
     
     def create(self, request, *args, **kwargs):
+        """
+        Cria um cartão.
+        Parâmetros:
+            enrollment_device_id: ID da catraca para fazer o cadastro (obrigatório)
+        """
+        enrollment_device_id = request.data.get('enrollment_device_id')
+        
+        if not enrollment_device_id:
+            return Response({
+                "error": "É necessário especificar uma catraca para cadastro (enrollment_device_id)"
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
         try:
-            # Garantir que a sessão está inicializada
-            self.login()
+            # Define a catraca para cadastro
+            enrollment_device = Device.objects.get(id=enrollment_device_id)
+            self.set_device(enrollment_device)
 
-            serializer = self.get_serializer(data=request.data)
+            # Primeiro cria no banco para ter o ID
+            serializer = self.get_serializer(data={
+                "user": request.data.get('user')
+            })
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
 
-            # Cadastro remoto de rfid
+            # Faz o cadastro remoto
             response = self.remote_enroll(
-                user_id=instance.user_id,
+                user_id=instance.user.id,
                 type="card",
                 save=False,  # Não salvar na catraca ainda
                 sync=True
             )
 
-            if not response.ok:
-                instance.delete()  # Reverte se falhar
+            if response.status_code != status.HTTP_200_OK:
+                instance.delete()  # Remove do banco se falhar na catraca
                 return Response({
                     "error": "Erro no cadastro remoto",
                     "details": response.json() if response.content else str(response)
                 }, status=response.status_code)
 
-            try:
-                data = response.json()
-            except ValueError:
-                instance.delete()
-                return Response({
-                    "error": "Resposta inválida da catraca",
-                    "details": response.content.decode() if response.content else None
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            card_data = response.json()
+            
+            with transaction.atomic():
+                # Atualiza o cartão com os dados da catraca
+                instance.value = card_data["value"]
+                instance.save()
+                
+                # Cadastra em todas as catracas ativas
+                devices = Device.objects.filter(is_active=True)
+                
+                for device in devices:
+                    self.set_device(device)
+                    
+                    create_response = self.create_objects("cards", [{
+                        "id": instance.id,
+                        "user_id": instance.user.id,
+                        "value": instance.value
+                    }])
 
-            # Criar template na catraca
-            template_response = self.create_objects("cards", [{
-                "user_id": instance.user_id,
-                "value": data["value"],
-            }])
+                    if create_response.status_code != status.HTTP_201_CREATED:
+                        # Se falhar em alguma catraca, reverte tudo
+                        instance.delete()
+                        return Response({
+                            "error": f"Erro ao criar cartão na catraca {device.name}",
+                            "details": create_response.data
+                        }, status=create_response.status_code)
+                    
+                    # Adiciona a relação com a catraca
+                    instance.devices.add(device)
 
-            if not template_response.ok:
-                instance.delete()
-                return Response({
-                    "error": "Erro ao salvar card",
-                    "details": template_response.json() if template_response.content else str(template_response)
-                }, status=template_response.status_code)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-            # Atualizar o template no banco local
-            instance.value = data["value"]
-            instance.save()
-
-            return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            if 'instance' in locals():
-                instance.delete()
+        except Device.DoesNotExist:
             return Response({
-                "error": "Erro interno",
+                "error": f"Catraca com ID {enrollment_device_id} não encontrada"
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "error": "Erro ao processar cartão",
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -76,77 +98,54 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
-
-        # Atualizar na catraca
-        response = self.update_objects("cards", {
-            "id": instance.id,
-            "user_id": instance.user_id,
-            "value": instance.value
-        }, {"id": instance.id})
-
-
-        if response.status_code != status.HTTP_200_OK:
-            return Response({"error": response.text}, status=response.status_code)
+        
+        with transaction.atomic():
+            # Atualiza o cartão no banco
+            instance = serializer.save()
+            
+            # Atualiza em todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.update_objects(
+                    "cards",
+                    [{
+                        "id": instance.id,
+                        "user_id": instance.user.id,
+                        "value": instance.value
+                    }],
+                    {"cards": {"id": instance.id}}
+                )
+                if response.status_code != status.HTTP_200_OK:
+                    return Response({
+                        "error": f"Erro ao atualizar cartão na catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
+                
+                # Atualiza a relação com a catraca
+                instance.devices.add(device)
 
         return Response(serializer.data)
 
     def destroy(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
+        instance = self.get_object()
 
-            # Garantir que a sessão está inicializada
-            self.login()
-
-            # Deletar na catraca
-            response = self.destroy_objects("cards", {"cards": {"id": instance.id}})
-
-            if response.status_code != status.HTTP_204_NO_CONTENT:
-                error_data = {}
-                try:
-                    if hasattr(response, 'data'):
-                        error_data = response.data
-                    elif hasattr(response, 'json'):
-                        error_data = response.json()
-                except:
-                    error_data = {"message": "Erro ao deletar card na catraca"}
-
-                return Response(error_data, status=response.status_code)
-
-            # Deletar no banco local
-            instance.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        except Exception as e:
-            return Response({
-                "error": "Erro interno",
-                "details": str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "cards",
-                fields=["id", "user_id", "value"],
-                order_by=["id"]
-            )
-
-            # Apagar todos do banco local
-            Card.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            for data in catraca_objects:
-                Card.objects.create(
-                    id=data["id"],
-                    user_id=data["user_id"],
-                    value=data["value"]
+        with transaction.atomic():
+            # Remove de todas as catracas ativas
+            devices = Device.objects.filter(is_active=True)
+            
+            for device in devices:
+                self.set_device(device)
+                response = self.destroy_objects(
+                    "cards",
+                    {"cards": {"id": instance.id}}
                 )
+                if response.status_code != status.HTTP_204_NO_CONTENT:
+                    return Response({
+                        "error": f"Erro ao deletar cartão da catraca {device.name}",
+                        "details": response.data
+                    }, status=response.status_code)
 
-            return Response({
-                "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} cards"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+            instance.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT) 

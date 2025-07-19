@@ -7,6 +7,7 @@ class Device(models.Model):
     password = models.CharField(max_length=255, help_text="Senha para autenticação")
     is_active = models.BooleanField(default=True, help_text="Se o dispositivo está ativo para sincronização")
     is_default = models.BooleanField(default=False, help_text="Se é o dispositivo padrão quando nenhum é especificado")
+    users = models.ManyToManyField('user_django_app.User', related_name='devices', blank=True)
 
     class Meta:
         verbose_name = "Dispositivo"

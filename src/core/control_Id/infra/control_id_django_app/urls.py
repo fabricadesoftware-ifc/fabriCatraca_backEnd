@@ -8,9 +8,10 @@ from rest_framework import viewsets, status
 from .views import (
     TemplateViewSet, TimeZoneViewSet, TimeSpanViewSet,
     AccessRuleViewSet, UserAccessRuleViewSet, AccessRuleTimeZoneViewSet,
-    PortalViewSet, PortalAccessRuleViewSet, CardViewSet
+    PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet
 )
 from .views.device import DeviceViewSet
+from .views.sync import sync_all
 
 router = DefaultRouter()
 router.register(r'templates', TemplateViewSet)
@@ -23,6 +24,7 @@ router.register(r'portals', PortalViewSet)
 router.register(r'portal_access_rules', PortalAccessRuleViewSet)
 router.register(r'cards', CardViewSet)
 router.register(r'devices', DeviceViewSet)
+router.register(r'areas', AreaViewSet)
 
 @api_view(['GET'])
 def control_id_root(request, format=None):
@@ -37,9 +39,12 @@ def control_id_root(request, format=None):
         'portal_access_rules': reverse('portalaccessrule-list', request=request, format=format),
         'cards': reverse('card-list', request=request, format=format),
         'devices': reverse('device-list', request=request, format=format),
+        'areas': reverse('area-list', request=request, format=format),
+        'sync': reverse('sync-all', request=request, format=format),
     })
 
 urlpatterns = [
     path('', control_id_root, name='control_id-root'),
+    path('sync/', sync_all, name='sync-all'),
     path('', include(router.urls)),
 ]

@@ -7,6 +7,7 @@ from .access_rule_timezone import AccessRuleTimeZoneSyncMixin
 from .portal import PortalSyncMixin
 from .portal_access_rule import PortalAccessRuleSyncMixin
 from .card import CardSyncMixin
+from .area import AreaSyncMixin
 
 __all__ = [
     'TemplateSyncMixin',
@@ -17,5 +18,6 @@ __all__ = [
     'AccessRuleTimeZoneSyncMixin',
     'PortalSyncMixin',
     'PortalAccessRuleSyncMixin',
-    'CardSyncMixin'
+    'CardSyncMixin',
+    'AreaSyncMixin'
 ] 

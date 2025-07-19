@@ -2,7 +2,6 @@ from django.db import models
 from .timezone import TimeZone
 
 class TimeSpan(models.Model):
-    id = models.IntegerField(primary_key=True)
     time_zone = models.ForeignKey(TimeZone, on_delete=models.CASCADE, related_name='spans')
     start = models.IntegerField()  # Segundos desde meia-noite
     end = models.IntegerField()

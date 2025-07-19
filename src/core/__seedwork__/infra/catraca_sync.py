@@ -4,6 +4,7 @@ from typing import Dict, List, Any, Optional
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
+from django.db import transaction
 
 class ControlIDSyncMixin:
     """
@@ -14,7 +15,7 @@ class ControlIDSyncMixin:
         super().__init__(*args, **kwargs)
         self.session = None
         self._device = None
-        self._use_default_config = settings.DEBUG
+        self._use_default_config = False
 
     @property
     def device(self):
@@ -90,9 +91,9 @@ class ControlIDSyncMixin:
         response.raise_for_status()
         return response.json().get(f"{object_name}", [])
 
-    def create_objects(self, object_name: str, values: List[Dict[str, Any]]) -> Response:
+    def create_objects_in_all_devices(self, object_name: str, values: List[Dict[str, Any]]) -> Response:
         """
-        Cria objetos na catraca.
+        Cria objetos em todas as catracas ativas.
         Args:
             object_name: Nome do objeto na API da catraca
             values: Lista de valores para criar
@@ -100,19 +101,32 @@ class ControlIDSyncMixin:
             Response: Resposta da API
         """
         try:
-            sess = self.login()
-            response = requests.post(
-                self.get_url(f"create_objects.fcgi?session={sess}"),
-                json={"object": object_name, "values": values}
-            )
-            response.raise_for_status()
-            return Response({"success": True}, status=status.HTTP_201_CREATED)
+            from src.core.control_Id.infra.control_id_django_app.models.device import Device
+            
+            devices = Device.objects.filter(is_active=True)
+            if not devices:
+                return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                for device in devices:
+                    self.set_device(device)
+                    sess = self.login()
+                    response = requests.post(
+                        self.get_url(f"create_objects.fcgi?session={sess}"),
+                        json={"object": object_name, "values": values}
+                    )
+                    if response.status_code != 200:
+                        raise Exception(response.json())
+                    response.raise_for_status()
+                
+                return Response({"success": True}, status=status.HTTP_201_CREATED)
+                
         except requests.RequestException as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def update_objects(self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]) -> Response:
+    def update_objects_in_all_devices(self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]) -> Response:
         """
-        Atualiza objetos na catraca.
+        Atualiza objetos em todas as catracas ativas.
         Args:
             object_name: Nome do objeto na API da catraca
             values: Lista de valores para atualizar
@@ -121,23 +135,36 @@ class ControlIDSyncMixin:
             Response: Resposta da API
         """
         try:
-            sess = self.login()
-            response = requests.post(
-                self.get_url(f"modify_objects.fcgi?session={sess}"),
-                json={
-                    "object": object_name,
-                    "values": values,
-                    "where": where
-                }
-            )
-            response.raise_for_status()
-            return Response({"success": True})
+            from src.core.control_Id.infra.control_id_django_app.models.device import Device
+            
+            devices = Device.objects.filter(is_active=True)
+            if not devices:
+                return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                for device in devices:
+                    self.set_device(device)
+                    sess = self.login()
+                    response = requests.post(
+                        self.get_url(f"modify_objects.fcgi?session={sess}"),
+                        json={
+                            "object": object_name,
+                            "values": values,
+                            "where": where
+                        }
+                    )
+                    if response.status_code != 200:
+                        raise Exception(response.json())
+                    response.raise_for_status()
+                
+                return Response({"success": True})
+                
         except requests.RequestException as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def destroy_objects(self, object_name: str, where: Dict[str, Any]) -> Response:
+    def destroy_objects_in_all_devices(self, object_name: str, where: Dict[str, Any]) -> Response:
         """
-        Remove objetos da catraca.
+        Remove objetos de todas as catracas ativas.
         Args:
             object_name: Nome do objeto na API da catraca
             where: Condição para remoção
@@ -145,29 +172,58 @@ class ControlIDSyncMixin:
             Response: Resposta da API
         """
         try:
-            sess = self.login()
-            response = requests.post(
-                self.get_url(f"destroy_objects.fcgi?session={sess}"),
-                json={"object": object_name, "where": where}
-            )
-            response.raise_for_status()
-            return Response({"success": True}, status=status.HTTP_204_NO_CONTENT)
+            from src.core.control_Id.infra.control_id_django_app.models.device import Device
+            
+            devices = Device.objects.filter(is_active=True)
+            if not devices:
+                return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                for device in devices:
+                    self.set_device(device)
+                    sess = self.login()
+                    response = requests.post(
+                        self.get_url(f"destroy_objects.fcgi?session={sess}"),
+                        json={"object": object_name, "where": where}
+                    )
+                    if response.status_code != 200:
+                        raise Exception(response.json())
+                    response.raise_for_status()
+                
+                return Response({"success": True}, status=status.HTTP_204_NO_CONTENT)
+                
         except requests.RequestException as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+    def create_objects(self, object_name: str, values: List[Dict[str, Any]]) -> Response:
+        """Mantido por compatibilidade, chama create_objects_in_all_devices"""
+        return self.create_objects_in_all_devices(object_name, values)
+
+    def update_objects(self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]) -> Response:
+        """Mantido por compatibilidade, chama update_objects_in_all_devices"""
+        return self.update_objects_in_all_devices(object_name, values, where)
+
+    def destroy_objects(self, object_name: str, where: Dict[str, Any]) -> Response:
+        """Mantido por compatibilidade, chama destroy_objects_in_all_devices"""
+        return self.destroy_objects_in_all_devices(object_name, where)
+
     def remote_enroll(self, user_id: int, type: str, save: bool, sync: bool) -> Response:
         """
         Realiza o cadastro remoto de um usuário na catraca.
         Args:
             user_id: ID do usuário
-            type: Tipo de cadastro (finger, face, etc.)
+            type: Tipo de cadastro (biometric, face, etc.)
             save: Se deve salvar o cadastro
             sync: Se deve sincronizar com o banco de dados
         Returns:
             Response: Resposta da API
         """
         try:
-            sess = self.login()
+            from src.core.control_Id.infra.control_id_django_app.models.device import Device
+            
+            devices = Device.objects.filter(is_active=True)
+            if not devices:
+                return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
             
             # Payload com mais informações para debug
             payload = {
@@ -175,42 +231,37 @@ class ControlIDSyncMixin:
                 "type": type,
                 "save": save,
                 "sync": sync,
-                "timeout": 30  # Aumenta o timeout para 30 segundos
+                "timeout": 40
             }
             
-            # Faz a requisição com timeout explícito
-            response = requests.post(
-                self.get_url(f"remote_enroll.fcgi?session={sess}"),
-                json=payload,
-                timeout=30
-            )
+            # Tenta em cada catraca até uma funcionar
+            last_error = None
+            for device in devices:
+                try:
+                    self.set_device(device)
+                    sess = self.login()
+                    
+                    response = requests.post(
+                        self.get_url(f"remote_enroll.fcgi?session={sess}"),
+                        json=payload,
+                        timeout=30
+                    )
+                    
+                    if response.status_code == 200:
+                        return Response(response.json(), status=status.HTTP_201_CREATED)
+                        
+                    last_error = response
+                except Exception as e:
+                    last_error = e
+                    continue
             
-            # Verifica se a resposta é um JSON válido
-            try:
-                response_data = response.json()
-            except ValueError:
-                return Response(
-                    {"error": "Resposta inválida da catraca", "details": response.text},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+            return Response({
+                "error": "Falha ao cadastrar em todas as catracas",
+                "details": str(last_error)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            # Verifica se houve erro específico da catraca
-            if response.status_code != 200:
-                return Response(
-                    {"error": "Erro na catraca", "details": response_data},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-                
-            response.raise_for_status()
-            return Response(response_data, status=status.HTTP_201_CREATED)
-            
-        except requests.Timeout:
-            return Response(
-                {"error": "Timeout ao tentar cadastrar biometria"},
-                status=status.HTTP_504_GATEWAY_TIMEOUT
-            )
-        except requests.RequestException as e:
-            return Response(
-                {"error": "Erro de comunicação com a catraca", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        except Exception as e:
+            return Response({
+                "error": "Erro ao processar cadastro",
+                "details": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

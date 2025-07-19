@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from src.core.control_Id.infra.control_id_django_app.models import Device
 
 class DeviceSerializer(serializers.ModelSerializer):
     class Meta:

@@ -65,31 +65,3 @@ class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
         # Deletar no banco local
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "portal_access_rules",
-                fields=["id","portal_id", "access_rule_id"],
-                order_by=["portal_id", "access_rule_id"]
-            )
-
-            # Apagar todos do banco local
-            PortalAccessRule.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            for data in catraca_objects:
-                PortalAccessRule.objects.create(
-                    id=data["id"],
-                    portal_id=data["portal_id"],
-                    access_rule_id=data["access_rule_id"]
-                )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} associações portal-regra"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

@@ -67,33 +67,3 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
         # Deletar no banco local
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=False, methods=['get'])
-    def sync(self, request):
-        try:
-            # Carregar da catraca
-            catraca_objects = self.load_objects(
-                "access_rule_time_zones",
-                fields=["access_rule_id", "time_zone_id"],
-                order_by=["access_rule_id", "time_zone_id"]
-            )
-
-            # Apagar todos do banco local
-            AccessRuleTimeZone.objects.all().delete()
-
-            # Cadastrar da catraca no banco local
-            print(catraca_objects)
-            for data in catraca_objects:
-                access_rule = AccessRule.objects.get(id=data["access_rule_id"])
-                time_zone = TimeZone.objects.get(id=data["time_zone_id"])
-                AccessRuleTimeZone.objects.create(
-                    access_rule_id=access_rule,
-                    time_zone_id=time_zone
-                )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} associações regra-zona"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 

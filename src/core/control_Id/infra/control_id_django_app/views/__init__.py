@@ -7,6 +7,7 @@ from .access_rule_timezone import AccessRuleTimeZoneViewSet
 from .portal import PortalViewSet
 from .portal_access_rule import PortalAccessRuleViewSet
 from .cards import CardViewSet
+from .areas import AreaViewSet
 
 __all__ = [
     'TemplateViewSet',
@@ -17,5 +18,6 @@ __all__ = [
     'AccessRuleTimeZoneViewSet',
     'PortalViewSet',
     'PortalAccessRuleViewSet',
-    'CardViewSet'
+    'CardViewSet',
+    'AreaViewSet'
 ] 

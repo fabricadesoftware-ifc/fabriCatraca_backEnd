@@ -45,18 +45,3 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "error": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['get'])
-    def set_default(self, request, pk=None):
-        """Define este dispositivo como padrão"""
-        device = self.get_object()
-        
-        with transaction.atomic():
-            # Remove o default de outros dispositivos
-            Device.objects.filter(is_default=True).update(is_default=False)
-            # Define este como default
-            device.is_default = True
-            device.save()
-            
-        serializer = self.get_serializer(device)
-        return Response(serializer.data) 
