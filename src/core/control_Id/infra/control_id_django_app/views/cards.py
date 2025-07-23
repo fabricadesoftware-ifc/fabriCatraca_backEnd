@@ -32,7 +32,8 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
 
             # Primeiro cria no banco para ter o ID
             serializer = self.get_serializer(data={
-                "user": request.data.get('user')
+                "user": request.data.get('user'),
+                "enrollment_device_id": enrollment_device_id
             })
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
@@ -45,18 +46,27 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                 sync=True
             )
 
-            if response.status_code != status.HTTP_200_OK:
+            if response.status_code != status.HTTP_201_CREATED:
                 instance.delete()  # Remove do banco se falhar na catraca
                 return Response({
                     "error": "Erro no cadastro remoto",
-                    "details": response.json() if response.content else str(response)
+                    "details": response.data
                 }, status=response.status_code)
 
-            card_data = response.json()
+            card_data = response.data
+            print("DEBUG - Resposta da API:", card_data)  # Log para debug
             
             with transaction.atomic():
                 # Atualiza o cartão com os dados da catraca
-                instance.value = card_data["value"]
+                if "card_value" not in card_data:
+                    instance.delete()
+                    return Response({
+                        "error": "Resposta da API inválida",
+                        "details": "Campo card_value não encontrado na resposta",
+                        "response": card_data
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                instance.value = card_data["card_value"]
                 instance.save()
                 
                 # Cadastra em todas as catracas ativas

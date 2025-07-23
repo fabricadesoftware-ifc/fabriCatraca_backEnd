@@ -248,16 +248,22 @@ class ControlIDSyncMixin:
                     )
                     
                     if response.status_code == 200:
-                        return Response(response.json(), status=status.HTTP_201_CREATED)
+                        response_data = response.json()
+                        return Response(response_data, status=status.HTTP_201_CREATED)
                         
-                    last_error = response
+                    last_error = {
+                        "status_code": response.status_code,
+                        "content": response.text if response.text else "No content"
+                    }
                 except Exception as e:
-                    last_error = e
+                    last_error = {
+                        "error": str(e)
+                    }
                     continue
             
             return Response({
                 "error": "Falha ao cadastrar em todas as catracas",
-                "details": str(last_error)
+                "details": last_error
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
         except Exception as e:

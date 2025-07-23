@@ -32,7 +32,8 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             
             # Primeiro cria no banco para ter o ID
             serializer = self.get_serializer(data={
-                "user": request.data.get('user')
+                "user": request.data.get('user'),
+                "enrollment_device_id": enrollment_device_id
             })
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
@@ -40,19 +41,19 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             # Faz o cadastro remoto
             response = self.remote_enroll(
                 user_id=instance.user.id,
-                type="finger",
+                type="biometry",
                 save=False,  # Não salvar na catraca ainda
                 sync=True
             )
             
-            if response.status_code != status.HTTP_200_OK:
+            if response.status_code != status.HTTP_201_CREATED:
                 instance.delete()  # Remove do banco se falhar na catraca
                 return Response({
                     "error": "Erro no cadastro remoto",
-                    "details": response.json() if response.content else str(response)
+                    "details": response.data
                 }, status=response.status_code)
                 
-            template_data = response.json()
+            template_data = response.data  # Usa .data em vez de .json()
             
             with transaction.atomic():
                 # Atualiza o template com os dados da catraca
