@@ -24,7 +24,38 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
 ]
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # Frontend em desenvolvimento
+    "http://localhost:3000",
+    "https://*.fexcompany.me",
+    "https://*.fabricadesoftware.ifc.edu.br",
+]
 
+# Permitir cookies nas requisições cross-origin
+CORS_ALLOW_CREDENTIALS = True
+
+# Permitir todos os métodos HTTP
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# Permitir todos os headers
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
 # Application definition
 
 INSTALLED_APPS = [
@@ -35,11 +66,11 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "safedelete",
+    "corsheaders",
     "simple_history",
     "drf_spectacular",
     "django_filters",
     "rest_framework",
-    "corsheaders",
     "debug_toolbar",
     "src.core.user.infra.user_django_app",
     "src.core.control_Id.infra.control_id_django_app",

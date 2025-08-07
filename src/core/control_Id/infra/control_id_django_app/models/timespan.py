@@ -3,8 +3,8 @@ from .timezone import TimeZone
 
 class TimeSpan(models.Model):
     time_zone = models.ForeignKey(TimeZone, on_delete=models.CASCADE, related_name='spans')
-    start = models.IntegerField()  # Segundos desde meia-noite
-    end = models.IntegerField()
+    start = models.IntegerField(help_text='Segundos desde meia-noite')  # Segundos desde meia-noite
+    end = models.IntegerField(help_text='Segundos desde meia-noite')
     sun = models.BooleanField(default=False)
     mon = models.BooleanField(default=False)
     tue = models.BooleanField(default=False)

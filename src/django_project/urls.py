@@ -6,6 +6,12 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.shortcuts import redirect
 
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
+
 @api_view(['GET'])
 def api_root(request, format=None):
     return Response({
@@ -25,3 +31,10 @@ urlpatterns = [
 if settings.DEBUG:
     import debug_toolbar
     urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
+    
+if settings.DEBUG:
+    urlpatterns += [
+        path("api/swagger/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+        path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+        path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    ]
