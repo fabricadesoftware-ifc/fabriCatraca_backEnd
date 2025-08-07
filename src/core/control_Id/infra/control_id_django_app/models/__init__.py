@@ -9,6 +9,9 @@ from .access_rule_timezone import AccessRuleTimeZone
 from .portal_access_rule import PortalAccessRule
 from .cards import Card
 from .device import Device
+from .group import CustomGroup
+from .user_groups import UserGroup
+from .group_access_rules import GroupAccessRule
 
 __all__ = [
     'Template',
@@ -21,5 +24,8 @@ __all__ = [
     'PortalAccessRule',
     'Card',
     'Area',
-    'Device'
+    'Device',
+    'CustomGroup',
+    'UserGroup',
+    'GroupAccessRule'
 ] 

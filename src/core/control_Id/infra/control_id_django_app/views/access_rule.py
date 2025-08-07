@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from ..models.access_rule import AccessRule
 from ..serializers.access_rule import AccessRuleSerializer
-from ..sync_mixins.access_rule import AccessRuleSyncMixin
+from src.core.__seedwork__.infra.mixins import AccessRuleSyncMixin
 
 class AccessRuleViewSet(AccessRuleSyncMixin, viewsets.ModelViewSet):
     queryset = AccessRule.objects.all()

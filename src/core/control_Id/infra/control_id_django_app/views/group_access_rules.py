@@ -1,16 +1,16 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from ..models.portal import Portal
-from ..serializers.portal import PortalSerializer
-from src.core.__seedwork__.infra.mixins import PortalSyncMixin
+from src.core.control_Id.infra.control_id_django_app.models import GroupAccessRule
+from src.core.control_Id.infra.control_id_django_app.serializers import GroupAccessRuleSerializer
+from src.core.__seedwork__.infra.mixins import GroupAccessRulesSyncMixin
 
-class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
-    queryset = Portal.objects.all()
-    serializer_class = PortalSerializer
-    filterset_fields = ['id', 'name']
-    search_fields = ['name']
-    ordering_fields = ['id', 'name']
+class GroupAccessRulesViewSet(GroupAccessRulesSyncMixin, viewsets.ModelViewSet):
+    queryset = GroupAccessRule.objects.all()
+    serializer_class = GroupAccessRuleSerializer
+    filterset_fields = ['id', 'group', 'access_rule']
+    search_fields = ['group__name', 'access_rule__name']
+    ordering_fields = ['id', 'group__name', 'access_rule__name']
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -18,11 +18,9 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         instance = serializer.save()
         
         # Criar na catraca
-        response = self.create_objects("portals", [{
-            "id": instance.id,
-            "name": instance.name,
-            "area_from_id": instance.area_from_id.id,
-            "area_to_id": instance.area_to_id.id
+        response = self.create_objects("group_access_rules", [{
+            "group_id": instance.group.id,
+            "access_rule_id": instance.access_rule.id
         }])
         
         if response.status_code != status.HTTP_201_CREATED:
@@ -38,12 +36,10 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         instance = serializer.save()
         
         # Atualizar na catraca
-        response = self.update_objects("portals", {
-            "id": instance.id,
-            "name": instance.name,
-            "area_from_id": instance.area_from_id.id,
-            "area_to_id": instance.area_to_id.id
-        }, {"portals": {"id": instance.id}})
+        response = self.update_objects("group_access_rules", {
+            "group_id": instance.group.id,
+            "access_rule_id": instance.access_rule.id
+        }, {"group_access_rules": {"id": instance.id}})
         
         if response.status_code != status.HTTP_200_OK:
             return response
@@ -54,7 +50,7 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         
         # Deletar na catraca
-        response = self.destroy_objects("portals", {"portals": {"id": instance.id}})
+        response = self.destroy_objects("group_access_rules", {"group_access_rules": {"id": instance.id}})
         
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

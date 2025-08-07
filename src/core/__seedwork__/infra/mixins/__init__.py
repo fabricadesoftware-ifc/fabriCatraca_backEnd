@@ -8,6 +8,9 @@ from .time_span import TimeSpanSyncMixin
 from .time_zone import TimeZoneSyncMixin
 from .user_access_rule import UserAccessRuleSyncMixin
 from .area import AreaSyncMixin
+from .group import GroupSyncMixin
+from .user_groups import UserGroupsSyncMixin
+from .group_access_rules import GroupAccessRulesSyncMixin
 
 __all__ = [
     'AccessRuleSyncMixin',
@@ -20,4 +23,7 @@ __all__ = [
     'TimeZoneSyncMixin',
     'UserAccessRuleSyncMixin',
     'AreaSyncMixin',
+    'GroupSyncMixin',
+    'UserGroupsSyncMixin',
+    'GroupAccessRulesSyncMixin',
 ]

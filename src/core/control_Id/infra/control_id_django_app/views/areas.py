@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from src.core.control_Id.infra.control_id_django_app.models import Area
 from src.core.control_Id.infra.control_id_django_app.serializers import AreaSerializer
-from src.core.control_Id.infra.control_id_django_app.sync_mixins import AreaSyncMixin
+from src.core.__seedwork__.infra.mixins import AreaSyncMixin
 
 class AreaViewSet(AreaSyncMixin, viewsets.ModelViewSet):
     queryset = Area.objects.all()

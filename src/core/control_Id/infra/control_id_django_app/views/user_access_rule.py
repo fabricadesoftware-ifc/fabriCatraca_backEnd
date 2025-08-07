@@ -1,11 +1,8 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
 from rest_framework.response import Response
 from ..models.user_access_rule import UserAccessRule
 from ..serializers.user_access_rule import UserAccessRuleSerializer
-from ..sync_mixins.user_access_rule import UserAccessRuleSyncMixin
-from src.core.user.infra.user_django_app.models import User
-from ..models.access_rule import AccessRule
+from src.core.__seedwork__.infra.mixins import UserAccessRuleSyncMixin
 
 class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
     queryset = UserAccessRule.objects.all()

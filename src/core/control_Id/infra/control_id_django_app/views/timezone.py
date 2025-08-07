@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 
 from ..models.timezone import TimeZone
 from ..serializers.timezone import TimeZoneSerializer
-from ..sync_mixins.time_zone import TimeZoneSyncMixin
+from src.core.__seedwork__.infra.mixins import TimeZoneSyncMixin
 from ..models.device import Device
 
 class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):

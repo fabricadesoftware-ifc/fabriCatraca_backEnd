@@ -5,7 +5,7 @@ from django.db import transaction
 
 from src.core.control_Id.infra.control_id_django_app.models.cards import Card
 from src.core.control_Id.infra.control_id_django_app.serializers.cards import CardSerializer
-from src.core.control_Id.infra.control_id_django_app.sync_mixins import CardSyncMixin
+from src.core.__seedwork__.infra.mixins import CardSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):

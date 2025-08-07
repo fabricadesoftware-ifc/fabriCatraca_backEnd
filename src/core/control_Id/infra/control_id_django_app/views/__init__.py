@@ -8,6 +8,9 @@ from .portal import PortalViewSet
 from .portal_access_rule import PortalAccessRuleViewSet
 from .cards import CardViewSet
 from .areas import AreaViewSet
+from .group import GroupViewSet
+from .user_groups import UserGroupsViewSet
+from .group_access_rules import GroupAccessRulesViewSet
 
 __all__ = [
     'TemplateViewSet',
@@ -19,5 +22,8 @@ __all__ = [
     'PortalViewSet',
     'PortalAccessRuleViewSet',
     'CardViewSet',
-    'AreaViewSet'
+    'AreaViewSet',
+    'GroupViewSet',
+    'UserGroupsViewSet',
+    'GroupAccessRulesViewSet',
 ] 

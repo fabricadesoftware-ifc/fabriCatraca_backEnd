@@ -5,7 +5,7 @@ from django.db import transaction
 
 from src.core.control_Id.infra.control_id_django_app.models.template import Template
 from src.core.control_Id.infra.control_id_django_app.serializers.template import TemplateSerializer
-from src.core.control_Id.infra.control_id_django_app.sync_mixins import TemplateSyncMixin
+from src.core.__seedwork__.infra.mixins import TemplateSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):

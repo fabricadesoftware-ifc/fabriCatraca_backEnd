@@ -8,7 +8,8 @@ from rest_framework import viewsets, status
 from .views import (
     TemplateViewSet, TimeZoneViewSet, TimeSpanViewSet,
     AccessRuleViewSet, UserAccessRuleViewSet, AccessRuleTimeZoneViewSet,
-    PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet
+    PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet, 
+    GroupViewSet, UserGroupsViewSet, GroupAccessRulesViewSet,
 )
 from .views.device import DeviceViewSet
 from .views.sync import sync_all
@@ -25,6 +26,9 @@ router.register(r'portal_access_rules', PortalAccessRuleViewSet)
 router.register(r'cards', CardViewSet)
 router.register(r'devices', DeviceViewSet)
 router.register(r'areas', AreaViewSet)
+router.register(r'groups', GroupViewSet)
+router.register(r'user_groups', UserGroupsViewSet)
+router.register(r'group_access_rules', GroupAccessRulesViewSet)
 
 @api_view(['GET'])
 def control_id_root(request, format=None):
@@ -40,7 +44,10 @@ def control_id_root(request, format=None):
         'cards': reverse('card-list', request=request, format=format),
         'devices': reverse('device-list', request=request, format=format),
         'areas': reverse('area-list', request=request, format=format),
+        'groups': reverse('customgroup-list', request=request, format=format),
         'sync': reverse('sync-all', request=request, format=format),
+        'user_groups': reverse('usergroup-list', request=request, format=format),
+        'group_access_rules': reverse('groupaccessrule-list', request=request, format=format),
     })
 
 urlpatterns = [

@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from ..models.access_rule_timezone import AccessRuleTimeZone
 from ..serializers.access_rule_timezone import AccessRuleTimeZoneSerializer
-from ..sync_mixins.access_rule_timezone import AccessRuleTimeZoneSyncMixin
+from src.core.__seedwork__.infra.mixins import AccessRuleTimeZoneSyncMixin
 from ..models.access_rule import AccessRule
 from ..models.timezone import TimeZone
 

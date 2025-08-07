@@ -9,6 +9,9 @@ from .portal import PortalSerializer
 from .portal_access_rule import PortalAccessRuleSerializer
 from .cards import CardSerializer
 from .areas import AreaSerializer
+from .group import CustomGroupSerializer
+from .user_groups import UserGroupSerializer
+from .group_access_rules import GroupAccessRuleSerializer
 
 __all__ = [
     'TemplateSerializer',
@@ -22,4 +25,7 @@ __all__ = [
     'CardSerializer',
     'AreaSerializer',
     'DeviceSerializer',
+    'CustomGroupSerializer',
+    'UserGroupSerializer',
+    'GroupAccessRuleSerializer',
 ] 

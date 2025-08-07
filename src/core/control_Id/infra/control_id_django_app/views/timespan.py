@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 
 from ..models.timespan import TimeSpan
 from ..serializers.timespan import TimeSpanSerializer
-from ..sync_mixins.time_span import TimeSpanSyncMixin
+from src.core.__seedwork__.infra.mixins import TimeSpanSyncMixin
 from ..models.device import Device
 
 class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):

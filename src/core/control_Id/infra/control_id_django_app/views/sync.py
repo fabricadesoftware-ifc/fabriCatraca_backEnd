@@ -5,7 +5,7 @@ from django.db import transaction
 from django.db.utils import OperationalError
 from time import sleep
 
-from src.core.control_Id.infra.control_id_django_app.models import Device, Template, Card, TimeZone, TimeSpan, Portal, AccessRule, PortalAccessRule, UserAccessRule, AccessRuleTimeZone, Area
+from src.core.control_Id.infra.control_id_django_app.models import Device, Template, Card, TimeZone, TimeSpan, Portal, AccessRule, PortalAccessRule, UserAccessRule, AccessRuleTimeZone, Area, UserGroup, CustomGroup, GroupAccessRule
 from src.core.user.infra.user_django_app.models import User
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
@@ -112,6 +112,32 @@ class GlobalSyncMixin(ControlIDSyncMixin):
         )
         return rules
 
+    def sync_user_groups(self, device):
+        """Sincroniza usuários em grupos"""
+        user_groups = self.load_objects(
+            "user_groups",
+            fields=["user_id", "group_id"],
+            order_by=["user_id", "group_id"]
+        )
+        return user_groups
+    def sync_groups(self, device):
+        """Sincroniza grupos"""
+        groups = self.load_objects(
+            "groups",
+            fields=["id", "name"],
+            order_by=["id"]
+        )
+        return groups
+    
+    def sync_group_access_rules(self, device):
+        """Sincroniza grupos de acesso"""
+        group_access_rules = self.load_objects(
+            "group_access_rules",
+            fields=["group_id", "access_rule_id"],
+            order_by=["group_id", "access_rule_id"]
+        )
+        return group_access_rules
+
 @api_view(['GET'])
 def sync_all(request):
     """Sincroniza todos os dados de todas as catracas ativas"""
@@ -140,7 +166,9 @@ def sync_all(request):
             all_user_access_rules = []
             all_portal_access_rules = []
             all_access_rule_time_zones = []
-            
+            all_user_groups = []
+            all_groups = []
+            all_group_access_rules = []
             # Coleta dados de todas as catracas
             for device in devices:
                 sync.set_device(device)
@@ -199,7 +227,9 @@ def sync_all(request):
                 all_user_access_rules.extend(sync.sync_user_access_rules(device))
                 all_portal_access_rules.extend(sync.sync_portal_access_rules(device))
                 all_access_rule_time_zones.extend(sync.sync_access_rule_time_zones(device))
-
+                all_user_groups.extend(sync.sync_user_groups(device))
+                all_groups.extend(sync.sync_groups(device))
+                all_group_access_rules.extend(sync.sync_group_access_rules(device))
             # Atualiza o banco em uma única transação
             with transaction.atomic():
                 # Limpa dados antigos
@@ -213,7 +243,9 @@ def sync_all(request):
                 UserAccessRule.objects.all().delete()
                 PortalAccessRule.objects.all().delete()
                 AccessRuleTimeZone.objects.all().delete()
-                
+                UserGroup.objects.all().delete()
+                CustomGroup.objects.all().delete()
+                GroupAccessRule.objects.all().delete()
                 # Primeiro cria/atualiza os usuários
                 for user_data in all_users.values():
                     devices = user_data.pop('devices')
@@ -227,6 +259,25 @@ def sync_all(request):
                     )
                     # Associa o usuário com suas catracas
                     user.devices.set(devices)
+                
+                # Cria os grupos primeiro
+                for group_data in all_groups:
+                    CustomGroup.objects.update_or_create(
+                        id=group_data['id'],
+                        defaults={'name': group_data['name']}
+                    )
+
+                # Depois cria as associações de usuários com grupos
+                for user_group in all_user_groups:
+                    try:
+                        user = User.objects.get(id=user_group['user_id'])
+                        group = CustomGroup.objects.get(id=user_group['group_id'])
+                        UserGroup.objects.create(
+                            user=user,
+                            group=group
+                        )
+                    except (User.DoesNotExist, CustomGroup.DoesNotExist):
+                        continue  # Pula se o usuário ou grupo não existir
                 
                 # Cria novos registros
                 TimeZone.objects.bulk_create([
@@ -262,6 +313,14 @@ def sync_all(request):
                         priority=ar['priority']
                     )
                     for ar in all_access_rules.values()
+                ])
+                
+                GroupAccessRule.objects.bulk_create([
+                    GroupAccessRule(
+                        group_id=gar['group_id'],
+                        access_rule_id=gar['access_rule_id']
+                    )
+                    for gar in all_group_access_rules
                 ])
                 
                 Area.objects.bulk_create([
@@ -356,6 +415,9 @@ def sync_all(request):
                     "user_access_rules": len(all_user_access_rules),
                     "portal_access_rules": len(all_portal_access_rules),
                     "access_rule_time_zones": len(all_access_rule_time_zones),
+                    "groups": len(all_groups),
+                    "user_groups": len(all_user_groups),
+                    "group_access_rules": len(all_group_access_rules),
                     "devices": len(devices)
                 }
             })
