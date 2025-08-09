@@ -1,0 +1,73 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block user-tools %}{% endblock %}
+
+{% block title %}Painel de Acesso Escolar | {{ block.super }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/custom.css' %}">
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script defer src="{% static 'admin/custom.js' %}"></script>
+{% endblock %}
+
+{% block branding %}
+  <div class="site-branding">
+    <div class="brand-logo">🎓</div>
+    <div>
+      <h1>Controle de Acesso Escolar</h1>
+      <small>Catracas ControlID • Horários • Autorizações</small>
+    </div>
+  </div>
+{% endblock %}
+
+{% block nav-global %}
+<div class="admin-quick-actions">
+    <a class="btn" href="/api/control_id/">API ControlID</a>
+    <a class="btn" href="/api/control_id/sync/" target="_blank">Sincronizar agora</a>
+    <a class="btn" href="/api/swagger/" target="_blank">Swagger</a>
+</div>
+{% endblock %}
+
+
+{% block content %}
+  <section class="dashboard-cards">
+    <div class="card">
+      <div class="card-title">Catracas ativas</div>
+      <div class="card-value">{{ devices_active_count }}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Alunos</div>
+      <div class="card-value">{{ users_count }}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Regras de acesso</div>
+      <div class="card-value">{{ access_rules_count }}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Autorizações extras (grupo)</div>
+      <div class="card-value">{{ group_access_rules_count }}</div>
+    </div>
+  </section>
+
+  {{ block.super }}
+{% endblock %}
+
+{% block footer %}
+    {{ block.super }}
+    <div class="custom-user-tools">
+        {% block userlinks %}
+            {% if site_url %}
+                <a href="{{ site_url }}">Ver site</a> /
+            {% endif %}
+            {% if user.has_usable_password %}
+                <a href="{% url 'admin:password_change' %}">Alterar senha</a> /
+            {% endif %}
+            <a href="{% url 'admin:logout' %}">Encerrar sessão</a>
+        {% endblock %}
+    </div>
+{% endblock %}

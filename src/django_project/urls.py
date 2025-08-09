@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin as django_admin
 from django.urls import path, include
 from django.conf import settings
 from rest_framework.reverse import reverse
@@ -20,11 +20,15 @@ def api_root(request, format=None):
     })
 
 
+django_admin.site.site_header = "Controle de Acesso Escolar"
+django_admin.site.site_title = "Admin • Acesso Escolar"
+django_admin.site.index_title = "Painel de Operações"
+
 urlpatterns = [
     path('api/', api_root, name='api-root'),
     path('api/users/', include('src.core.user.infra.user_django_app.urls')),
     path('api/control_id/', include('src.core.control_Id.infra.control_id_django_app.urls')),
-    path('api/admin/', admin.site.urls),
+    path('api/admin/', django_admin.site.urls),
     path('', lambda request: redirect('api/', permanent=True)),
 ]
 

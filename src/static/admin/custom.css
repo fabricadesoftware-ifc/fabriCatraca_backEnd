@@ -1,0 +1,96 @@
+:root{
+  --brand:#284872;
+  --bg:#0d1117;
+  --bg-card:#151b23;
+  --fg:#e6edf3;
+  --muted:#9aa4b2;
+  --accent:#22c55e;
+  --header-bg:#151b23;
+  --header-fg:#e6edf3;
+  --breadcrumbs-bg:#242e3b;
+  
+}
+
+body.dashboard #content-main,
+body.change-list #content-main{max-width:1000px;margin:auto;border:1px solid #243041;border-radius:12px;padding:16px;background-color:var(--bg-card)}
+
+#changelist .actions {padding:8px 0px !important;}
+#changelist .actions label {padding:8px}
+
+.site-branding{display:flex;gap:12px;align-items:center}
+.brand-logo{font-size:28px}
+.site-branding h1{margin:0;color:var(--fg)}
+.site-branding small{color:var(--muted)}
+
+.admin-quick-actions{margin:12px 0;display:flex;gap:8px}
+.admin-quick-actions .btn{
+  background:var(--brand);color:white;padding:8px 12px;border-radius:8px;text-decoration:none
+}
+
+.dashboard-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
+.dashboard-cards .card{background:var(--bg-card);padding:16px;border-radius:12px;border:1px solid #243041}
+.dashboard-cards .card-title{font-size:12px;color:var(--muted);text-transform:uppercase}
+.dashboard-cards .card-value{font-size:28px;font-weight:700;color:var(--fg)}
+
+/* Forms: deixa os fieldsets com visual de cards */
+.module{background:var(--bg-card);border:1px solid #243041;border-radius:12px;padding:16px;margin-bottom:12px}
+.inline-group .module{padding:12px}
+
+/* Inputs maiores e com melhor contraste */
+fieldset input[type="text"],
+fieldset input[type="email"],
+fieldset input[type="number"],
+fieldset select,
+fieldset textarea{
+  background:#0f1621;color:var(--fg);border:1px solid #2a3547;border-radius:8px;
+  padding:8px 10px; width:100%;
+}
+fieldset .aligned .vTextField{max-width:700px}
+
+/* Evitar corte do conteúdo dos selects */
+fieldset select{
+  max-width:none; /* deixa expandir dentro da coluna */
+  height: 38px;
+  white-space:normal; /* permite quebra em alguns navegadores */
+  text-overflow:clip;
+}
+/* Muitos admins usam wrappers, garantir largura total */
+.related-widget-wrapper select,
+.form-row select,
+.form-row .vSelectMultiple{
+  width:100% !important;
+}
+
+/* Botões mais bonitos */
+.submit-row input.default{background:var(--brand);border:none}
+.submit-row input{border-radius:8px;padding:8px 12px}
+
+/* Cabeçalhos mais claros */
+fieldset h2{font-size:14px;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+
+/* Remover background padrão do menu lateral do Django */
+#nav-sidebar{
+  background:transparent !important;
+  border-right:1px solid #243041;
+}
+#nav-sidebar .module{
+  background:transparent !important;
+  border:none;
+}
+#nav-sidebar a{
+  color:var(--fg) !important;
+}
+#nav-sidebar li a:hover,
+#nav-sidebar li a:focus{
+  background:#1b2330 !important;
+}
+#content-main th.field-id a, #content-main th.field-name a{
+   text-decoration: none !important;
+}
+#content-main th.field-id a:hover, #content-main th.field-name a:hover{
+  color:var(--brand) !important;
+}
+
+.admin-quick-actions .btn {
+  transition: background-color 0.2s ease;
+}
