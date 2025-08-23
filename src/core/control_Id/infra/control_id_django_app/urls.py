@@ -1,4 +1,5 @@
 from django.urls import include, path, reverse
+from src.core.control_Id.infra.control_id_django_app.views.access_logs import AccessLogsViewSet
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
@@ -29,6 +30,7 @@ router.register(r'areas', AreaViewSet)
 router.register(r'groups', GroupViewSet)
 router.register(r'user_groups', UserGroupsViewSet)
 router.register(r'group_access_rules', GroupAccessRulesViewSet)
+router.register(r'access_logs', AccessLogsViewSet)
 
 @api_view(['GET'])
 def control_id_root(request, format=None):
@@ -48,6 +50,7 @@ def control_id_root(request, format=None):
         'sync': reverse('sync-all', request=request, format=format),
         'user_groups': reverse('usergroup-list', request=request, format=format),
         'group_access_rules': reverse('groupaccessrule-list', request=request, format=format),
+        'access_logs': reverse('accesslogs-list', request=request, format=format),
     })
 
 urlpatterns = [

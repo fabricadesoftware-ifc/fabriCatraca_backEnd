@@ -12,6 +12,7 @@ from .device import Device
 from .group import CustomGroup
 from .user_groups import UserGroup
 from .group_access_rules import GroupAccessRule
+from .access_logs import AccessLogs
 
 __all__ = [
     'Template',
@@ -27,5 +28,6 @@ __all__ = [
     'Device',
     'CustomGroup',
     'UserGroup',
-    'GroupAccessRule'
+    'GroupAccessRule',
+    'AccessLogs'
 ] 

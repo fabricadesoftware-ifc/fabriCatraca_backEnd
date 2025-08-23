@@ -12,6 +12,7 @@ from .areas import AreaSerializer
 from .group import CustomGroupSerializer
 from .user_groups import UserGroupSerializer
 from .group_access_rules import GroupAccessRuleSerializer
+from .access_logs import AccessLogsSerializer
 
 __all__ = [
     'TemplateSerializer',
@@ -28,4 +29,5 @@ __all__ = [
     'CustomGroupSerializer',
     'UserGroupSerializer',
     'GroupAccessRuleSerializer',
+    'AccessLogsSerializer'
 ] 

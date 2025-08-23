@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from django.db import transaction
 from django.db.utils import OperationalError
 from time import sleep
+from datetime import datetime
 
-from src.core.control_Id.infra.control_id_django_app.models import Device, Template, Card, TimeZone, TimeSpan, Portal, AccessRule, PortalAccessRule, UserAccessRule, AccessRuleTimeZone, Area, UserGroup, CustomGroup, GroupAccessRule
+from src.core.control_Id.infra.control_id_django_app.models import Device, Template, Card, TimeZone, TimeSpan, Portal, AccessRule, PortalAccessRule, UserAccessRule, AccessRuleTimeZone, Area, UserGroup, CustomGroup, GroupAccessRule, AccessLogs
 from src.core.user.infra.user_django_app.models import User
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
@@ -138,6 +139,15 @@ class GlobalSyncMixin(ControlIDSyncMixin):
         )
         return group_access_rules
 
+    def sync_access_logs(self, device):
+        """Sincroniza logs de acesso"""
+        access_logs = self.load_objects(
+            "access_logs",
+            fields=["id", "time", "event", "device_id", "identifier_id", "user_id", "portal_id", "identification_rule_id", "qrcode_value", "uhf_tag", "pin_value", "card_value"],
+            order_by=["id"]
+        )
+        return access_logs
+
 @api_view(['GET'])
 def sync_all(request):
     """Sincroniza todos os dados de todas as catracas ativas"""
@@ -147,12 +157,16 @@ def sync_all(request):
     
     while retry_count < max_retries:
         try:
-            # Pega todas as catracas ativas
-            devices = Device.objects.filter(is_active=True)
-            if not devices:
+            # Pega a catraca configurada
+            device = Device.objects.filter(is_active=True).first()
+            if not device:
                 return Response({
                     "error": "Nenhuma catraca ativa encontrada"
                 }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Atualiza o ID da catraca para o ID real dela
+            device.id = 4008342653506425  # ID real da catraca
+            device.save()
 
             # Dicionários para armazenar dados de todas as catracas
             all_users = {}  # Dicionário para usuários
@@ -169,67 +183,50 @@ def sync_all(request):
             all_user_groups = []
             all_groups = []
             all_group_access_rules = []
-            # Coleta dados de todas as catracas
-            for device in devices:
-                sync.set_device(device)
-                
-                # Primeiro sincroniza usuários pois outras entidades dependem deles
-                for user in sync.sync_users(device):
-                    if user['id'] not in all_users:
-                        all_users[user['id']] = user
-                        all_users[user['id']]['devices'] = []
-                    all_users[user['id']]['devices'].append(device)
-                
-                # Coleta dados de cada tipo
-                for tz in sync.sync_time_zones(device):
-                    all_time_zones[tz['id']] = tz
-                
-                for ts in sync.sync_time_spans(device):
-                    all_time_spans[ts['id']] = ts
-                
-                for ar in sync.sync_access_rules(device):
-                    all_access_rules[ar['id']] = ar
-                
-                for a in sync.sync_areas(device):
-                    all_areas[a['id']] = a
-                
-                for p in sync.sync_portals(device):
-                    all_portals[p['id']] = p
-                
-                # Templates e Cards não têm ID na API, usamos user_id + dados como chave
-                for t in sync.sync_templates(device):
-                    t['devices'] = [device]
-                    # Procura se já existe um template igual
-                    found = False
-                    for existing in all_templates:
-                        if (existing['user_id'] == t['user_id'] and 
-                            existing['template'] == t['template']):
-                            existing['devices'].append(device)
-                            found = True
-                            break
-                    if not found:
-                        all_templates.append(t)
-                
-                for c in sync.sync_cards(device):
-                    c['devices'] = [device]
-                    # Procura se já existe um cartão igual
-                    found = False
-                    for existing in all_cards:
-                        if (existing['user_id'] == c['user_id'] and 
-                            existing['value'] == c['value']):
-                            existing['devices'].append(device)
-                            found = True
-                            break
-                    if not found:
-                        all_cards.append(c)
+            all_access_logs = []
+            # Coleta dados da catraca
+            sync.set_device(device)
+            
+            # Primeiro sincroniza usuários pois outras entidades dependem deles
+            for user in sync.sync_users(device):
+                if user['id'] not in all_users:
+                    all_users[user['id']] = user
+                    all_users[user['id']]['devices'] = []
+                all_users[user['id']]['devices'].append(device)
+            
+            # Coleta dados de cada tipo
+            for tz in sync.sync_time_zones(device):
+                all_time_zones[tz['id']] = tz
+            
+            for ts in sync.sync_time_spans(device):
+                all_time_spans[ts['id']] = ts
+            
+            for ar in sync.sync_access_rules(device):
+                all_access_rules[ar['id']] = ar
+            
+            for a in sync.sync_areas(device):
+                all_areas[a['id']] = a
+            
+            for p in sync.sync_portals(device):
+                all_portals[p['id']] = p
+            
+            # Templates e Cards não têm ID na API, usamos user_id + dados como chave
+            for t in sync.sync_templates(device):
+                t['devices'] = [device]
+                all_templates.append(t)
+            
+            for c in sync.sync_cards(device):
+                c['devices'] = [device]
+                all_cards.append(c)
 
-                # Regras de acesso não têm ID próprio, são compostas
-                all_user_access_rules.extend(sync.sync_user_access_rules(device))
-                all_portal_access_rules.extend(sync.sync_portal_access_rules(device))
-                all_access_rule_time_zones.extend(sync.sync_access_rule_time_zones(device))
-                all_user_groups.extend(sync.sync_user_groups(device))
-                all_groups.extend(sync.sync_groups(device))
-                all_group_access_rules.extend(sync.sync_group_access_rules(device))
+            # Regras de acesso não têm ID próprio, são compostas
+            all_user_access_rules.extend(sync.sync_user_access_rules(device))
+            all_portal_access_rules.extend(sync.sync_portal_access_rules(device))
+            all_access_rule_time_zones.extend(sync.sync_access_rule_time_zones(device))
+            all_user_groups.extend(sync.sync_user_groups(device))
+            all_groups.extend(sync.sync_groups(device))
+            all_group_access_rules.extend(sync.sync_group_access_rules(device))
+            all_access_logs.extend(sync.sync_access_logs(device))
             # Atualiza o banco em uma única transação
             with transaction.atomic():
                 # Limpa dados antigos
@@ -400,6 +397,56 @@ def sync_all(request):
                     except (AccessRule.DoesNotExist, TimeZone.DoesNotExist):
                         continue  # Pula se a regra ou timezone não existir
 
+                # Agora que todas as entidades foram criadas, podemos criar os logs
+                AccessLogs.objects.all().delete()
+                valid_logs = []
+                print(f"Processando {len(all_access_logs)} logs...")
+                
+                for al in all_access_logs:
+                    try:
+                        # Verifica se todas as entidades relacionadas existem
+                        if not all([
+                            Device.objects.filter(id=al['device_id']).exists(),
+                            User.objects.filter(id=al['user_id']).exists(),
+                            Portal.objects.filter(id=al['portal_id']).exists(),
+                            AccessRule.objects.filter(id=al['identification_rule_id']).exists()
+                        ]):
+                            print(f"Log ignorado - entidades não encontradas: device={al['device_id']}, user={al['user_id']}, portal={al['portal_id']}, rule={al['identification_rule_id']}")
+                            continue
+
+                        valid_logs.append(
+                            AccessLogs(
+                                id=al['id'],
+                                time=datetime.fromtimestamp(int(al['time'])),
+                                event_type=al['event'],
+                                device_id=al['device_id'],
+                                identifier_id=al['identifier_id'],
+                                user_id=al['user_id'],
+                                portal_id=al['portal_id'],
+                                access_rule_id=al['identification_rule_id'],
+                                qr_code=al.get('qrcode_value', ''),
+                                uhf_value=al.get('uhf_tag', ''),
+                                pin_value=al.get('pin_value', ''),
+                                card_value=al.get('card_value', ''),
+                                confidence=al.get('confidence', 0),
+                                mask=al.get('mask', '')
+                            )
+                        )
+                    except Exception as e:
+                        print(f"Erro ao processar log: {str(e)}")
+                        continue
+
+                print(f"Logs válidos encontrados: {len(valid_logs)}")
+                if valid_logs:
+                    try:
+                        AccessLogs.objects.bulk_create(valid_logs)
+                        print("Logs criados com sucesso!")
+                    except Exception as e:
+                        print(f"Erro ao criar logs: {str(e)}")
+                        raise
+
+
+
             return Response({
                 "success": True,
                 "message": f"Sincronização global concluída com sucesso",
@@ -418,7 +465,8 @@ def sync_all(request):
                     "groups": len(all_groups),
                     "user_groups": len(all_user_groups),
                     "group_access_rules": len(all_group_access_rules),
-                    "devices": len(devices)
+                    "devices": 1,
+                    "access_logs": len(all_access_logs)
                 }
             })
             
