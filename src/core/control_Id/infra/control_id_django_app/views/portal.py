@@ -21,8 +21,8 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         response = self.create_objects("portals", [{
             "id": instance.id,
             "name": instance.name,
-            "area_from_id": instance.area_from_id.id,
-            "area_to_id": instance.area_to_id.id
+            "area_from_id": instance.area_from.id,
+            "area_to_id": instance.area_to.id
         }])
         
         if response.status_code != status.HTTP_201_CREATED:
@@ -41,8 +41,8 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         response = self.update_objects("portals", {
             "id": instance.id,
             "name": instance.name,
-            "area_from_id": instance.area_from_id.id,
-            "area_to_id": instance.area_to_id.id
+            "area_from_id": instance.area_from.id,
+            "area_to_id": instance.area_to.id
         }, {"portals": {"id": instance.id}})
         
         if response.status_code != status.HTTP_200_OK:

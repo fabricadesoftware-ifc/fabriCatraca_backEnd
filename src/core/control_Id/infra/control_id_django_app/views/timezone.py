@@ -33,10 +33,8 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                response = self.create_objects("time_zones", [{
-                    "id": instance.id,
-                    "name": instance.name
-                }])
+                print(f"Criando zona de tempo {instance.id} no dispositivo {device.id}")
+                response = self.create_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_201_CREATED:
                     instance.delete()
@@ -61,14 +59,7 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                response = self.update_objects(
-                    "time_zones",
-                    {
-                        "id": instance.id,
-                        "name": instance.name
-                    },
-                    {"time_zones": {"id": instance.id}}
-                )
+                response = self.update_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_200_OK:
                     return Response({
@@ -87,10 +78,7 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                response = self.destroy_objects(
-                    "time_zones",
-                    {"time_zones": {"id": instance.id}}
-                )
+                response = self.delete_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     return Response({

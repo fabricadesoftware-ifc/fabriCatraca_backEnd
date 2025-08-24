@@ -19,8 +19,8 @@ class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
 
         # Criar na catraca
         response = self.create_objects("portal_access_rules", [{
-            "portal_id": instance.portal_id_id,
-            "access_rule_id": instance.access_rule_id_id
+            "portal_id": instance.portal.id,
+            "access_rule_id": instance.access_rule.id
         }])
 
         if response.status_code != status.HTTP_201_CREATED:
@@ -39,10 +39,10 @@ class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
         response = self.update_objects(
             "portal_access_rules",
             {
-                "portal_id": instance.portal_id_id,
-                "access_rule_id": instance.access_rule_id_id
+                "portal_id": instance.portal.id,
+                "access_rule_id": instance.access_rule.id
             },
-            {"portal_access_rules": {"portal_id": instance.portal_id_id, "access_rule_id": instance.access_rule_id_id}}
+            {"portal_access_rules": {"portal_id": instance.portal.id, "access_rule_id": instance.access_rule.id}}
         )
 
         if response.status_code != status.HTTP_200_OK:
@@ -56,7 +56,7 @@ class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
         # Deletar na catraca
         response = self.destroy_objects(
             "portal_access_rules",
-            {"portal_access_rules": {"portal_id": instance.portal_id_id, "access_rule_id": instance.access_rule_id_id}}
+            {"portal_access_rules": {"portal_id": instance.portal.id, "access_rule_id": instance.access_rule.id}}
         )
 
         if response.status_code != status.HTTP_204_NO_CONTENT:

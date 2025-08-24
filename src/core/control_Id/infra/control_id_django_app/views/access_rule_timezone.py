@@ -21,8 +21,8 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
 
         # Criar na catraca
         response = self.create_objects("access_rule_time_zones", [{
-            "access_rule_id": instance.access_rule_id_id,
-            "time_zone_id": instance.time_zone_id_id
+            "access_rule_id": instance.access_rule.id,
+            "time_zone_id": instance.time_zone.id
         }])
 
         if response.status_code != status.HTTP_201_CREATED:
@@ -41,10 +41,10 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
         response = self.update_objects(
             "access_rule_time_zones",
             {
-                "access_rule_id": instance.access_rule_id_id,
-                "time_zone_id": instance.time_zone_id_id
+                "access_rule_id": instance.access_rule.id,
+                "time_zone_id": instance.time_zone.id
             },
-            {"access_rule_time_zones": {"access_rule_id": instance.access_rule_id_id, "time_zone_id": instance.time_zone_id_id}}
+            {"access_rule_time_zones": {"access_rule_id": instance.access_rule.id, "time_zone_id": instance.time_zone.id}}
         )
 
         if response.status_code != status.HTTP_200_OK:
@@ -58,7 +58,7 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
         # Deletar na catraca
         response = self.destroy_objects(
             "access_rule_time_zones",
-            {"access_rule_time_zones": {"access_rule_id": instance.access_rule_id_id, "time_zone_id": instance.time_zone_id_id}}
+            {"access_rule_time_zones": {"access_rule_id": instance.access_rule.id, "time_zone_id": instance.time_zone.id}}
         )
 
         if response.status_code != status.HTTP_204_NO_CONTENT:

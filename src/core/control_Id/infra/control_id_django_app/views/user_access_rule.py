@@ -18,8 +18,8 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
 
         # Criar na catraca
         response = self.create_objects("user_access_rules", [{
-            "user_id": instance.user_id_id,
-            "access_rule_id": instance.access_rule_id_id
+            "user_id": instance.user.id,
+            "access_rule_id": instance.access_rule.id
         }])
 
         if response.status_code != status.HTTP_201_CREATED:
@@ -38,10 +38,10 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
         response = self.update_objects(
             "user_access_rules",
             {
-                "user_id": instance.user_id_id,
-                "access_rule_id": instance.access_rule_id_id
+                "user_id": instance.user.id,
+                "access_rule_id": instance.access_rule.id
             },
-            {"user_access_rules": {"user_id": instance.user_id_id, "access_rule_id": instance.access_rule_id_id}}
+            {"user_access_rules": {"user_id": instance.user.id, "access_rule_id": instance.access_rule.id}}
         )
 
         if response.status_code != status.HTTP_200_OK:

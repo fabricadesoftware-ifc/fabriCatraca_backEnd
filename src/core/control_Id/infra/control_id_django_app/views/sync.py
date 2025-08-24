@@ -326,7 +326,7 @@ def sync_all(request):
                 ])
                 
                 Portal.objects.bulk_create([
-                    Portal(id=p['id'], name=p['name'], area_from_id=Area.objects.get(id=p['area_from_id']), area_to_id=Area.objects.get(id=p['area_to_id']))
+                    Portal(id=p['id'], name=p['name'], area_from_id=Area.objects.get(id=p['area_from_id']).id, area_to_id=Area.objects.get(id=p['area_to_id']).id)
                     for p in all_portals.values()
                 ])
                 
@@ -365,7 +365,7 @@ def sync_all(request):
                 for rule in all_user_access_rules:
                     try:
                         user = User.objects.get(id=rule['user_id'])
-                        access_rule = AccessRule.objects.get(id=rule['access_rule_id'])
+                        access_rule = AccessRule.objects.get(id=rule['access_rule_id']).id
                         UserAccessRule.objects.create(
                             user_id=user,  # Usa a instância do usuário
                             access_rule_id=access_rule  # Usa a instância da regra
@@ -388,8 +388,8 @@ def sync_all(request):
                 # Cria regras de acesso de timezone
                 for rule in all_access_rule_time_zones:
                     try:
-                        access_rule = AccessRule.objects.get(id=rule['access_rule_id'])
-                        time_zone = TimeZone.objects.get(id=rule['time_zone_id'])
+                        access_rule = AccessRule.objects.get(id=rule['access_rule_id']).id
+                        time_zone = TimeZone.objects.get(id=rule['time_zone_id']).id
                         AccessRuleTimeZone.objects.create(
                             access_rule_id=access_rule,  # Usa a instância da regra
                             time_zone_id=time_zone  # Usa a instância da timezone
