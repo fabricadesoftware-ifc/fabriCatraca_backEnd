@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 from src.core.control_Id.infra.control_id_django_app.serializers import UserGroupSerializer
 from src.core.__seedwork__.infra.mixins import UserGroupsSyncMixin
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["User Groups"])
 class UserGroupsViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
     queryset = UserGroup.objects.all()
     serializer_class = UserGroupSerializer

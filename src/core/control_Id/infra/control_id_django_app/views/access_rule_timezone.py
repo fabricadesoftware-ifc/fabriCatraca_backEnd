@@ -6,7 +6,9 @@ from ..serializers.access_rule_timezone import AccessRuleTimeZoneSerializer
 from src.core.__seedwork__.infra.mixins import AccessRuleTimeZoneSyncMixin
 from ..models.access_rule import AccessRule
 from ..models.timezone import TimeZone
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Access Rule Time Zone"])  
 class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewSet):
     queryset = AccessRuleTimeZone.objects.all()
     serializer_class = AccessRuleTimeZoneSerializer

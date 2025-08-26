@@ -6,5 +6,6 @@ class AccessLogsSerializer(serializers.ModelSerializer):
         model = AccessLogs
         fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask']
         read_only_fields = ['id']
+        depth = 1
 
 

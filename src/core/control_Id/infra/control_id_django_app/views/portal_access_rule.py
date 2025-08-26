@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from ..models.portal_access_rule import PortalAccessRule
 from ..serializers.portal_access_rule import PortalAccessRuleSerializer
 from src.core.__seedwork__.infra.mixins import PortalAccessRuleSyncMixin
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Portal Access Rules"])    
 class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
     queryset = PortalAccessRule.objects.all()
     serializer_class = PortalAccessRuleSerializer

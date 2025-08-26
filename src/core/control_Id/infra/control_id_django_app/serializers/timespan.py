@@ -10,3 +10,4 @@ class TimeSpanSerializer(serializers.ModelSerializer):
         fields = ['id', 'time_zone', 'start', 'end', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'hol1', 'hol2', 'hol3'] 
         read_only_fields = ['id']
         depth = 1
+        

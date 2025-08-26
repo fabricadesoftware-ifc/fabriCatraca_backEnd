@@ -1,10 +1,12 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from src.core.control_Id.infra.control_id_django_app.models import AccessLogs
 from src.core.control_Id.infra.control_id_django_app.serializers import AccessLogsSerializer
 from src.core.__seedwork__.infra.mixins import AccessLogsSyncMixin
 
+@extend_schema(tags=["Access Logs"])
 class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
     queryset = AccessLogs.objects.all()
     serializer_class = AccessLogsSerializer

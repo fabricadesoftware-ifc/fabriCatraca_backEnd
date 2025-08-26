@@ -3,7 +3,9 @@ from rest_framework.response import Response
 from ..models.user_access_rule import UserAccessRule
 from ..serializers.user_access_rule import UserAccessRuleSerializer
 from src.core.__seedwork__.infra.mixins import UserAccessRuleSyncMixin
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["User Access Rules"])
 class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
     queryset = UserAccessRule.objects.all()
     serializer_class = UserAccessRuleSerializer

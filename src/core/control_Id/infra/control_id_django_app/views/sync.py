@@ -10,6 +10,7 @@ from src.core.control_Id.infra.control_id_django_app.models import Device, Templ
 from src.core.user.infra.user_django_app.models import User
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
+from drf_spectacular.utils import extend_schema
 
 class GlobalSyncMixin(ControlIDSyncMixin):
     """Mixin para sincronização global com as catracas"""
@@ -148,6 +149,7 @@ class GlobalSyncMixin(ControlIDSyncMixin):
         )
         return access_logs
 
+@extend_schema(tags=["Config"])
 @api_view(['GET'])
 def sync_all(request):
     """Sincroniza todos os dados de todas as catracas ativas"""

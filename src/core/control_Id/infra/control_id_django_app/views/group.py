@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from src.core.control_Id.infra.control_id_django_app.models import CustomGroup
 from src.core.control_Id.infra.control_id_django_app.serializers import CustomGroupSerializer
 from src.core.__seedwork__.infra.mixins import GroupSyncMixin
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Groups"])
 class GroupViewSet(GroupSyncMixin, viewsets.ModelViewSet):
     queryset = CustomGroup.objects.all()
     serializer_class = CustomGroupSerializer

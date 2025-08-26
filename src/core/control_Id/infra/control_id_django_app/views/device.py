@@ -5,7 +5,9 @@ from django.db import transaction
 
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from src.core.control_Id.infra.control_id_django_app.serializers.device import DeviceSerializer
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Devices"])
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.all()
     serializer_class = DeviceSerializer

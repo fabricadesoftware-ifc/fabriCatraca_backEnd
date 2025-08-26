@@ -12,6 +12,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", 'django-insecure-nice_key')
 
 MODE = os.getenv("MODE")
 DEBUG = os.getenv("DEBUG", "False") == "True"
+APPEND_SLASH=False
 ALLOWED_HOSTS = ['*']
 CSRF_TRUSTED_ORIGINS = [
     # Subdomínios de fexcompany.me
@@ -77,7 +78,6 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
@@ -102,7 +102,7 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": "src.core.__seedwork__.infra.pagination.CustomPageNumberPagination",
     "PAGE_SIZE": 10,
 }
 

@@ -2,12 +2,14 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
+from drf_spectacular.utils import extend_schema
 
 from src.core.control_Id.infra.control_id_django_app.models.template import Template
 from src.core.control_Id.infra.control_id_django_app.serializers.template import TemplateSerializer
 from src.core.__seedwork__.infra.mixins import TemplateSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
+@extend_schema(tags=["Templates"]) 
 class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     queryset = Template.objects.all()
     serializer_class = TemplateSerializer

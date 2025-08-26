@@ -1,10 +1,12 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from ..models.access_rule import AccessRule
 from ..serializers.access_rule import AccessRuleSerializer
 from src.core.__seedwork__.infra.mixins import AccessRuleSyncMixin
 
+@extend_schema(tags=["Access Rules"]) 
 class AccessRuleViewSet(AccessRuleSyncMixin, viewsets.ModelViewSet):
     queryset = AccessRule.objects.all()
     serializer_class = AccessRuleSerializer

@@ -7,7 +7,9 @@ from src.core.control_Id.infra.control_id_django_app.models.cards import Card
 from src.core.control_Id.infra.control_id_django_app.serializers.cards import CardSerializer
 from src.core.__seedwork__.infra.mixins import CardSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Cards"])
 class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer

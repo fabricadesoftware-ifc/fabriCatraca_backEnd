@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from ..models.portal import Portal
 from ..serializers.portal import PortalSerializer
 from src.core.__seedwork__.infra.mixins import PortalSyncMixin
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Portals"])
 class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
     queryset = Portal.objects.all()
     serializer_class = PortalSerializer

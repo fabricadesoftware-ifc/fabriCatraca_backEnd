@@ -2,12 +2,14 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.db import transaction
 from rest_framework.decorators import action
+from drf_spectacular.utils import extend_schema
 
 from ..models.timezone import TimeZone
 from ..serializers.timezone import TimeZoneSerializer
 from src.core.__seedwork__.infra.mixins import TimeZoneSyncMixin
 from ..models.device import Device
 
+@extend_schema(tags=["Time Zones"]) 
 class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
     queryset = TimeZone.objects.all()
     serializer_class = TimeZoneSerializer

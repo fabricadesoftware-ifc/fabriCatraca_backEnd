@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from src.core.control_Id.infra.control_id_django_app.models import GroupAccessRule
 from src.core.control_Id.infra.control_id_django_app.serializers import GroupAccessRuleSerializer
 from src.core.__seedwork__.infra.mixins import GroupAccessRulesSyncMixin
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Group Access Rules"])
 class GroupAccessRulesViewSet(GroupAccessRulesSyncMixin, viewsets.ModelViewSet):
     queryset = GroupAccessRule.objects.all()
     serializer_class = GroupAccessRuleSerializer

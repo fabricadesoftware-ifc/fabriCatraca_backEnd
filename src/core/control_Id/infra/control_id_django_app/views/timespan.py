@@ -7,7 +7,9 @@ from ..models.timespan import TimeSpan
 from ..serializers.timespan import TimeSpanSerializer
 from src.core.__seedwork__.infra.mixins import TimeSpanSyncMixin
 from ..models.device import Device
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Time Spans"]) 
 class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
     queryset = TimeSpan.objects.all()
     serializer_class = TimeSpanSerializer
