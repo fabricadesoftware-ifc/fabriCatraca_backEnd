@@ -6,7 +6,9 @@ from .models import User
 from .serializers import UserSerializer
 from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from drf_spectacular.utils import extend_schema
 
+@extend_schema(tags=["Users"])
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('id')
     serializer_class = UserSerializer
