@@ -10,7 +10,7 @@ from drf_spectacular.utils import extend_schema
 
 @extend_schema(tags=["Users"])
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by('id')
+    queryset = User.objects.all().order_by('id').prefetch_related('usergroup_set')
     serializer_class = UserSerializer
     filterset_fields = ['id', 'name', 'registration', 'user_type_id']
     search_fields = ['name']
