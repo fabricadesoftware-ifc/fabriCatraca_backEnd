@@ -52,7 +52,7 @@ class UserGroupsViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         
         # Deletar na catraca
-        response = self.destroy_objects("user_groups", {"user_groups": {"id": instance.id}})
+        response = self.destroy_objects("user_groups", {"user_groups": {"user_id": instance.user.id, "group_id": instance.group.id}})
         
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

@@ -13,6 +13,7 @@ from src.core.control_Id.infra.control_id_django_app.models.device import Device
 class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     queryset = Template.objects.all()
     serializer_class = TemplateSerializer
+    filterset_fields = ['user']
 
     def create(self, request, *args, **kwargs):
         """

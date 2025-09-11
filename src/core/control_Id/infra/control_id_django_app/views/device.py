@@ -38,11 +38,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
             mixin.set_device(device)
             mixin.login()
             
+            
+            Device.objects.filter(id=device.id).update(is_active=True)
             return Response({
                 "success": True,
                 "message": "Conexão estabelecida com sucesso"
             })
         except Exception as e:
+            Device.objects.filter(id=device.id).update(is_active=False)
             return Response({
                 "success": False,
                 "error": str(e)
