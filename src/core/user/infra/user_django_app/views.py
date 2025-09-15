@@ -70,12 +70,12 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 self.set_device(device)
                 response = self.update_objects(
                     "users",
-                    [{
+                    {
                         "id": instance.id,
                         "name": instance.name,
                         "registration": instance.registration,
                         "user_type_id": instance.user_type_id
-                    }],
+                    },
                     {"users": {"id": instance.id}}
                 )
                 if response.status_code != status.HTTP_200_OK:
@@ -93,6 +93,21 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         
         with transaction.atomic():
+            # Primeiro remove todas as relações
+            instance.useraccessrule_set.all().delete()  # Regras de acesso
+            instance.usergroup_set.all().delete()       # Grupos de usuário
+            instance.templates.all().delete()           # Templates
+            instance.cards.all().delete()               # Cartões
+            
+            # Remove relações ManyToMany
+            instance.devices.clear()                    # Relação com dispositivos
+            instance.groups.clear()                     # Grupos do Django
+            instance.user_permissions.clear()           # Permissões do Django
+            
+            # Define o user como NULL nos logs de acesso (já que usa DO_NOTHING)
+            from src.core.control_Id.infra.control_id_django_app.models.access_logs import AccessLogs
+            AccessLogs.objects.filter(user=instance).update(user=None)
+            
             # Remove o usuário de todas as catracas ativas
             devices = Device.objects.filter(is_active=True)
             

@@ -13,4 +13,4 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'registration', 'user_type_id', 'devices', 'user_groups']
 
     def get_user_groups(self, obj):
-        return [group.name for group in Group.objects.filter(usergroup__user=obj)]
+        return [{"id": group.id, "name": group.name} for group in Group.objects.filter(usergroup__user=obj)]
