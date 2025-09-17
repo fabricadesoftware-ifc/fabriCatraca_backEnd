@@ -14,3 +14,13 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_user_groups(self, obj):
         return [{"id": group.id, "name": group.name} for group in Group.objects.filter(usergroup__user=obj)]
+
+    def validate_user_type_id(self, value):
+        """Normaliza valores inválidos para None.
+
+        A catraca rejeita chaves estrangeiras inválidas. Quando recebemos 0 (ou strings vazias),
+        tratamos como None para representar "sem tipo" e evitar violar constraints no device.
+        """
+        if value in (0, "0", "", None):
+            return None
+        return value

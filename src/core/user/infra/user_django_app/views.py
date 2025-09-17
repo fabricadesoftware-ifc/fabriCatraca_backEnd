@@ -25,6 +25,10 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         with transaction.atomic():
             # Primeiro salvamos o usuário no banco
             instance = serializer.save()
+            # Normaliza valor 0 persistido
+            if instance.user_type_id in (0, "0"):
+                instance.user_type_id = None
+                instance.save(update_fields=["user_type_id"])
             
             # Pega todas as catracas ativas
             devices = Device.objects.filter(is_active=True)
@@ -34,12 +38,14 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 self.set_device(device)
                 
                 # Criar na catraca
-                response = self.create_objects("users", [{
+                create_payload = {
                     "id": instance.id,
                     "name": instance.name,
                     "registration": instance.registration,
-                    "user_type_id": instance.user_type_id
-                }])
+                }
+                if instance.user_type_id is not None:
+                    create_payload["user_type_id"] = instance.user_type_id
+                response = self.create_objects("users", [create_payload])
                 
                 if response.status_code != status.HTTP_201_CREATED:
                     # Se falhar em alguma catraca, reverte tudo
@@ -65,17 +71,23 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             
             # Atualiza em todas as catracas ativas
             devices = Device.objects.filter(is_active=True)
+            print(devices)
             
             for device in devices:
                 self.set_device(device)
+                # Normaliza valor 0 antes de enviar
+                if instance.user_type_id in (0, "0"):
+                    instance.user_type_id = None
+                    instance.save(update_fields=["user_type_id"])
+
+                update_values = {
+                    "name": instance.name,
+                }
+                if instance.user_type_id is not None:
+                    update_values["user_type_id"] = instance.user_type_id
                 response = self.update_objects(
                     "users",
-                    {
-                        "id": instance.id,
-                        "name": instance.name,
-                        "registration": instance.registration,
-                        "user_type_id": instance.user_type_id
-                    },
+                    update_values,
                     {"users": {"id": instance.id}}
                 )
                 if response.status_code != status.HTTP_200_OK:
