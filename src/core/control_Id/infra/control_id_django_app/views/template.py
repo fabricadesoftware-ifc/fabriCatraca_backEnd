@@ -33,13 +33,22 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             enrollment_device = Device.objects.get(id=enrollment_device_id)
             self.set_device(enrollment_device)
             
+            # Captura user_id do corpo ou querystring
+            user_id = request.data.get('user_id') or request.query_params.get('user_id') or request.data.get('user')
+            if not user_id:
+                return Response({
+                    "error": "Erro ao processar template",
+                    "details": "{'user_id': [ErrorDetail(string='Este campo é obrigatório.', code='required')]}"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             # Primeiro cria no banco para ter o ID
             serializer = self.get_serializer(data={
-                "user": request.data.get('user'),
+                "user_id": user_id,
                 "enrollment_device_id": enrollment_device_id
             })
             serializer.is_valid(raise_exception=True)
             instance = serializer.save()
+            print(instance.user)
             
             # Faz o cadastro remoto
             response = self.remote_enroll(
@@ -68,6 +77,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 
                 for device in devices:
                     self.set_device(device)
+                    print(instance.user)
                     
                     create_response = self.create_objects("templates", [{
                         "id": instance.id,

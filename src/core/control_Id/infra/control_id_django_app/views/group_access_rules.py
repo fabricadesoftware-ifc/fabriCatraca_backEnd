@@ -52,7 +52,7 @@ class GroupAccessRulesViewSet(GroupAccessRulesSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         
         # Deletar na catraca
-        response = self.destroy_objects("group_access_rules", {"group_access_rules": {"id": instance.id}})
+        response = self.destroy_objects("group_access_rules", {"group_access_rules": {"group_id": instance.group.id, "access_rule_id": instance.access_rule.id}})
         
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response
