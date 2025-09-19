@@ -21,7 +21,8 @@ dependencies = [
     "openpyxl>=3.1.5", 
     "whitenoise>=6.11.0", 
     "gunicorn>=23.0.0", 
-    "psycopg2-binary>=2.9.10"
+    "psycopg2-binary>=2.9.10", 
+    "pandas>=2.3.2"
     ]
 requires-python = ">=3.13"
 readme = "README.md"
