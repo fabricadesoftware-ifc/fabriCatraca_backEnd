@@ -1,14 +1,15 @@
-from core.user.infra.user_django_app.models import User
-from rest_framework.generics import GenericAPIView
+from src.core.user.infra.user_django_app.models import User
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import pandas as pd
 import re
 
-class ExportUsersView(GenericAPIView):
+class ExportUsersView(APIView):
     """
     View to export users to an Excel file.
     """
+    
     def get(self, request, *args, **kwargs):
         try:
             users = User.objects.all().values('id', 'name', 'email', 'is_active', 'created_at', 'updated_at')

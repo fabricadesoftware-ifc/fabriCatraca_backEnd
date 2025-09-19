@@ -1,7 +1,7 @@
 from .device import DeviceSerializer
 from .template import TemplateSerializer
 from .timezone import TimeZoneSerializer
-from .timespan import TimeSpanSerializer
+from .timespan import TimeSpanSerializerList, TimeSpanSerializerCreateUpdate
 from .access_rule import AccessRuleSerializer
 from .user_access_rule import UserAccessRuleSerializer
 from .access_rule_timezone import AccessRuleTimeZoneSerializer
@@ -17,7 +17,8 @@ from .access_logs import AccessLogsSerializer
 __all__ = [
     'TemplateSerializer',
     'TimeZoneSerializer',
-    'TimeSpanSerializer',
+    'TimeSpanSerializerList',
+    'TimeSpanSerializerCreateUpdate',
     'AccessRuleSerializer',
     'UserAccessRuleSerializer',
     'AccessRuleTimeZoneSerializer',

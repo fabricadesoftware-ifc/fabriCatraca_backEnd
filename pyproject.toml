@@ -1,7 +1,7 @@
 [project]
 name = "fabriCatraca"
-version = "0.1.0"
-description = "Default template for PDM package"
+version = "1.0.0"
+description = "Gerenciamento das Catracas do IFC - Campus Araquari"
 authors = [
     {name = "jonatasperaza", email = "jonatassilvaperaza@gmail.com"},
 ]
@@ -17,16 +17,23 @@ dependencies = [
     "rest-framework-simplejwt>=0.0.2", 
     "drf-spectacular>=0.28.0", 
     "django-filter>=25.1", 
-    "requests>=2.32.4"
+    "requests>=2.32.4", 
+    "openpyxl>=3.1.5", 
+    "whitenoise>=6.11.0", 
+    "gunicorn>=23.0.0", 
+    "psycopg2-binary>=2.9.10"
     ]
 requires-python = ">=3.13"
 readme = "README.md"
 license = {text = "MIT"}
 
+[[tool.pdm.autoexport]]
+filename = "requirements.txt"
+without-hashes = "true"
+
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
-
 
 [tool.pdm]
 distribution = true

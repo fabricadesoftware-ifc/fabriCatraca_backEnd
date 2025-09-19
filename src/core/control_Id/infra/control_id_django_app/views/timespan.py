@@ -3,8 +3,8 @@ from rest_framework.response import Response
 from django.db import transaction
 from rest_framework.decorators import action
 
-from ..models.timespan import TimeSpan
-from ..serializers.timespan import TimeSpanSerializer
+from ..models import TimeSpan
+from ..serializers.timespan import TimeSpanSerializerList, TimeSpanSerializerCreateUpdate
 from src.core.__seedwork__.infra.mixins import TimeSpanSyncMixin
 from ..models.device import Device
 from drf_spectacular.utils import extend_schema
@@ -12,7 +12,12 @@ from drf_spectacular.utils import extend_schema
 @extend_schema(tags=["Time Spans"]) 
 class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
     queryset = TimeSpan.objects.all()
-    serializer_class = TimeSpanSerializer
+    
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return TimeSpanSerializerList
+        return TimeSpanSerializerCreateUpdate
+        
     filterset_fields = ['id', 'time_zone', 'start', 'end']
     search_fields = ['time_zone__name']
     ordering_fields = ['id', 'start', 'end']
