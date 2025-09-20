@@ -11,6 +11,7 @@ from .areas import AreaViewSet
 from .group import GroupViewSet
 from .user_groups import UserGroupsViewSet
 from .group_access_rules import GroupAccessRulesViewSet
+from .sync import sync_all, sync_status
 
 __all__ = [
     'TemplateViewSet',
@@ -26,4 +27,6 @@ __all__ = [
     'GroupViewSet',
     'UserGroupsViewSet',
     'GroupAccessRulesViewSet',
+    'sync_all',
+    'sync_status'
 ] 

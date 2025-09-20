@@ -2,6 +2,7 @@ from datetime import timedelta
 import os
 from pathlib import Path
 import dj_database_url
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +14,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", 'django-insecure-nice_key')
 MODE = os.getenv("MODE")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 APPEND_SLASH=False
+BROKER_URL = os.getenv("BROKER_URL", "amqp://rafaelbochi:2012@localhost/fabricapainel")
 ALLOWED_HOSTS = ['*']
 CSRF_TRUSTED_ORIGINS = [
     # Subdomínios de fexcompany.me
@@ -70,11 +72,14 @@ INSTALLED_APPS = [
     "corsheaders",
     "simple_history",
     "drf_spectacular",
+     "django_celery_beat",
     "django_filters",
     "rest_framework",
     "debug_toolbar",
     "src.core.user.infra.user_django_app",
     "src.core.control_Id.infra.control_id_django_app",
+    # Celery results backend via django-celery-results (opcional)
+    # "django_celery_results",
 ]
 
 MIDDLEWARE = [
@@ -203,3 +208,10 @@ INTERNAL_IPS = ["127.0.0.1", "localhost", "0.0.0.0"]
 CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
 CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')
 CATRAKA_PASS = os.getenv("CATRAKA_PASS", 'nice_pass')
+
+CELERY_TIMEZONE = "America/Sao_Paulo"
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_RESULT_BACKEND = "rpc://"
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', BROKER_URL)

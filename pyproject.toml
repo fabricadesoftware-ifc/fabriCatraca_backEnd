@@ -21,8 +21,12 @@ dependencies = [
     "openpyxl>=3.1.5", 
     "whitenoise>=6.11.0", 
     "gunicorn>=23.0.0", 
+    "celery>=5.5.3",
     "psycopg2-binary>=2.9.10", 
-    "pandas>=2.3.2"
+    "pandas>=2.3.2", 
+    "numpy>=2.3.3", 
+    "django-celery-results>=2.6.0", 
+    "django-celery-beat>=2.8.1"
     ]
 requires-python = ">=3.13"
 readme = "README.md"
@@ -50,3 +54,5 @@ test = "python src/manage.py test"
 startapp = "python src/manage.py startapp {args}"
 loaddata = "python src/manage.py loaddata {args}"
 dumpdata = "python src/manage.py dumpdata {args}"
+celery = "celery -A src.django_project worker --loglevel=INFO --concurrency=10 -n worker1.%h --pool=solo"
+beat = "celery -A src.django_project beat --loglevel=INFO"

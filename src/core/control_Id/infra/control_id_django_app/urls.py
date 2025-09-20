@@ -13,7 +13,7 @@ from .views import (
     GroupViewSet, UserGroupsViewSet, GroupAccessRulesViewSet,
 )
 from .views.device import DeviceViewSet
-from .views.sync import sync_all
+from .views.sync import sync_all, sync_status
 from .utils import ExportUsersView, ImportUsersView
 
 router = DefaultRouter()
@@ -49,6 +49,7 @@ def control_id_root(request, format=None):
         'areas': reverse('area-list', request=request, format=format),
         'groups': reverse('customgroup-list', request=request, format=format),
         'sync': reverse('sync-all', request=request, format=format),
+        'sync_status': reverse('sync-status', request=request, format=format),
         'user_groups': reverse('usergroup-list', request=request, format=format),
         'group_access_rules': reverse('groupaccessrule-list', request=request, format=format),
         'access_logs': reverse('accesslogs-list', request=request, format=format),
@@ -59,6 +60,7 @@ def control_id_root(request, format=None):
 urlpatterns = [
     path('', control_id_root, name='control_id-root'),
     path('sync/', sync_all, name='sync-all'),
+    path('sync/status/', sync_status, name='sync-status'),
     path('export-users/', ExportUsersView.as_view(), name='export-users'),
     path('import-users/', ImportUsersView.as_view(), name='import-users'),
     path('', include(router.urls)),
