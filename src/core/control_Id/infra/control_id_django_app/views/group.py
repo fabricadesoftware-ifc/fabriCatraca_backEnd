@@ -15,20 +15,14 @@ class GroupViewSet(GroupSyncMixin, viewsets.ModelViewSet):
     ordering_fields = ['id', 'name']
     
     def create(self, request, *args, **kwargs):
+        # Local-first para garantir a autoridade de IDs do backend
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
-        
-        # Criar na catraca
-        response = self.create_objects("groups", [{
-            "id": instance.id,
-            "name": instance.name
-        }])
-        
+        response = self.create_in_catraca(instance)
         if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
+            instance.delete()
             return response
-        
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     def update(self, request, *args, **kwargs):

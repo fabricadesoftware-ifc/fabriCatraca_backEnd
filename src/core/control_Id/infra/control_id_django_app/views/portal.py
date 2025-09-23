@@ -19,13 +19,7 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         
-        # Criar na catraca
-        response = self.create_objects("portals", [{
-            "id": instance.id,
-            "name": instance.name,
-            "area_from_id": instance.area_from.id,
-            "area_to_id": instance.area_to.id
-        }])
+        response = self.create_in_catraca(instance)
         
         if response.status_code != status.HTTP_201_CREATED:
             instance.delete()  # Reverte se falhar na catraca
@@ -39,13 +33,7 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         
-        # Atualizar na catraca
-        response = self.update_objects("portals", {
-            "id": instance.id,
-            "name": instance.name,
-            "area_from_id": instance.area_from.id,
-            "area_to_id": instance.area_to.id
-        }, {"portals": {"id": instance.id}})
+        response = self.update_in_catraca(instance)
         
         if response.status_code != status.HTTP_200_OK:
             return response
@@ -55,8 +43,7 @@ class PortalViewSet(PortalSyncMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         
-        # Deletar na catraca
-        response = self.destroy_objects("portals", {"portals": {"id": instance.id}})
+        response = self.delete_in_catraca(instance)
         
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

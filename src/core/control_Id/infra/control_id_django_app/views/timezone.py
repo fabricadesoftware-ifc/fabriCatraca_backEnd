@@ -35,7 +35,6 @@ class TimeZoneViewSet(TimeZoneSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                print(f"Criando zona de tempo {instance.id} no dispositivo {device.id}")
                 response = self.create_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_201_CREATED:

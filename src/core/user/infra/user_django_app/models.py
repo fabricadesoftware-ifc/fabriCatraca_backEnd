@@ -15,7 +15,7 @@ class User(AbstractUser):
     
     username = None
     name = models.CharField(max_length=255)
-    registration = models.CharField(max_length=50, blank=True, null=True)
+    registration = models.CharField(max_length=50, blank=True, null=True, unique=True)
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=255, null=True, blank=True)
     user_type_id = models.IntegerField(choices=UserType.choices, null=True, blank=True, help_text="Visitantes terão id 1, usuarios cadastrados serão nulo")

@@ -18,11 +18,7 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
 
-        # Criar na catraca
-        response = self.create_objects("user_access_rules", [{
-            "user_id": instance.user.id,
-            "access_rule_id": instance.access_rule.id
-        }])
+        response = self.create_in_catraca(instance)
 
         if response.status_code != status.HTTP_201_CREATED:
             instance.delete()  # Reverte se falhar na catraca
@@ -36,15 +32,7 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
 
-        # Atualizar na catraca
-        response = self.update_objects(
-            "user_access_rules",
-            {
-                "user_id": instance.user.id,
-                "access_rule_id": instance.access_rule.id
-            },
-            {"user_access_rules": {"user_id": instance.user.id, "access_rule_id": instance.access_rule.id}}
-        )
+        response = self.update_in_catraca(instance)
 
         if response.status_code != status.HTTP_200_OK:
             return response
@@ -54,11 +42,7 @@ class UserAccessRuleViewSet(UserAccessRuleSyncMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        # Deletar na catraca
-        response = self.destroy_objects(
-            "user_access_rules",
-            {"user_access_rules": {"user_id": instance.user_id_id, "access_rule_id": instance.access_rule_id_id}}
-        )
+        response = self.delete_in_catraca(instance)
 
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

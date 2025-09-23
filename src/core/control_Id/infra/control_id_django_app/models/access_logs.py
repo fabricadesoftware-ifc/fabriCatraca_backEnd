@@ -25,7 +25,7 @@ class AccessLogs(models.Model):
     event_type = models.IntegerField(choices=EventType.choices)
     device = models.ForeignKey(Device, on_delete=models.DO_NOTHING)
     identifier_id = models.CharField(max_length=255)
-    user = models.ForeignKey(User, on_delete=models.DO_NOTHING)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     portal = models.ForeignKey(Portal, on_delete=models.DO_NOTHING)
     access_rule = models.ForeignKey(AccessRule, on_delete=models.DO_NOTHING)
     qr_code = models.CharField(max_length=255)

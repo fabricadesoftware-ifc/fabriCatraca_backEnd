@@ -19,11 +19,7 @@ class UserGroupsViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         
-        # Criar na catraca
-        response = self.create_objects("user_groups", [{
-            "user_id": instance.user.id,
-            "group_id": instance.group.id
-        }])
+        response = self.create_in_catraca(instance)
         
         if response.status_code != status.HTTP_201_CREATED:
             instance.delete()  # Reverte se falhar na catraca
@@ -37,11 +33,7 @@ class UserGroupsViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         
-        # Atualizar na catraca
-        response = self.update_objects("user_groups", {
-            "user_id": instance.user.id,
-            "group_id": instance.group.id
-        }, {"user_groups": {"id": instance.id}})
+        response = self.update_in_catraca(instance)
         
         if response.status_code != status.HTTP_200_OK:
             return response
@@ -51,8 +43,7 @@ class UserGroupsViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         
-        # Deletar na catraca
-        response = self.destroy_objects("user_groups", {"user_groups": {"user_id": instance.user.id, "group_id": instance.group.id}})
+        response = self.delete_in_catraca(instance)
         
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

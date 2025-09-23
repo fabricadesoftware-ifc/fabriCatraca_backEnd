@@ -40,22 +40,7 @@ class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                response = self.create_objects("time_spans", [{
-                    "id": instance.id,
-                    "time_zone_id": instance.time_zone_id,
-                    "start": instance.start,
-                    "end": instance.end,
-                    "sun": 1 if instance.sun else 0,
-                    "mon": 1 if instance.mon else 0,
-                    "tue": 1 if instance.tue else 0,
-                    "wed": 1 if instance.wed else 0,
-                    "thu": 1 if instance.thu else 0,
-                    "fri": 1 if instance.fri else 0,
-                    "sat": 1 if instance.sat else 0,
-                    "hol1": 1 if instance.hol1 else 0,
-                    "hol2": 1 if instance.hol2 else 0,
-                    "hol3": 1 if instance.hol3 else 0
-                }])
+                response = self.create_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_201_CREATED:
                     instance.delete()
@@ -80,26 +65,7 @@ class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                response = self.update_objects(
-                    "time_spans",
-                    {
-                        "id": instance.id,
-                        "time_zone_id": instance.time_zone_id,
-                        "start": instance.start,
-                        "end": instance.end,
-                        "sun": 1 if instance.sun else 0,
-                        "mon": 1 if instance.mon else 0,
-                        "tue": 1 if instance.tue else 0,
-                        "wed": 1 if instance.wed else 0,
-                        "thu": 1 if instance.thu else 0,
-                        "fri": 1 if instance.fri else 0,
-                        "sat": 1 if instance.sat else 0,
-                        "hol1": 1 if instance.hol1 else 0,
-                        "hol2": 1 if instance.hol2 else 0,
-                        "hol3": 1 if instance.hol3 else 0
-                    },
-                    {"time_spans": {"id": instance.id}}
-                )
+                response = self.update_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_200_OK:
                     return Response({
@@ -118,10 +84,7 @@ class TimeSpanViewSet(TimeSpanSyncMixin, viewsets.ModelViewSet):
             
             for device in devices:
                 self.set_device(device)
-                response = self.destroy_objects(
-                    "time_spans",
-                    {"time_spans": {"id": instance.id}}
-                )
+                response = self.delete_in_catraca(instance)
                 
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     return Response({

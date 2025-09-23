@@ -6,8 +6,8 @@ from rest_framework import status
 class GroupAccessRulesSyncMixin(ControlIDSyncMixin):
     def create_in_catraca(self, instance):
         response = self.create_objects("group_access_rules", [{
-            "user_id": instance.user.id,
-            "access_rule_id": instance.group.id
+            "group_id": instance.group.id,
+            "access_rule_id": instance.access_rule.id
         }])
         return response
     
@@ -15,17 +15,17 @@ class GroupAccessRulesSyncMixin(ControlIDSyncMixin):
         response = self.update_objects(
             "group_access_rules",
             {
-                "group_id": instance.user.id,
-                "access_rule_id": instance.group.id
+                "group_id": instance.group.id,
+                "access_rule_id": instance.access_rule.id
             },
-            {"group_access_rules": {"id": instance.id}}
+            {"group_access_rules": {"group_id": instance.group.id, "access_rule_id": instance.access_rule.id}}
         )
         return response
     
     def delete_in_catraca(self, instance):
         response = self.destroy_objects(
             "group_access_rules",
-            {"group_access_rules": {"id": instance.id}}
+            {"group_access_rules": {"group_id": instance.group.id, "access_rule_id": instance.access_rule.id}}
         )
         return response
     

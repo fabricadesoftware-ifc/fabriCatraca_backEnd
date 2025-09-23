@@ -107,8 +107,40 @@ class ControlIDSyncMixin:
             if not devices:
                 return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
             
+            # Validação de campos obrigatórios para garantir IDs consistentes entre backend e catracas
+            required_fields_by_object = {
+                # Entidades com ID controlado pelo backend
+                "users": ["id", "name"],
+                "groups": ["id", "name"],
+                "access_rules": ["id", "name", "type", "priority"],
+                "time_zones": ["id", "name"],
+                "time_spans": ["id", "time_zone_id", "start", "end", "sun", "mon", "tue", "wed", "thu", "fri", "sat", "hol1", "hol2", "hol3"],
+                "areas": ["id", "name"],
+                "portals": ["id", "name", "area_from_id", "area_to_id"],
+                "templates": ["id", "user_id", "template"],
+                "cards": ["id", "user_id", "value"],
+                # Relações (pares únicos)
+                "user_groups": ["user_id", "group_id"],
+                "user_access_rules": ["user_id", "access_rule_id"],
+                "portal_access_rules": ["portal_id", "access_rule_id"],
+                "group_access_rules": ["group_id", "access_rule_id"],
+                "access_rule_time_zones": ["access_rule_id", "time_zone_id"],
+            }
+
+            if object_name in required_fields_by_object:
+                req_fields = required_fields_by_object[object_name]
+                for idx, v in enumerate(values):
+                    missing = [f for f in req_fields if v.get(f) in (None, "")]
+                    if missing:
+                        return Response({
+                            "error": f"Campos obrigatórios ausentes para {object_name}",
+                            "index": idx,
+                            "missing": missing,
+                        }, status=status.HTTP_400_BAD_REQUEST)
+
+            first_response_data = None
             with transaction.atomic():
-                for device in devices:
+                for idx, device in enumerate(devices):
                     self.set_device(device)
                     sess = self.login()
                     response = requests.post(
@@ -118,8 +150,13 @@ class ControlIDSyncMixin:
                     if response.status_code != 200:
                         raise Exception(response.json())
                     response.raise_for_status()
+                    if idx == 0:
+                        try:
+                            first_response_data = response.json()
+                        except Exception:
+                            first_response_data = {"success": True}
                 
-                return Response({"success": True}, status=status.HTTP_201_CREATED)
+                return Response(first_response_data or {"success": True}, status=status.HTTP_201_CREATED)
                 
         except requests.RequestException as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

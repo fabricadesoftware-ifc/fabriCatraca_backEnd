@@ -58,24 +58,23 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         Cria o usuário em todas as catracas ativas usando a mesma lógica do UserViewSet.
         """
         try:
-            devices = Device.objects.filter(is_active=True)
+            devices = list(Device.objects.filter(is_active=True))
             if not devices:
                 return False, "Nenhuma catraca ativa encontrada"
-            
+
+            # Cria em todas as catracas (mixin já itera em todas)
+            response = self.create_objects("users", [{
+                "name": user.name,
+                "registration": user.registration,
+            }])
+
+            if response.status_code != status.HTTP_201_CREATED:
+                return False, f"Erro ao criar usuário na catraca: {getattr(response, 'data', response.__dict__)}"
+
+            # Associa o user a todos os devices ativos
             for device in devices:
-                self.set_device(device)
-                
-                response = self.create_objects("users", [{
-                    "id": user.id,
-                    "name": user.name,
-                    "registration": user.registration,
-                }])
-                
-                if response.status_code != status.HTTP_201_CREATED:
-                    return False, f"Erro ao criar usuário na catraca {device.name}: {response.data}"
-                
                 device.users.add(user)
-            
+
             return True, "Usuário criado com sucesso em todas as catracas"
             
         except Exception as e:
@@ -86,25 +85,118 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         Cria o grupo em todas as catracas ativas.
         """
         try:
-            devices = Device.objects.filter(is_active=True)
+            devices = list(Device.objects.filter(is_active=True))
             if not devices:
                 return False, "Nenhuma catraca ativa encontrada"
-            
-            for device in devices:
-                self.set_device(device)
-                
-                response = self.create_objects("groups", [{
-                    "id": group.id,
-                    "name": group.name
-                }])
-                
-                if response.status_code != status.HTTP_201_CREATED:
-                    return False, f"Erro ao criar grupo na catraca {device.name}: {response.data}"
-            
+
+            response = self.create_objects("groups", [{
+                "id": group.id,
+                "name": group.name
+            }])
+
+            if response.status_code != status.HTTP_201_CREATED:
+                return False, f"Erro ao criar grupo na catraca: {getattr(response, 'data', response.__dict__)}"
+
             return True, "Grupo criado com sucesso em todas as catracas"
-            
+
         except Exception as e:
             return False, f"Erro ao criar grupo na catraca: {str(e)}"
+
+    def create_group_remote_then_local(self, group_name: str):
+        """
+        Cria primeiro o grupo na catraca (todas as catracas) e, com o ID retornado,
+        cria o CustomGroup local com esse ID.
+        Retorna (instance, error_message)
+        """
+        try:
+            # 0) Verifica se já existe na catraca por nome
+            remote_id = None
+            try:
+                all_groups = self.load_objects("groups", fields=["id", "name"], order_by=["id"])  # type: ignore[attr-defined]
+                for g in reversed(all_groups):
+                    if g.get("name") == group_name and g.get("id") is not None:
+                        remote_id = g["id"]
+                        break
+            except Exception:
+                remote_id = None
+
+            # 1) Se não existir remoto, cria
+            if not remote_id:
+                response = self.create_objects("groups", [{"name": group_name}])
+                if response.status_code != status.HTTP_201_CREATED:
+                    return None, f"Erro ao criar grupo na catraca: {getattr(response, 'data', response.__dict__)}"
+
+                data = getattr(response, "data", None) or {}
+                try:
+                    if isinstance(data, dict):
+                        if "groups" in data and isinstance(data["groups"], list) and data["groups"]:
+                            first = data["groups"][0]
+                            remote_id = first.get("id") if isinstance(first, dict) else None
+                        elif "id" in data:
+                            remote_id = data.get("id")
+                except Exception:
+                    remote_id = None
+
+                # 1.b) Fallback pós-criação
+                if not remote_id:
+                    try:
+                        all_groups = self.load_objects("groups", fields=["id", "name"], order_by=["id"])  # type: ignore[attr-defined]
+                        for g in reversed(all_groups):
+                            if g.get("name") == group_name and g.get("id") is not None:
+                                remote_id = g["id"]
+                                break
+                    except Exception:
+                        remote_id = None
+
+            if not remote_id:
+                return None, "Não foi possível obter o ID do grupo criado na catraca"
+
+            # Criação local com savepoint para evitar quebrar transação exterior
+            sp = transaction.savepoint()
+            try:
+                instance = Group.objects.create(id=remote_id, name=group_name)
+                transaction.savepoint_commit(sp)
+                return instance, None
+            except Exception as e:
+                transaction.savepoint_rollback(sp)
+                return None, str(e)
+        except Exception as e:
+            return None, str(e)
+
+    def create_user_remote_then_local(self, name: str, registration: str, email: str):
+        """
+        Cria primeiro o usuário na catraca e, com o ID retornado, cria o User local com esse ID.
+        Retorna (instance, error_message)
+        """
+        try:
+            # Agora autoridade é do backend: cria local primeiro e replica com id
+            sp = transaction.savepoint()
+            try:
+                instance = User.objects.create(
+                    name=name,
+                    registration=registration,
+                    email=email,
+                    is_active=True,
+                )
+                response = self.create_objects("users", [{
+                    "id": instance.id,
+                    "name": instance.name,
+                    "registration": instance.registration,
+                }])
+                if response.status_code != status.HTTP_201_CREATED:
+                    transaction.savepoint_rollback(sp)
+                    return None, f"Erro ao criar usuário na catraca: {getattr(response, 'data', response.__dict__)}"
+
+                for device in Device.objects.filter(is_active=True):
+                    device.users.add(instance)
+
+                transaction.savepoint_commit(sp)
+                return instance, None
+            except Exception as e:
+                transaction.savepoint_rollback(sp)
+                return None, str(e)
+        except Exception as e:
+            return None, str(e)
     
     def create_user_group_relation_in_catraca(self, user, group):
         """
@@ -152,6 +244,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             excel_file = pd.ExcelFile(tmp_path)
             sheet_names = excel_file.sheet_names
             excel_file.close()
+            print(sheet_names)
             
             if not sheet_names:
                 try:
@@ -208,53 +301,78 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     errors.append(f"Sheet '{sheet_name}': Invalid sheet name format. Expected: '1INFO1(2025)', '1AGRO1(2025)', or '1QUIMI (2025)'")
                     continue
                 
-                # Cria ou atualiza o Grupo
+                # Cria ou reaproveita o Grupo — primeiro cria na catraca para obter o ID
                 with transaction.atomic():
-                    grupo, grupo_created = Group.objects.update_or_create(
-                        name=nome_grupo
-                    )
-                    if grupo_created:
-                        created_groups += 1
-                        success, message = self.create_group_in_catraca(grupo)
-                        if not success:
-                            catraca_errors.append(f"Grupo {grupo.name}: {message}")
-                    else:
-                        updated_groups += 1
+                    sp_group = transaction.savepoint()
+                    try:
+                        grupo = Group.objects.filter(name=nome_grupo).first()
+                        print(grupo)
+                        if not grupo:
+                            grupo, err = self.create_group_remote_then_local(nome_grupo)
+                            if err:
+                                transaction.savepoint_rollback(sp_group)
+                                catraca_errors.append(f"Grupo {nome_grupo}: {err}")
+                                continue
+                            created_groups += 1
+                        else:
+                            updated_groups += 1
+                        transaction.savepoint_commit(sp_group)
+                    except Exception as e:
+                        transaction.savepoint_rollback(sp_group)
+                        catraca_errors.append(f"Grupo {nome_grupo}: {str(e)}")
+                        continue
                 
                     # Para cada aluno, cria/atualiza User e cria a relação UserGroup
                     for idx, row in df.iterrows():
+                        sp_user = transaction.savepoint()
                         if pd.isna(row['MATRICULA']) or pd.isna(row['NOME_COMPLETO']):
                             errors.append(f"Sheet '{sheet_name}', row {idx+2}: Missing MATRICULA or NOME_COMPLETO")
+                            transaction.savepoint_rollback(sp_user)
                             continue
                         
                         email = f"{row['MATRICULA']}@escola.edu"
                         
-                        user, user_created = User.objects.update_or_create(
-                            email=email,
-                            defaults={
-                                'name': str(row['NOME_COMPLETO']).strip(),
-                                'registration': str(row['MATRICULA']).strip(),
-                                'is_active': True
-                            }
-                        )
+                        name_user = str(row['NOME_COMPLETO']).strip()
+                        registration = str(row['MATRICULA']).strip()
+
+                        try:
+                            # Usa registration como chave preferencial para evitar duplicidade por email
+                            user = User.objects.filter(registration=registration).first() or User.objects.filter(email=email).first()
+                            if not user:
+                                user, err = self.create_user_remote_then_local(name_user, registration, email)
+                                if err:
+                                    transaction.savepoint_rollback(sp_user)
+                                    catraca_errors.append(f"Usuário {name_user} ({registration}): {err}")
+                                    continue
+                                created_users += 1
+                            else:
+                                # Atualiza dados básicos no Django (não altera ID)
+                                if user.name != name_user or user.registration != registration or not user.is_active:
+                                    user.name = name_user
+                                    user.registration = registration
+                                    user.is_active = True
+                                    user.save(update_fields=["name", "registration", "is_active"])
+                                updated_users += 1
+                        except Exception as e:
+                            transaction.savepoint_rollback(sp_user)
+                            catraca_errors.append(f"Usuário {name_user} ({registration}): {str(e)}")
+                            continue
                         
-                        if user_created:
-                            created_users += 1
-                            success, message = self.create_user_in_catraca(user)
-                            if not success:
-                                catraca_errors.append(f"Usuário {user.name} ({user.registration}): {message}")
-                        else:
-                            updated_users += 1
-                        
-                        relacao_existente, created = UserGroup.objects.get_or_create(
-                            user=user,
-                            group=grupo
-                        )
-                        if created:
-                            created_relations += 1
-                            success, message = self.create_user_group_relation_in_catraca(user, grupo)
-                            if not success:
-                                catraca_errors.append(f"Relação {user.name}-{grupo.name}: {message}")
+                        try:
+                            relacao_existente, created = UserGroup.objects.get_or_create(
+                                user=user,
+                                group=grupo
+                            )
+                            if created:
+                                created_relations += 1
+                                success, message = self.create_user_group_relation_in_catraca(user, grupo)
+                                if not success:
+                                    raise Exception(message)
+                            transaction.savepoint_commit(sp_user)
+                        except Exception as e:
+                            transaction.savepoint_rollback(sp_user)
+                            catraca_errors.append(f"Relação {name_user}-{grupo.name}: {str(e)}")
+                            continue
             
             # Limpa o arquivo temp
             try:

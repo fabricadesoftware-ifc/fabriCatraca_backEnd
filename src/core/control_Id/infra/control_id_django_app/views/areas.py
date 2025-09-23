@@ -19,16 +19,10 @@ class AreaViewSet(AreaSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         
-        # Criar na catraca
-        response = self.create_objects("areas", [{
-            "id": instance.id,
-            "name": instance.name
-        }])
-        
+        response = self.create_in_catraca(instance)
         if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
+            instance.delete()
             return response
-        
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     def update(self, request, *args, **kwargs):
@@ -37,11 +31,7 @@ class AreaViewSet(AreaSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
         
-        # Atualizar na catraca
-        response = self.update_objects("areas", {
-            "id": instance.id,
-            "name": instance.name
-        }, {"areas": {"id": instance.id}})
+        response = self.update_in_catraca(instance)
         
         if response.status_code != status.HTTP_200_OK:
             return response
@@ -51,8 +41,7 @@ class AreaViewSet(AreaSyncMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         
-        # Deletar na catraca
-        response = self.destroy_objects("areas", {"areas": {"id": instance.id}})
+        response = self.delete_in_catraca(instance)
         
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

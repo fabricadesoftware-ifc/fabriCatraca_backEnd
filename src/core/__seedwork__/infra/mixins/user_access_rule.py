@@ -15,10 +15,10 @@ class UserAccessRuleSyncMixin(ControlIDSyncMixin):
     def update_in_catraca(self, instance):
         response = self.update_objects(
             "user_access_rules",
-            [{
+            {
                 "user_id": instance.user.id,
                 "access_rule_id": instance.access_rule.id
-            }],
+            },
             {"user_access_rules": {
                 "user_id": instance.user.id,
                 "access_rule_id": instance.access_rule.id
