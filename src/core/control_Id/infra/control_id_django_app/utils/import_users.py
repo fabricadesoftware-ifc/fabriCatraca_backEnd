@@ -109,23 +109,73 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         Retorna (instance, error_message)
         """
         try:
+            print(f"[DEBUG][create_group] Iniciando criação do grupo '{group_name}'")
+            
+            # Verifica e configura dispositivo ativo
+            devices = Device.objects.filter(is_active=True)
+            if not devices.exists():
+                return None, "Nenhuma catraca ativa encontrada"
+            
+            device = devices.filter(is_default=True).first() or devices.first()
+            self.set_device(device)
+            print(f"[DEBUG][create_group] Usando dispositivo: {device.name} (ID: {device.id})")
+            
             # 0) Verifica se já existe na catraca por nome
             remote_id = None
             try:
+                print("[DEBUG][create_group] Verificando se grupo já existe na catraca")
                 all_groups = self.load_objects("groups", fields=["id", "name"], order_by=["id"])  # type: ignore[attr-defined]
+                print(f"[DEBUG][create_group] Grupos encontrados na catraca: {[{'id': g.get('id'), 'name': g.get('name')} for g in all_groups]}")
+                
                 for g in reversed(all_groups):
                     if g.get("name") == group_name and g.get("id") is not None:
                         remote_id = g["id"]
+                        print(f"[DEBUG][create_group] Grupo encontrado na catraca com ID {remote_id}")
                         break
-            except Exception:
+            except Exception as e:
+                print(f"[DEBUG][create_group] Erro ao buscar grupos na catraca: {str(e)}")
                 remote_id = None
 
             # 1) Se não existir remoto, cria
             if not remote_id:
-                response = self.create_objects("groups", [{"name": group_name}])
+                print("[DEBUG][create_group] Grupo não encontrado na catraca, gerando novo ID")
+                # Gera um novo ID para o grupo
+                try:
+                    # Busca o maior ID existente e adiciona 1
+                    all_groups = self.load_objects("groups", fields=["id"], order_by=["-id"])  # type: ignore[attr-defined]
+                    existing_ids = set([g.get("id", 0) for g in all_groups] + [0])
+                    
+                    # Busca também IDs locais para evitar conflitos
+                    local_ids = set(Group.objects.values_list('id', flat=True))
+                    all_ids = existing_ids.union(local_ids)
+                    
+                    # Encontra o próximo ID disponível
+                    new_id = 1
+                    while new_id in all_ids:
+                        new_id += 1
+                    
+                    print(f"[DEBUG][create_group] IDs em uso: {sorted(all_ids)}")
+                    print(f"[DEBUG][create_group] Próximo ID disponível: {new_id}")
+                except Exception as e:
+                    print(f"[DEBUG][create_group] Erro ao buscar IDs ({str(e)}), tentando gerar ID sequencial")
+                    # Tenta IDs sequenciais até encontrar um disponível
+                    new_id = 1
+                    while Group.objects.filter(id=new_id).exists():
+                        new_id += 1
+
+                print(f"[DEBUG][create_group] Tentando criar grupo na catraca com ID {new_id}")
+                # Cria o grupo com ID específico
+                response = self.create_objects("groups", [{
+                    "id": new_id,
+                    "name": group_name
+                }])
+                
+                print(f"[DEBUG][create_group] Resposta da catraca: {getattr(response, 'data', response.__dict__)}")
+                
                 if response.status_code != status.HTTP_201_CREATED:
                     return None, f"Erro ao criar grupo na catraca: {getattr(response, 'data', response.__dict__)}"
 
+                remote_id = new_id
                 data = getattr(response, "data", None) or {}
                 try:
                     if isinstance(data, dict):
@@ -285,6 +335,8 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 
                 # Parseia o nome da aba
                 nome_grupo = None
+                print(f"[DEBUG] Processando aba: '{sheet_name}'")
+                
                 match_full = re.match(r'(\d+)([A-Z]+)(\d+)\s*\((\d+)\)', sheet_name.strip())  # Ex.: 1INFO1(2025), 1AGRO2(2025)
                 match_quimi = re.match(r'(\d+)(QUIMI)(\s*\((\d+)\))?', sheet_name.strip())  # Ex.: 1QUIMI or 1QUIMI (2025)
                 
@@ -293,11 +345,14 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     curso = match_full.group(2)       # Ex.: INFO, AGRO
                     secao = int(match_full.group(3))  # Ex.: 1
                     nome_grupo = f"{nivel}{curso}{secao}"  # Ex.: 1INFO1
+                    print(f"[DEBUG] Match completo - Nível: {nivel}, Curso: {curso}, Seção: {secao}, Nome final: {nome_grupo}")
                 elif match_quimi:
                     nivel = int(match_quimi.group(1))  # Ex.: 1
                     curso = match_quimi.group(2)       # QUIMI
                     nome_grupo = f"{nivel}{curso}"     # Ex.: 1QUIMI
+                    print(f"[DEBUG] Match QUIMI - Nível: {nivel}, Curso: {curso}, Nome final: {nome_grupo}")
                 else:
+                    print(f"[DEBUG] Nenhum match encontrado para a aba: '{sheet_name}'")
                     errors.append(f"Sheet '{sheet_name}': Invalid sheet name format. Expected: '1INFO1(2025)', '1AGRO1(2025)', or '1QUIMI (2025)'")
                     continue
                 
@@ -305,19 +360,32 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 with transaction.atomic():
                     sp_group = transaction.savepoint()
                     try:
+                        print(f"[DEBUG] Verificando se grupo '{nome_grupo}' já existe localmente")
                         grupo = Group.objects.filter(name=nome_grupo).first()
-                        print(grupo)
+                        
                         if not grupo:
+                            print(f"[DEBUG] Grupo '{nome_grupo}' não existe localmente, tentando criar na catraca")
+                            # Verifica se já existe na catraca
+                            try:
+                                all_groups = self.load_objects("groups", fields=["id", "name"])
+                                print(f"[DEBUG] Grupos existentes na catraca: {[{'id': g.get('id'), 'name': g.get('name')} for g in all_groups]}")
+                            except Exception as e:
+                                print(f"[DEBUG] Erro ao listar grupos da catraca: {str(e)}")
+
                             grupo, err = self.create_group_remote_then_local(nome_grupo)
                             if err:
+                                print(f"[DEBUG] Erro ao criar grupo '{nome_grupo}': {err}")
                                 transaction.savepoint_rollback(sp_group)
                                 catraca_errors.append(f"Grupo {nome_grupo}: {err}")
                                 continue
+                            print(f"[DEBUG] Grupo '{nome_grupo}' criado com sucesso (ID: {grupo.id if grupo else 'N/A'})")
                             created_groups += 1
                         else:
+                            print(f"[DEBUG] Grupo '{nome_grupo}' já existe localmente (ID: {grupo.id})")
                             updated_groups += 1
                         transaction.savepoint_commit(sp_group)
                     except Exception as e:
+                        print(f"[DEBUG] Erro não tratado ao processar grupo '{nome_grupo}': {str(e)}")
                         transaction.savepoint_rollback(sp_group)
                         catraca_errors.append(f"Grupo {nome_grupo}: {str(e)}")
                         continue

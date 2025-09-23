@@ -8,13 +8,21 @@ from src.core.control_Id.infra.control_id_django_app.models import AccessLogs
 from src.core.control_Id.infra.control_id_django_app.serializers import AccessLogsSerializer
 from src.core.__seedwork__.infra.mixins import AccessLogsSyncMixin
 
+from rest_framework.pagination import PageNumberPagination
+
+class AccessLogsPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
+
 @extend_schema(tags=["Access Logs"])
 class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
-    queryset = AccessLogs.objects.all()
+    queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule').all()
     serializer_class = AccessLogsSerializer
-    filterset_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask']
-    search_fields = ['time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask']
-    ordering_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask']
+    pagination_class = AccessLogsPagination
+    filterset_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule']
+    search_fields = ['device__name', 'user__name', 'portal__name', 'identifier_id']
+    ordering_fields = ['id', 'time', 'event_type']
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -85,11 +93,18 @@ class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def list_all_by_type(self, request):
         event_type = request.query_params.get('event_type', None)
-        if event_type is not None:
-            logs = self.queryset.filter(event_type=event_type)
-        else:
-            logs = self.queryset.all()
         
+        # Usa o queryset base que já tem select_related
+        logs = self.get_queryset()
+        
+        if event_type is not None:
+            logs = logs.filter(event_type=event_type)
+        
+        # Aplica paginação
+        page = self.paginate_queryset(logs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         
         serializer = self.get_serializer(logs, many=True)
         return Response(serializer.data)
@@ -131,8 +146,8 @@ class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
             end_date = timezone.now()
             start_date = end_date - timedelta(days=days)
             
-            # Filtrar logs pela data
-            logs = self.queryset.filter(
+            # Usa o queryset base que já tem select_related
+            logs = self.get_queryset().filter(
                 time__gte=start_date,
                 time__lte=end_date
             )
@@ -149,6 +164,11 @@ class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
             
+            # Aplica paginação
+            page = self.paginate_queryset(logs)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
             
             serializer = self.get_serializer(logs, many=True)
             return Response(serializer.data)

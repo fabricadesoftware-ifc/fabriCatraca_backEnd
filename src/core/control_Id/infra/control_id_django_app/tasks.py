@@ -66,7 +66,7 @@ def run_global_sync(self) -> dict:
             "groups": len(all_groups),
             "user_groups": len(all_user_groups),
             "group_access_rules": len(all_group_access_rules),
-            "devices": 1,
+            "devices": len(devices),
             "access_logs": len(all_access_logs),
         },
     }

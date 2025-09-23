@@ -26,8 +26,8 @@ class AccessLogs(models.Model):
     device = models.ForeignKey(Device, on_delete=models.DO_NOTHING)
     identifier_id = models.CharField(max_length=255)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    portal = models.ForeignKey(Portal, on_delete=models.DO_NOTHING)
-    access_rule = models.ForeignKey(AccessRule, on_delete=models.DO_NOTHING)
+    portal = models.ForeignKey(Portal, on_delete=models.SET_NULL, blank=True, null=True)
+    access_rule = models.ForeignKey(AccessRule, on_delete=models.SET_NULL, blank=True, null=True)
     qr_code = models.CharField(max_length=255)
     uhf_value = models.CharField(max_length=255)
     pin_value = models.CharField(max_length=255)
@@ -40,6 +40,14 @@ class AccessLogs(models.Model):
         verbose_name = 'Log de Acesso'
         verbose_name_plural = 'Logs de Acesso'
         ordering = ['-time']
+        indexes = [
+            models.Index(fields=['time']),
+            models.Index(fields=['event_type']),
+            models.Index(fields=['device']),
+            models.Index(fields=['user']),
+            models.Index(fields=['portal']),
+            models.Index(fields=['access_rule']),
+        ]
         
         
         

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
-from src.core.control_Id.infra.control_id_django_app.models import Template, TimeZone, TimeSpan, AccessRule, UserAccessRule, AccessRuleTimeZone, PortalAccessRule, Card, CustomGroup, UserGroup, GroupAccessRule, Portal, Area
+from src.core.control_Id.infra.control_id_django_app.models import Template, TimeZone, TimeSpan, AccessRule, UserAccessRule, AccessRuleTimeZone, PortalAccessRule, Card, CustomGroup, UserGroup, GroupAccessRule, Portal, Area, AccessLogs
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 @admin.register(Template)
@@ -88,4 +88,12 @@ class UserGroupAdmin(admin.ModelAdmin):
 class GroupAccessRuleAdmin(admin.ModelAdmin):
     list_display = ("id", "group", "access_rule")
     search_fields = ("group__name", "access_rule__name")
+    
+    
+@admin.register(AccessLogs)
+class AccessLogsAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "device", "event_type")
+    list_filter = ("event_type", "device")
+    search_fields = ("user__name", "device__name")
 # Register your models here.
+    
