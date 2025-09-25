@@ -12,6 +12,11 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+
 @api_view(['GET'])
 def api_root(request, format=None):
     return Response({
@@ -28,8 +33,11 @@ urlpatterns = [
     path('api/', api_root, name='api-root'),
     path('api/users/', include('src.core.user.infra.user_django_app.urls')),
     path('api/control_id/', include('src.core.control_Id.infra.control_id_django_app.urls')),
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/admin/', django_admin.site.urls),
     path('', lambda request: redirect('api/', permanent=True)),
+    
 ]
 
 if settings.DEBUG:
