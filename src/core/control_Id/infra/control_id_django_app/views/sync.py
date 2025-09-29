@@ -9,6 +9,16 @@ from datetime import datetime
 from src.core.user.infra.user_django_app.models import User
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
+from src.core.control_id_config.infra.control_id_config_django_app.models import (
+    SystemConfig, HardwareConfig, SecurityConfig, UIConfig,
+)
+from src.core.control_id_config.infra.control_id_config_django_app.serializers import (
+    SystemConfigSerializer, HardwareConfigSerializer, SecurityConfigSerializer, UIConfigSerializer,
+)
+from src.core.control_id_config.infra.control_id_config_django_app.mixins.system_config_mixin import SystemConfigSyncMixin
+from src.core.control_id_config.infra.control_id_config_django_app.mixins.hardware_config_mixin import HardwareConfigSyncMixin
+from src.core.control_id_config.infra.control_id_config_django_app.mixins.security_config_mixin import SecurityConfigSyncMixin
+from src.core.control_id_config.infra.control_id_config_django_app.mixins.ui_config_mixin import UIConfigSyncMixin
 from drf_spectacular.utils import extend_schema
 from celery.result import AsyncResult
 
@@ -148,6 +158,51 @@ class GlobalSyncMixin(ControlIDSyncMixin):
             order_by=["id"]
         )
         return access_logs
+
+
+@extend_schema(tags=["Config"])
+@api_view(['GET', 'POST'])
+def sync_device_config(request, device_id: int):
+    """GET: retorna configs atuais do device; POST: sincroniza com a catraca e retorna configs atualizadas"""
+    try:
+        device = User.objects.none()  # placeholder to avoid unused import; real device fetched below
+        from src.core.control_Id.infra.control_id_django_app.models import Device as CDevice
+        dev = CDevice.objects.get(id=device_id)
+
+        # GET: retorna configs atuais
+        if request.method == 'GET':
+            sys_cfg = SystemConfig.objects.filter(device=dev).first()
+            hw_cfg = HardwareConfig.objects.filter(device=dev).first()
+            sec_cfg = SecurityConfig.objects.filter(device=dev).first()
+            ui_cfg = UIConfig.objects.filter(device=dev).first()
+
+            return Response({
+                'system': SystemConfigSerializer(sys_cfg).data if sys_cfg else None,
+                'hardware': HardwareConfigSerializer(hw_cfg).data if hw_cfg else None,
+                'security': SecurityConfigSerializer(sec_cfg).data if sec_cfg else None,
+                'ui': UIConfigSerializer(ui_cfg).data if ui_cfg else None,
+            })
+
+        # POST: sincroniza com catraca
+        class _Sync(SystemConfigSyncMixin, HardwareConfigSyncMixin, SecurityConfigSyncMixin, UIConfigSyncMixin):
+            pass
+
+        sync = _Sync()
+        sync.set_device(dev)
+        sys_res = sync.sync_system_config_from_catraca()
+        hw_res = sync.sync_hardware_config_from_catraca()
+        sec_res = sync.sync_security_config_from_catraca()
+        ui_res = sync.sync_ui_config_from_catraca()
+
+        return Response({
+            'system': getattr(sys_res, 'data', sys_res),
+            'hardware': getattr(hw_res, 'data', hw_res),
+            'security': getattr(sec_res, 'data', sec_res),
+            'ui': getattr(ui_res, 'data', ui_res),
+        })
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @extend_schema(tags=["Config"])
 @api_view(['GET'])

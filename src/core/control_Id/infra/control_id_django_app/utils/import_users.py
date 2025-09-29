@@ -46,7 +46,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 "field_name": "file",
                 "file_format": ".xlsx",
                 "sheet_format": "1INFO1(2025), 1AGRO1(2025), 1QUIMI (2025), etc.",
-                "required_columns": ["ORDEM", "MATRICULA", "NOME_COMPLETO"]
+                "required_columns": ["ORDEM", "Matrícula", "Nome"]
             },
             "example": {
                 "curl": "curl -X POST -F 'file=@usuarios.xlsx' http://localhost:8000/api/control_id/import-users/"
@@ -318,12 +318,12 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 
                 # Padroniza colunas
                 if len(df.columns) != 3:
-                    errors.append(f"Sheet '{sheet_name}': Expected exactly 3 columns (ORDEM, MATRICULA, NOME_COMPLETO)")
+                    errors.append(f"Sheet '{sheet_name}': Expected exactly 3 columns (ORDEM, Matrícula, Nome)")
                     continue
-                df.columns = ['ORDEM', 'MATRICULA', 'NOME_COMPLETO']
+                df.columns = ['ORDEM', 'Matrícula', 'Nome']
                 
                 # Verifica colunas requeridas
-                required_columns = {'MATRICULA', 'NOME_COMPLETO'}
+                required_columns = {'Matrícula', 'Nome'}
                 if not required_columns.issubset(df.columns):
                     errors.append(f"Sheet '{sheet_name}': Missing required columns: {required_columns - set(df.columns)}")
                     continue
@@ -393,15 +393,15 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     # Para cada aluno, cria/atualiza User e cria a relação UserGroup
                     for idx, row in df.iterrows():
                         sp_user = transaction.savepoint()
-                        if pd.isna(row['MATRICULA']) or pd.isna(row['NOME_COMPLETO']):
-                            errors.append(f"Sheet '{sheet_name}', row {idx+2}: Missing MATRICULA or NOME_COMPLETO")
+                        if pd.isna(row['Matrícula']) or pd.isna(row['Nome']):
+                            errors.append(f"Sheet '{sheet_name}', row {idx+2}: Missing MATRICULA or Nome")
                             transaction.savepoint_rollback(sp_user)
                             continue
                         
-                        email = f"{row['MATRICULA']}@escola.edu"
+                        email = f"{row['Matrícula']}@escola.edu"
                         
-                        name_user = str(row['NOME_COMPLETO']).strip()
-                        registration = str(row['MATRICULA']).strip()
+                        name_user = str(row['Nome']).strip()
+                        registration = str(row['Matrícula']).strip()
 
                         try:
                             # Usa registration como chave preferencial para evitar duplicidade por email

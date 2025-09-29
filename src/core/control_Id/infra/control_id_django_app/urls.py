@@ -10,7 +10,7 @@ from .views import (
     TemplateViewSet, TimeZoneViewSet, TimeSpanViewSet,
     AccessRuleViewSet, UserAccessRuleViewSet, AccessRuleTimeZoneViewSet,
     PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet, 
-    GroupViewSet, UserGroupsViewSet, GroupAccessRulesViewSet,
+    GroupViewSet, UserGroupViewSet, GroupAccessRulesViewSet,
 )
 from .views.device import DeviceViewSet
 from .views.sync import sync_all, sync_status
@@ -29,7 +29,7 @@ router.register(r'cards', CardViewSet)
 router.register(r'devices', DeviceViewSet)
 router.register(r'areas', AreaViewSet)
 router.register(r'groups', GroupViewSet)
-router.register(r'user_groups', UserGroupsViewSet)
+router.register(r'user_groups', UserGroupViewSet)
 router.register(r'group_access_rules', GroupAccessRulesViewSet)
 router.register(r'access_logs', AccessLogsViewSet)
 
@@ -61,7 +61,7 @@ urlpatterns = [
     path('', control_id_root, name='control_id-root'),
     path('sync/', sync_all, name='sync-all'),
     path('sync/status/', sync_status, name='sync-status'),
-    path('export-users/', ExportUsersView.as_view(), name='export-users'),
-    path('import-users/', ImportUsersView.as_view(), name='import-users'),
+    path('export_users/', ExportUsersView.as_view(), name='export-users'),
+    path('import_users/', ImportUsersView.as_view(), name='import-users'),
     path('', include(router.urls)),
 ]
