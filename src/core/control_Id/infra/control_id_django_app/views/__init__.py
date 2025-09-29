@@ -9,9 +9,13 @@ from .portal_access_rule import PortalAccessRuleViewSet
 from .cards import CardViewSet
 from .areas import AreaViewSet
 from .group import GroupViewSet
-from .user_groups import UserGroupsViewSet
+from .user_groups import UserGroupViewSet
 from .group_access_rules import GroupAccessRulesViewSet
-from .sync import sync_all, sync_status
+from .sync import sync_all, sync_status, sync_device_config
+from .device import DeviceViewSet
+from .access_logs import AccessLogsViewSet
+
+
 
 __all__ = [
     'TemplateViewSet',
@@ -25,8 +29,11 @@ __all__ = [
     'CardViewSet',
     'AreaViewSet',
     'GroupViewSet',
-    'UserGroupsViewSet',
+    'UserGroupViewSet',
     'GroupAccessRulesViewSet',
     'sync_all',
-    'sync_status'
+    'sync_status',
+    'sync_device_config',
+    'DeviceViewSet',
+    'AccessLogsViewSet'
 ] 

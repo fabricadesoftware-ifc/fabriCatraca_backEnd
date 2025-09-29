@@ -308,3 +308,36 @@ class ControlIDSyncMixin:
                 "error": "Erro ao processar cadastro",
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    
+    def set_configuration(self, config: Dict[str, Any]) -> Response:
+        """
+        Define configurações na catraca.
+        Args:
+            config: Dicionário com as configurações a serem definidas
+        Returns:
+            Response: Resposta da API
+        """
+        try:
+            from src.core.control_Id.infra.control_id_django_app.models.device import Device
+            
+            devices = Device.objects.filter(is_active=True)
+            if not devices:
+                return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            with transaction.atomic():
+                for device in devices:
+                    self.set_device(device)
+                    sess = self.login()
+                    response = requests.post(
+                        self.get_url(f"set_configuration.fcgi?session={sess}"),
+                        json={"general": config}
+                    )
+                    if response.status_code != 200:
+                        raise Exception(response.json())
+                    response.raise_for_status()
+                
+                return Response({"success": True})
+                
+        except requests.RequestException as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
