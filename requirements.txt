@@ -25,6 +25,7 @@ django-safedelete==1.4.1
 django-simple-history==3.10.1
 django-timezone-field==7.1
 djangorestframework==3.16.0
+djangorestframework-simplejwt==5.5.1
 drf-spectacular==0.28.0
 et-xmlfile==2.0.0
 gunicorn==23.0.0
@@ -39,6 +40,7 @@ packaging==25.0
 pandas==2.3.2
 prompt-toolkit==3.0.52
 psycopg2-binary==2.9.10
+pyjwt==2.10.1
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
