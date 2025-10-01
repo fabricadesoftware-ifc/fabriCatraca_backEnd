@@ -1,9 +1,8 @@
 from django.conf import settings
 import requests
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from rest_framework.response import Response
 from rest_framework import status
-from django.conf import settings
 from django.db import transaction
 
 class ControlIDSyncMixin:
@@ -41,28 +40,76 @@ class ControlIDSyncMixin:
         base_url = f"http://{self.device.ip}" if not self.device.ip.startswith(('http://', 'https://')) else self.device.ip
         return f"{base_url}/{endpoint}"
 
-    def login(self) -> str:
+    def login(self, force_new: bool = False) -> str:
         """
-        Realiza login na API da catraca.
+        Realiza login na API da catraca com gerenciamento inteligente de sessão.
+        Args:
+            force_new: Força um novo login mesmo se já houver sessão
         Returns:
             str: Token de sessão
         """
-        if self.session:
+        # Se já tem sessão válida e não está forçando novo login, reutiliza
+        if self.session and not force_new:
             return self.session
 
         if not self.device:
             raise ValueError("Nenhum dispositivo configurado e nenhum dispositivo padrão encontrado")
 
-        response = requests.post(
-            self.get_url("login.fcgi"), 
-            json={
-                "login": self.device.username,
-                "password": self.device.password
-            }
-        )
-        response.raise_for_status()
-        self.session = response.json().get("session")
-        return self.session
+        try:
+            response = requests.post(
+                self.get_url("login.fcgi"), 
+                json={
+                    "login": self.device.username,
+                    "password": self.device.password
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+            self.session = response.json().get("session")
+            return self.session
+        except requests.RequestException as e:
+            self.session = None  # Limpa sessão inválida
+            raise Exception(f"Falha no login: {str(e)}")
+    
+    def _make_request(self, endpoint: str, method: str = "POST", json_data: Dict = None, retry_on_auth_fail: bool = True) -> requests.Response:
+        """
+        Helper para fazer requests com retry automático em caso de sessão expirada.
+        Args:
+            endpoint: Endpoint da API (ex: "set_configuration.fcgi")
+            method: Método HTTP (POST, GET, etc)
+            json_data: Dados JSON para enviar
+            retry_on_auth_fail: Se deve tentar novamente com novo login em caso de erro de autenticação
+        Returns:
+            requests.Response: Resposta da API
+        """
+        sess = self.login()
+        url = self.get_url(f"{endpoint}?session={sess}")
+        
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                json=json_data,
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            
+            # Se sessão expirou (401) e retry está habilitado, tenta com novo login
+            if response.status_code == 401 and retry_on_auth_fail:
+                sess = self.login(force_new=True)
+                url = self.get_url(f"{endpoint}?session={sess}")
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    json=json_data,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=10
+                )
+            
+            return response
+            
+        except requests.RequestException as e:
+            raise Exception(f"Erro na requisição para {endpoint}: {str(e)}")
 
     def load_objects(self, object_name: str, fields: List[str] = None, order_by: List[str] = None) -> List[Dict[str, Any]]:
         """
@@ -102,10 +149,14 @@ class ControlIDSyncMixin:
         """
         try:
             from src.core.control_Id.infra.control_id_django_app.models.device import Device
-            
-            devices = Device.objects.filter(is_active=True)
-            if not devices:
-                return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Se um device foi definido via self.set_device, aplica somente nele
+            if self._device is not None:
+                devices = [self._device]
+            else:
+                devices = list(Device.objects.filter(is_active=True))
+                if not devices:
+                    return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
             
             # Validação de campos obrigatórios para garantir IDs consistentes entre backend e catracas
             required_fields_by_object = {
@@ -325,14 +376,38 @@ class ControlIDSyncMixin:
             if not devices:
                 return Response({"error": "Nenhuma catraca ativa encontrada"}, status=status.HTTP_400_BAD_REQUEST)
             
+            # Normaliza payload: API espera strings. Converte bool -> "1"/"0", números -> str, None -> ""
+            def normalize_values(value: Any) -> Any:
+                if isinstance(value, dict):
+                    return {k: normalize_values(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [normalize_values(v) for v in value]
+                if isinstance(value, str):
+                    return value  # Já é string, não modifica
+                if isinstance(value, bool):
+                    return "1" if value else "0"
+                if value is None:
+                    return ""
+                if isinstance(value, (int, float)):
+                    return str(value)
+                return str(value)
+
+            normalized_config = normalize_values(config or {})
+
             with transaction.atomic():
                 for device in devices:
                     self.set_device(device)
                     sess = self.login()
+                    
+                    # Determina o payload final
+                    final_payload = normalized_config if any(key in normalized_config for key in ("general","monitor","catra","online_client","push_server")) else {"general": normalized_config}
+                    
                     response = requests.post(
                         self.get_url(f"set_configuration.fcgi?session={sess}"),
-                        json={"general": config}
+                        json=final_payload,
+                        headers={'Content-Type': 'application/json'}
                     )
+                    
                     if response.status_code != 200:
                         raise Exception(response.json())
                     response.raise_for_status()
@@ -340,4 +415,6 @@ class ControlIDSyncMixin:
                 return Response({"success": True})
                 
         except requests.RequestException as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

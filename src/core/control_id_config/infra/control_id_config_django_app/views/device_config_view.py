@@ -4,19 +4,11 @@ from rest_framework import status
 from drf_spectacular.utils import extend_schema
 from src.core.control_Id.infra.control_id_django_app.models import Device
 from ..models import SystemConfig, HardwareConfig, SecurityConfig, UIConfig
-from ..mixins import (
-    SystemConfigSyncMixin, 
-    HardwareConfigSyncMixin, 
-    SecurityConfigSyncMixin, 
-    UIConfigSyncMixin
-)
+from ..mixins import UnifiedConfigSyncMixin
 
 
 class DeviceConfigView(
-    SystemConfigSyncMixin,
-    HardwareConfigSyncMixin, 
-    SecurityConfigSyncMixin,
-    UIConfigSyncMixin,
+    UnifiedConfigSyncMixin,
     APIView
 ):
     """View unificada para gerenciar todas as configurações de um dispositivo"""
@@ -107,6 +99,7 @@ class DeviceConfigView(
             hardware_response = self.sync_hardware_config_from_catraca()
             security_response = self.sync_security_config_from_catraca()
             ui_response = self.sync_ui_config_from_catraca()
+            monitor_response = self.sync_monitor_config_from_catraca()
             
             return Response({
                 "message": "Sincronização de configurações concluída",
@@ -114,7 +107,8 @@ class DeviceConfigView(
                     "system_config": system_response.data,
                     "hardware_config": hardware_response.data,
                     "security_config": security_response.data,
-                    "ui_config": ui_response.data
+                    "ui_config": ui_response.data,
+                    "monitor": monitor_response.data,
                 }
             })
             

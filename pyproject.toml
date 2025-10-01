@@ -27,7 +27,14 @@ dependencies = [
     "numpy>=2.3.3", 
     "django-celery-results>=2.6.0", 
     "django-celery-beat>=2.8.1", 
-    "djangorestframework-simplejwt>=5.5.1"
+    "djangorestframework-simplejwt>=5.5.1",
+    "pytest>=8.0.0",
+    "pytest-django>=4.8.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "factory-boy>=3.3.0",
+    "faker>=24.0.0",
+    "responses>=0.25.0"
     ]
 requires-python = ">=3.13"
 readme = "README.md"
@@ -51,9 +58,50 @@ createsuperuser = "python src/manage.py createsuperuser"
 migrate = "python src/manage.py migrate"
 makemigrations = "python src/manage.py makemigrations"
 shell = "python src/manage.py shell"
-test = "python src/manage.py test"
 startapp = "python src/manage.py startapp {args}"
 loaddata = "python src/manage.py loaddata {args}"
 dumpdata = "python src/manage.py dumpdata {args}"
 celery = "celery -A src.django_project worker --loglevel=INFO --concurrency=10 -n worker1.%h --pool=solo -E"
 beat = "celery -A src.django_project beat --loglevel=INFO"
+test = "pytest {args}"
+test-all = "pytest"
+test-cov = "pytest --cov=src --cov-report=html --cov-report=term {args}"
+test-unit = "pytest tests/unit {args}"
+test-integration = "pytest tests/integration {args}"
+test-e2e = "pytest tests/e2e {args}"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "src.django_project.settings"
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers --disable-warnings"
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (database, but mocked external APIs)",
+    "e2e: End-to-end tests (real API calls to catracas)",
+    "slow: Tests that take a long time to run"
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/virtualenv/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]

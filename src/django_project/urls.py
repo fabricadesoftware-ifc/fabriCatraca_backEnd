@@ -22,6 +22,7 @@ def api_root(request, format=None):
     return Response({
         'users': reverse('user-root', request=request, format=format),
         'control_id': reverse('control_id-root', request=request, format=format),
+        'control_id_config': reverse('config-root', request=request, format=format),
     })
 
 
@@ -33,6 +34,7 @@ urlpatterns = [
     path('api/', api_root, name='api-root'),
     path('api/users/', include('src.core.user.infra.user_django_app.urls')),
     path('api/control_id/', include('src.core.control_Id.infra.control_id_django_app.urls')),
+    path('api/control_id_config/', include('src.core.control_id_config.infra.control_id_config_django_app.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/admin/', django_admin.site.urls),

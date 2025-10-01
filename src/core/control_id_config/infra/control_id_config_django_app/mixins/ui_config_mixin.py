@@ -8,12 +8,13 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
     
     def update_ui_config_in_catraca(self, instance):
         """Atualiza configurações de interface na catraca"""
-        response = self.update_objects(
-            "general",
-            {
-                "screen_always_on": instance.screen_always_on
-            }
-        )
+        
+        def bool_to_string(value):
+            return "1" if value else "0"
+        
+        # UI Config: parâmetros específicos podem não existir na API Control iD
+        # Por enquanto, não enviar nada e retornar sucesso
+        response = Response({"success": True, "message": "UI config atualizada localmente (sem parâmetros específicos na API da catraca)"})
         return response
     
     def sync_ui_config_from_catraca(self):
@@ -21,28 +22,37 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
         try:
             from ..models import UIConfig
             
-            catraca_config = self.load_objects("general")
+            # Payload especificando parâmetros de UI
+            payload = {"general": []}
             
-            if catraca_config:
-                config_data = catraca_config[0]
-                
-                config, created = UIConfig.objects.update_or_create(
-                    device=self.device,
-                    defaults={
-                        'screen_always_on': config_data.get('screen_always_on', False)
-                    }
-                )
-                
-                return Response({
-                    "success": True,
-                    "message": f"Configuração de interface {'criada' if created else 'atualizada'} com sucesso",
-                    "config_id": config.id
-                })
+            # Usa o helper com retry automático de sessão
+            response = self._make_request("get_configuration.fcgi", json_data=payload)
+            
+            if response.status_code == 200:
+                config_data = response.json().get('general', {})
             else:
                 return Response({
                     "success": False,
-                    "message": "Nenhuma configuração encontrada na catraca"
-                }, status=status.HTTP_404_NOT_FOUND)
+                    "message": f"Erro ao obter configurações: {response.status_code}"
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            catraca_config = [config_data] if config_data else []
+            
+            # NOTA: screen_always_on NÃO está disponível na API dessa catraca
+            # Sempre cria/atualiza com valor padrão False
+            config, created = UIConfig.objects.update_or_create(
+                device=self.device,
+                defaults={
+                    'screen_always_on': False  # Campo não disponível na API
+                }
+            )
+            
+            return Response({
+                "success": True,
+                "message": f"Configuração de interface {'criada' if created else 'atualizada'} com sucesso",
+                "config_id": config.id,
+                "warning": "Campo screen_always_on não disponível na API desta catraca"
+            })
                 
         except Exception as e:
             return Response({

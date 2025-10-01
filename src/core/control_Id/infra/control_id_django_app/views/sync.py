@@ -15,10 +15,7 @@ from src.core.control_id_config.infra.control_id_config_django_app.models import
 from src.core.control_id_config.infra.control_id_config_django_app.serializers import (
     SystemConfigSerializer, HardwareConfigSerializer, SecurityConfigSerializer, UIConfigSerializer,
 )
-from src.core.control_id_config.infra.control_id_config_django_app.mixins.system_config_mixin import SystemConfigSyncMixin
-from src.core.control_id_config.infra.control_id_config_django_app.mixins.hardware_config_mixin import HardwareConfigSyncMixin
-from src.core.control_id_config.infra.control_id_config_django_app.mixins.security_config_mixin import SecurityConfigSyncMixin
-from src.core.control_id_config.infra.control_id_config_django_app.mixins.ui_config_mixin import UIConfigSyncMixin
+from src.core.control_id_config.infra.control_id_config_django_app.mixins import UnifiedConfigSyncMixin
 from drf_spectacular.utils import extend_schema
 from celery.result import AsyncResult
 
@@ -184,10 +181,7 @@ def sync_device_config(request, device_id: int):
             })
 
         # POST: sincroniza com catraca
-        class _Sync(SystemConfigSyncMixin, HardwareConfigSyncMixin, SecurityConfigSyncMixin, UIConfigSyncMixin):
-            pass
-
-        sync = _Sync()
+        sync = UnifiedConfigSyncMixin()
         sync.set_device(dev)
         sys_res = sync.sync_system_config_from_catraca()
         hw_res = sync.sync_hardware_config_from_catraca()

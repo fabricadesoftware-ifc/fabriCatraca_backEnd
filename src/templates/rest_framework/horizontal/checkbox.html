@@ -1,0 +1,23 @@
+{% load rest_framework %}
+
+<div class="form-group">
+    <div class="col-sm-offset-2 col-sm-10">
+        <div class="checkbox">
+            <label {% if field.name %}for="{{ field.auto_id }}"{% endif %}>
+                <input type="hidden" name="{{ field.name }}" value="false" />
+                <input 
+                    type="checkbox" 
+                    name="{{ field.name }}" 
+                    value="true"
+                    {% if field.value %}checked{% endif %}
+                    {% if field.field.disabled %}disabled{% endif %}
+                    {% if field.field.required %}required{% endif %}
+                />
+                {{ field.label }}
+            </label>
+            {% if field.help_text %}
+                <p class="help-block">{{ field.help_text }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
