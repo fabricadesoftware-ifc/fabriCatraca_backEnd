@@ -7,6 +7,7 @@ from .serializers import UserSerializer
 from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from drf_spectacular.utils import extend_schema
+from rest_framework.permissions import IsAuthenticated
 
 @extend_schema(tags=["Users"])
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
@@ -174,4 +175,13 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 })
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def me(self, request):
+        """Retorna os dados do usuário autenticado"""
+        if not request.user.is_authenticated:
+            return Response({"error": "Usuário não autenticado"}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
         
