@@ -11,7 +11,6 @@ from .views import (
     UIConfigViewSet,
     DeviceConfigView
 )
-from .views.monitor_config import MonitorConfigViewSet
 from .views.catra_config import CatraConfigViewSet
 from .views.push_server_config import PushServerConfigViewSet
 from .views.sync import sync_all_configs, sync_config_status, sync_device_config
@@ -21,7 +20,6 @@ router.register(r'system-configs', SystemConfigViewSet)
 router.register(r'hardware-configs', HardwareConfigViewSet)
 router.register(r'security-configs', SecurityConfigViewSet)
 router.register(r'ui-configs', UIConfigViewSet)
-router.register(r'monitor-configs', MonitorConfigViewSet)
 router.register(r'catra-configs', CatraConfigViewSet)
 router.register(r'push-server-configs', PushServerConfigViewSet)
 
@@ -33,11 +31,11 @@ def config_root(request, format=None):
         'hardware_configs': reverse('hardwareconfig-list', request=request, format=format),
         'security_configs': reverse('securityconfig-list', request=request, format=format),
         'ui_configs': reverse('uiconfig-list', request=request, format=format),
-        'monitor_configs': reverse('monitorconfig-list', request=request, format=format),
         'catra_configs': reverse('catraconfig-list', request=request, format=format),
         'push_server_configs': reverse('pushserverconfig-list', request=request, format=format),
         'sync_all_configs': reverse('sync-all-configs', request=request, format=format),
         'sync_config_status': reverse('sync-config-status', request=request, format=format),
+        'monitor_configs': 'Moved to /api/control_id_monitor/monitor-configs/',
     })
 
 urlpatterns = [

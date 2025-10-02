@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "src.core.user.infra.user_django_app",
     "src.core.control_Id.infra.control_id_django_app",
     "src.core.control_id_config.infra.control_id_config_django_app",
+    "src.core.control_id_monitor.infra.control_id_monitor_django_app",
     # Celery results backend via django-celery-results (opcional)
     "django_celery_results",
 ]

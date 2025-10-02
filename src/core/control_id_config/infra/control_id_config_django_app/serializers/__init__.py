@@ -2,7 +2,6 @@ from .system_config import SystemConfigSerializer
 from .hardware_config import HardwareConfigSerializer
 from .security_config import SecurityConfigSerializer
 from .ui_config import UIConfigSerializer
-from .monitor_config import MonitorConfigSerializer
 from .catra_config import CatraConfigSerializer
 from .push_server_config import PushServerConfigSerializer
 
@@ -17,7 +16,6 @@ __all__ = [
     'HardwareConfigSerializer', 
     'SecurityConfigSerializer',
     'UIConfigSerializer',
-    'MonitorConfigSerializer',
     'CatraConfigSerializer',
     'PushServerConfigSerializer'
 ]

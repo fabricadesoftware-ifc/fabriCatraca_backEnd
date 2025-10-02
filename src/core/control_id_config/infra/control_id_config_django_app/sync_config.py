@@ -159,7 +159,8 @@ def persist_config_data(config_data: Dict[int, Dict[str, Any]]) -> Dict[str, int
         Dict com estatísticas de persistência
     """
     from django.db import transaction
-    from .models import SystemConfig, HardwareConfig, SecurityConfig, UIConfig, MonitorConfig
+    from .models import SystemConfig, HardwareConfig, SecurityConfig, UIConfig
+    from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import MonitorConfig
     
     stats = {
         'system_created': 0,

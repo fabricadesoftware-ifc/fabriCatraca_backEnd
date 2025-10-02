@@ -16,7 +16,7 @@ def run_config_sync(self) -> dict:
         from .mixins.hardware_config_mixin import HardwareConfigSyncMixin
         from .mixins.security_config_mixin import SecurityConfigSyncMixin
         from .mixins.ui_config_mixin import UIConfigSyncMixin
-        from .mixins.monitor_config_mixin import MonitorConfigSyncMixin
+        from src.core.control_id_monitor.infra.control_id_monitor_django_app.mixins import MonitorConfigSyncMixin
         from .mixins.catra_config_mixin import CatraConfigSyncMixin
         from .mixins.push_server_config_mixin import PushServerConfigSyncMixin
         
@@ -99,16 +99,25 @@ def run_config_sync(self) -> dict:
                 stats['errors'].append(f"UIConfig {device.name}: {str(e)}")
                 print(f"[CELERY_SYNC] ✗ Erro UIConfig: {str(e)}")
             
-            # Monitor Config
+            # Monitor Config (opcional - nem todos os dispositivos têm)
             try:
                 mixin = MonitorConfigSyncMixin()
                 mixin.set_device(device)
                 result = mixin.sync_monitor_config_from_catraca()
+                
+                # Verifica se é uma situação normal (não configurado) ou erro real
+                is_missing = result.data.get('is_configuration_missing', False) if hasattr(result, 'data') and isinstance(result.data, dict) else False
+                
                 if result.status_code == 200:
                     stats['monitor_synced'] += 1
-                    print(f"[CELERY_SYNC] ✓ MonitorConfig sincronizado")
+                    print("[CELERY_SYNC] ✓ MonitorConfig sincronizado")
+                elif result.status_code == 404 and is_missing:
+                    # 404 com flag is_configuration_missing = situação normal
+                    print(f"[CELERY_SYNC] ℹ️  MonitorConfig não configurado no device {device.name} (normal)")
                 else:
+                    # Erro real
                     stats['errors'].append(f"MonitorConfig {device.name}: {result.data}")
+                    print(f"[CELERY_SYNC] ✗ Erro MonitorConfig: {result.data}")
             except Exception as e:
                 stats['errors'].append(f"MonitorConfig {device.name}: {str(e)}")
                 print(f"[CELERY_SYNC] ✗ Erro MonitorConfig: {str(e)}")

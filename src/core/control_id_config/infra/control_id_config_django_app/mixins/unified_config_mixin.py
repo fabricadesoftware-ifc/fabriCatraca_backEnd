@@ -440,7 +440,7 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
     def sync_monitor_into_model(self):
         """Carrega monitor da catraca e persiste em MonitorConfig (campos fortes)."""
         try:
-            from ..models import MonitorConfig
+            from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import MonitorConfig
             res = self.sync_monitor_config_from_catraca()
             if getattr(res, 'status_code', 200) != 200:
                 return res
