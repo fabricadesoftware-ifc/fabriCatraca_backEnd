@@ -8,6 +8,18 @@ class CatraConfigSerializer(serializers.ModelSerializer):
     # Campos booleanos explícitos para corrigir comportamento do HTML form do DRF
     anti_passback = serializers.BooleanField(required=False, default=False)
     daily_reset = serializers.BooleanField(required=False, default=False)
+    
+    # Campos de escolha explícitos para garantir limpeza de dados
+    gateway = serializers.ChoiceField(
+        choices=['clockwise', 'anticlockwise'],
+        required=False,
+        default='clockwise'
+    )
+    operation_mode = serializers.ChoiceField(
+        choices=['blocked', 'entrance_open', 'exit_open', 'both_open'],
+        required=False,
+        default='blocked'
+    )
 
     class Meta:
         model = CatraConfig
@@ -25,21 +37,17 @@ class CatraConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_gateway(self, value):
-        """Valida o sentido do gateway"""
-        valid_gateways = ['clockwise', 'anticlockwise']
-        if value not in valid_gateways:
-            raise serializers.ValidationError(
-                f"Gateway deve ser 'clockwise' ou 'anticlockwise'. Recebido: {value}"
-            )
+        """Limpa e valida o sentido do gateway"""
+        if value:
+            # Remove aspas extras e espaços
+            value = value.strip().strip('"').strip("'")
         return value
 
     def validate_operation_mode(self, value):
-        """Valida o modo de operação"""
-        valid_modes = ['blocked', 'entrance_open', 'exit_open', 'both_open']
-        if value not in valid_modes:
-            raise serializers.ValidationError(
-                f"Operation mode deve ser um de: {', '.join(valid_modes)}. Recebido: {value}"
-            )
+        """Limpa e valida o modo de operação"""
+        if value:
+            # Remove aspas extras e espaços
+            value = value.strip().strip('"').strip("'")
         return value
 
     def to_representation(self, instance):
