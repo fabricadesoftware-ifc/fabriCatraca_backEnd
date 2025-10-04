@@ -10,7 +10,7 @@ O Monitor é um sistema PUSH onde a catraca envia automaticamente:
 Quando há inserção, alteração ou deleção dessas entidades.
 """
 from typing import Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
 from django.db import transaction
 import logging
@@ -166,7 +166,8 @@ class MonitorNotificationHandler:
         - portal_id: ID do portal (lado da catraca)
         - card_value: Valor do cartão RFID
         """
-        from src.core.control_Id.infra.control_id_django_app.models import AccessLogs, Device, Portal, User as AppUser
+        from src.core.control_Id.infra.control_id_django_app.models import AccessLogs, Device, Portal
+        from src.core.user.infra.user_django_app.models import User
         
         try:
             # Busca o device
@@ -184,8 +185,12 @@ class MonitorNotificationHandler:
             
             if change_type == 'inserted':
                 # Converte timestamp Unix para datetime
-                timestamp = datetime.fromtimestamp(int(time_unix), tz=timezone.utc) if time_unix else timezone.now()
-                
+                timestamp = (
+                    datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
+                    if time_unix
+                    else dt_timezone.now()
+                )
+
                 # Busca relacionamentos opcionais
                 portal = None
                 portal_id = values.get('portal_id')
@@ -195,15 +200,16 @@ class MonitorNotificationHandler:
                 user = None
                 user_id = values.get('user_id')
                 if user_id and int(user_id) > 0:
-                    user = AppUser.objects.filter(id=user_id).first()
-                
+                    user = User.objects.filter(id=user_id).first()
+
                 # Cria o log
                 log, created = AccessLogs.objects.get_or_create(
                     device=device,
                     identifier_id=str(log_id),
                     time=timestamp,
                     defaults={
-                        'event_type': int(event) if event else 0,
+                        'id': values.get('id'),
+                        'event_type': int(event),
                         'user': user,
                         'portal': portal,
                         'card_value': values.get('card_value', ''),
@@ -212,7 +218,7 @@ class MonitorNotificationHandler:
                         'pin_value': values.get('pin_value', ''),
                         'confidence': values.get('confidence', 0),
                         'mask': values.get('mask', ''),
-                        'access_rule': None,
+                        'access_rule': values.get('access_rule', None),
                     }
                 )
                 
@@ -230,7 +236,8 @@ class MonitorNotificationHandler:
                 # Atualiza log existente
                 log = AccessLogs.objects.filter(device=device, identifier_id=str(log_id)).first()
                 if log:
-                    timestamp = datetime.fromtimestamp(int(time_unix), tz=timezone.utc) if time_unix else log.time
+                    timestamp = datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc) if time_unix else log.time
+
                     log.time = timestamp
                     log.event_type = int(event) if event else log.event_type
                     log.card_value = values.get('card_value', log.card_value)

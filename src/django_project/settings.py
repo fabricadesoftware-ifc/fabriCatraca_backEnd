@@ -224,3 +224,42 @@ CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_RESULT_BACKEND = "rpc://"
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', BROKER_URL)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,  # mantém loggers já existentes
+    "formatters": {
+        "verbose": {
+            "format": "[{levelname}] {asctime} {name}: {message}",
+            "style": "{",
+        },
+        "simple": {
+            "format": "[{levelname}] {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": "DEBUG",  # mostra tudo no console
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "DEBUG",  # define nível global
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",  # reduz verbosidade do Django core
+            "propagate": False,
+        },
+        # logger específico do teu módulo
+        "src.core.control_id_monitor.infra.control_id_monitor_django_app": {
+            "handlers": ["console"],
+            "level": "DEBUG",  # ou INFO se não quiser tanto detalhe
+            "propagate": False,
+        },
+    },
+}
