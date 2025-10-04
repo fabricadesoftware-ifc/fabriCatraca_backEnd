@@ -9,12 +9,14 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
     def update_ui_config_in_catraca(self, instance):
         """Atualiza configurações de interface na catraca"""
         
-        def bool_to_string(value):
-            return "1" if value else "0"
-        
-        # UI Config: parâmetros específicos podem não existir na API Control iD
-        # Por enquanto, não enviar nada e retornar sucesso
-        response = Response({"success": True, "message": "UI config atualizada localmente (sem parâmetros específicos na API da catraca)"})
+        # Envia configurações de UI para a catraca via set_configuration.fcgi
+        # Usando a seção 'general' onde screen_always_on está disponível
+        response = self.update_objects(
+            "general",
+            {
+                "screen_always_on": instance.screen_always_on,
+            },
+        )
         return response
     
     def sync_ui_config_from_catraca(self):
@@ -22,8 +24,8 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
         try:
             from ..models import UIConfig
             
-            # Payload especificando parâmetros de UI
-            payload = {"general": []}
+            # Buscar parâmetro screen_always_on da seção 'general'
+            payload = {"general": ["screen_always_on"]}
             
             # Usa o helper com retry automático de sessão
             response = self._make_request("get_configuration.fcgi", json_data=payload)
@@ -36,14 +38,16 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
                     "message": f"Erro ao obter configurações: {response.status_code}"
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            catraca_config = [config_data] if config_data else []
+            # Extrair valor de screen_always_on (pode vir como int 0/1)
+            screen_always_on_value = config_data.get('screen_always_on', 0)
+            # Converter para boolean (aceita int ou bool)
+            screen_always_on = bool(int(screen_always_on_value)) if isinstance(screen_always_on_value, (int, str)) else bool(screen_always_on_value)
             
-            # NOTA: screen_always_on NÃO está disponível na API dessa catraca
-            # Sempre cria/atualiza com valor padrão False
+            # Criar ou atualizar configuração com valor real da catraca
             config, created = UIConfig.objects.update_or_create(
                 device=self.device,
                 defaults={
-                    'screen_always_on': False  # Campo não disponível na API
+                    'screen_always_on': screen_always_on
                 }
             )
             
@@ -51,7 +55,7 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
                 "success": True,
                 "message": f"Configuração de interface {'criada' if created else 'atualizada'} com sucesso",
                 "config_id": config.id,
-                "warning": "Campo screen_always_on não disponível na API desta catraca"
+                "screen_always_on": screen_always_on
             })
                 
         except Exception as e:

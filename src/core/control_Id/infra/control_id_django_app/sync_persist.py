@@ -30,78 +30,111 @@ def persist_all(
 ):
     with transaction.atomic():
         print("[SYNC] Iniciando sincronização completa")
+        print("[SYNC] 🗑️  LIMPANDO DADOS ANTIGOS DO BANCO (mantendo superusuários Django)")
+        
+        # Limpar todos os dados relacionados à catraca ANTES de popular
+        # Ordem importa devido às foreign keys
+        print("[SYNC]   Limpando logs de acesso...")
+        AccessLogs.objects.all().delete()
+        
+        print("[SYNC]   Limpando templates e cartões...")
+        Template.objects.all().delete()
+        Card.objects.all().delete()
+        
+        print("[SYNC]   Limpando relações de usuários e grupos...")
+        UserAccessRule.objects.all().delete()
+        UserGroup.objects.all().delete()
+        
+        print("[SYNC]   Limpando relações de grupos e portais...")
+        GroupAccessRule.objects.all().delete()
+        PortalAccessRule.objects.all().delete()
+        AccessRuleTimeZone.objects.all().delete()
+        
+        print("[SYNC]   Limpando grupos...")
+        CustomGroup.objects.all().delete()
+        
+        print("[SYNC]   Limpando regras de acesso...")
+        AccessRule.objects.all().delete()
+        
+        print("[SYNC]   Limpando time spans e time zones...")
+        TimeSpan.objects.all().delete()
+        TimeZone.objects.all().delete()
+        
+        print("[SYNC]   Limpando portais e áreas...")
+        Portal.objects.all().delete()
+        Area.objects.all().delete()
+        
+        print("[SYNC]   Limpando usuários (exceto superusuários Django)...")
+        User.objects.exclude(is_staff=True, is_superuser=True).delete()
+        
+        print("[SYNC] ✅ Limpeza concluída! Iniciando população com dados da catraca...")
         
         # Sincronização de usuários
-        print("[SYNC] Sincronizando usuários")
-        remote_user_ids = {int(k) for k in all_users.keys()}
-        User.objects.exclude(id__in=remote_user_ids).exclude(is_staff=True, is_superuser=True).delete()
-
-        # Identifica usuários sem matrícula
+        print(f"[SYNC] 📥 Criando {len(all_users)} usuários da catraca")
         users_without_registration = []
-        for user_id, user_data in all_users.items():
-            if not user_data.get('registration'):
-                users_without_registration.append({
-                    'id': user_id,
-                    'name': user_data['name'],
-                    'devices': [d.name for d in user_data['devices']]
-                })
-
-        if users_without_registration:
-            print("\n[SYNC] ⚠️ ATENÇÃO: Usuários sem matrícula encontrados:")
-            for user in users_without_registration:
-                print(f"""    ID: {user['id']}
-    Nome: {user['name']}
-    Dispositivos: {', '.join(user['devices'])}
-    ----------------------------------------""")
-            print("\nPor favor, atualize as matrículas desses usuários no sistema.\n")
-
-        # Processa usuários com tratamento para matrícula vazia
+        users_created = 0
+        
         for user_data in all_users.values():
             devices = user_data.pop('devices')
             
-            # Se não tem matrícula, usa um valor temporário baseado no ID
+            # Identificar usuários sem matrícula
             if not user_data.get('registration'):
+                users_without_registration.append({
+                    'id': user_data['id'],
+                    'name': user_data['name'],
+                    'devices': [d.name for d in devices]
+                })
+                # Usar matrícula temporária baseada no ID
                 temp_registration = f"TEMP_{user_data['id']}"
-                print(f"[SYNC] Usuário {user_data['name']} (ID: {user_data['id']}) sem matrícula. Usando temporária: {temp_registration}")
                 user_data['registration'] = temp_registration
 
-            user, _ = User.objects.update_or_create(
+            # Criar usuário (não precisa update_or_create, já limpamos antes)
+            user = User.objects.create(
                 id=user_data['id'],
-                defaults={
-                    'name': user_data['name'],
-                    'registration': user_data['registration'],
-                    'user_type_id': user_data.get('user_type_id')
-                }
+                name=user_data['name'],
+                registration=user_data['registration'],
+                user_type_id=user_data.get('user_type_id')
             )
             user.devices.set(devices)
+            users_created += 1
+        
+        print(f"[SYNC] ✅ {users_created} usuários criados")
+        
+        if users_without_registration:
+            print(f"\n[SYNC] ⚠️  ATENÇÃO: {len(users_without_registration)} usuários sem matrícula:")
+            for user in users_without_registration[:5]:  # Mostrar apenas os 5 primeiros
+                print(f"    • ID {user['id']}: {user['name']} (Dispositivos: {', '.join(user['devices'])})")
+            if len(users_without_registration) > 5:
+                print(f"    ... e mais {len(users_without_registration) - 5} usuários")
+            print("    💡 Configure as matrículas desses usuários no sistema da catraca\n")
 
         # Sincronização de time zones
-        print("[SYNC] Sincronizando time zones")
+        print(f"[SYNC] 📥 Criando {len(all_time_zones)} time zones")
         for tz in all_time_zones.values():
-            TimeZone.objects.update_or_create(id=tz['id'], defaults={"name": tz['name']})
-        TimeZone.objects.exclude(id__in=list(all_time_zones.keys())).delete()
+            TimeZone.objects.create(id=tz['id'], name=tz['name'])
 
         # Sincronização de time spans
-        print("[SYNC] Sincronizando time spans")
+        print(f"[SYNC] 📥 Criando {len(all_time_spans)} time spans")
         for ts in all_time_spans.values():
-            TimeSpan.objects.update_or_create(
+            TimeSpan.objects.create(
                 id=ts['id'],
-                defaults=dict(
-                    time_zone_id=ts['time_zone_id'], start=ts['start'], end=ts['end'],
-                    sun=ts['sun'], mon=ts['mon'], tue=ts['tue'], wed=ts['wed'], thu=ts['thu'], fri=ts['fri'], sat=ts['sat'],
-                    hol1=ts['hol1'], hol2=ts['hol2'], hol3=ts['hol3']
-                )
+                time_zone_id=ts['time_zone_id'],
+                start=ts['start'],
+                end=ts['end'],
+                sun=ts['sun'], mon=ts['mon'], tue=ts['tue'], wed=ts['wed'],
+                thu=ts['thu'], fri=ts['fri'], sat=ts['sat'],
+                hol1=ts['hol1'], hol2=ts['hol2'], hol3=ts['hol3']
             )
-        TimeSpan.objects.exclude(id__in=list(all_time_spans.keys())).delete()
 
         # Sincronização de regras de acesso
-        print("[SYNC] Sincronizando regras de acesso")
+        print(f"[SYNC] 📥 Criando {len(all_access_rules)} regras de acesso")
         for ar in all_access_rules.values():
-            AccessRule.objects.update_or_create(
+            AccessRule.objects.create(
                 id=ar['id'],
-                defaults={"name": ar['name'], "type": ar['type'], "priority": ar['priority']}
+                name=ar['name'],
+                type=ar['type'],
+                priority=ar['priority']
             )
-        AccessRule.objects.exclude(id__in=list(all_access_rules.keys())).delete()
 
         # Sincronização de grupos
         print("[SYNC] Sincronizando grupos")
@@ -115,15 +148,46 @@ def persist_all(
         group_id_map: Dict[int, int] = {}
         for name, ids in groups_by_name.items():
             preferred_id = min(ids)
-            existing = CustomGroup.objects.filter(name=name).first()
-            canonical_id = existing.id if existing else preferred_id
-            if not existing:
-                try:
-                    CustomGroup.objects.create(id=canonical_id, name=name)
-                except Exception:
-                    existing = CustomGroup.objects.filter(name=name).first()
-                    if existing:
-                        canonical_id = existing.id
+            
+            # Usar savepoint para isolar erros de integridade
+            sp_group = transaction.savepoint()
+            try:
+                # Primeiro tentar buscar por nome
+                existing = CustomGroup.objects.filter(name=name).first()
+                
+                if existing:
+                    canonical_id = existing.id
+                    print(f"[SYNC] ⚠️ Usando grupo existente: {name} (ID: {canonical_id})")
+                else:
+                    # Verificar se o ID preferido está livre
+                    if not CustomGroup.objects.filter(id=preferred_id).exists():
+                        # ID livre, criar com ID específico
+                        group = CustomGroup.objects.create(id=preferred_id, name=name)
+                        canonical_id = group.id
+                        print(f"[SYNC] ✓ Grupo '{name}' criado com ID {canonical_id}")
+                    else:
+                        # ID ocupado, usar get_or_create (sem ID específico)
+                        group, created = CustomGroup.objects.get_or_create(name=name)
+                        canonical_id = group.id
+                        if created:
+                            print(f"[SYNC] ⚠️ ID {preferred_id} já ocupado, grupo '{name}' criado com ID {canonical_id}")
+                        else:
+                            print(f"[SYNC] ⚠️ Usando grupo existente: {name} (ID: {canonical_id})")
+                
+                transaction.savepoint_commit(sp_group)
+                
+            except Exception as e:
+                transaction.savepoint_rollback(sp_group)
+                print(f"[SYNC] ❌ Erro ao processar grupo '{name}': {e}")
+                # Tentar recuperar qualquer grupo existente com esse nome
+                existing = CustomGroup.objects.filter(name=name).first()
+                if existing:
+                    canonical_id = existing.id
+                    print(f"[SYNC] ⚠️ Recuperado grupo existente após erro: {name} (ID: {canonical_id})")
+                else:
+                    print(f"[SYNC] ❌ Não foi possível criar ou encontrar grupo '{name}', pulando...")
+                    continue
+            
             chosen_id_by_name[name] = canonical_id
             for gid in ids:
                 group_id_map[gid] = canonical_id
@@ -131,6 +195,7 @@ def persist_all(
         # Sincronização de grupos de usuários
         print("[SYNC] Sincronizando grupos de usuários")
         seen_user_groups: set[Tuple[int, int]] = set()
+        created_user_groups = 0
         for ug in all_user_groups:
             try:
                 user_id = int(ug['user_id'])
@@ -144,16 +209,28 @@ def persist_all(
                     continue
                 if not CustomGroup.objects.filter(id=mapped_group_id).exists():
                     continue
-                UserGroup.objects.create(user_id=user_id, group_id=mapped_group_id)
+                
+                # Usar savepoint para evitar que erro de integridade quebre a transação principal
+                sp_usergroup = transaction.savepoint()
+                try:
+                    _, created = UserGroup.objects.get_or_create(user_id=user_id, group_id=mapped_group_id)
+                    if created:
+                        created_user_groups += 1
+                    transaction.savepoint_commit(sp_usergroup)
+                except Exception as e:
+                    transaction.savepoint_rollback(sp_usergroup)
+                    print(f"[SYNC] ⚠️ Erro ao criar UserGroup (user_id={user_id}, group_id={mapped_group_id}): {e}")
+                    continue
             except Exception:
                 continue
+        print(f"[SYNC] user_groups criados: {created_user_groups}")
 
         # Sincronização de regras de acesso de grupo
         print(f"[SYNC] Sincronizando regras de acesso de grupo: recebidos={len(all_group_access_rules)}")
-        try:
-            seen_group_rules: set[Tuple[int, int]] = set()
-            created_gar = 0
-            for gar in all_group_access_rules:
+        seen_group_rules: set[Tuple[int, int]] = set()
+        created_gar = 0
+        for gar in all_group_access_rules:
+            try:
                 original_group_id = int(gar['group_id'])
                 mapped_group_id = group_id_map.get(original_group_id, original_group_id)
                 access_rule_id = int(gar['access_rule_id'])
@@ -165,33 +242,41 @@ def persist_all(
                     continue
                 if not AccessRule.objects.filter(id=access_rule_id).exists():
                     continue
-                _, created = GroupAccessRule.objects.get_or_create(group_id=mapped_group_id, access_rule_id=access_rule_id)
-                if created:
-                    created_gar += 1
-        except NameError:
-            pass
+                
+                # Usar savepoint para evitar que erro de integridade quebre a transação principal
+                sp_grouprule = transaction.savepoint()
+                try:
+                    _, created = GroupAccessRule.objects.get_or_create(group_id=mapped_group_id, access_rule_id=access_rule_id)
+                    if created:
+                        created_gar += 1
+                    transaction.savepoint_commit(sp_grouprule)
+                except Exception as e:
+                    transaction.savepoint_rollback(sp_grouprule)
+                    print(f"[SYNC] ⚠️ Erro ao criar GroupAccessRule (group_id={mapped_group_id}, access_rule_id={access_rule_id}): {e}")
+                    continue
+            except Exception:
+                continue
         print(f"[SYNC] group_access_rules criados/confirmados: {created_gar}")
 
         # Sincronização de áreas
-        print("[SYNC] Sincronizando áreas")
+        print(f"[SYNC] 📥 Criando {len(all_areas)} áreas")
         for a in all_areas.values():
-            Area.objects.update_or_create(id=a['id'], defaults={"name": a['name']})
-        Area.objects.exclude(id__in=list(all_areas.keys())).delete()
+            Area.objects.create(id=a['id'], name=a['name'])
 
         # Sincronização de portais
-        print("[SYNC] Sincronizando portais")
+        print(f"[SYNC] 📥 Criando {len(all_portals)} portais")
         for p in all_portals.values():
-            Portal.objects.update_or_create(
+            Portal.objects.create(
                 id=p['id'],
-                defaults={"name": p['name'], "area_from_id": p['area_from_id'], "area_to_id": p['area_to_id']}
+                name=p['name'],
+                area_from_id=p['area_from_id'],
+                area_to_id=p['area_to_id']
             )
-        Portal.objects.exclude(id__in=list(all_portals.keys())).delete()
 
         # Sincronização de templates
-        print("[SYNC] Sincronizando templates")
+        print(f"[SYNC] 📥 Criando {len(all_templates)} templates")
         sp_templates = transaction.savepoint()
         try:
-            Template.objects.all().delete()
             templates = []
             for t in all_templates:
                 if User.objects.filter(id=t['user_id']).exists():

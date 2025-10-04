@@ -10,16 +10,16 @@ class TimeSpanSyncMixin(ControlIDSyncMixin):
             "time_zone_id": instance.time_zone.id,
             "start": instance.start,
             "end": instance.end,
-            "sun": instance.sun,
-            "mon": instance.mon,
-            "tue": instance.tue,
-            "wed": instance.wed,
-            "thu": instance.thu,
-            "fri": instance.fri,
-            "sat": instance.sat,
-            "hol1": instance.hol1,
-            "hol2": instance.hol2,
-            "hol3": instance.hol3
+            "sun": int(instance.sun),  # Converte boolean para int (0/1)
+            "mon": int(instance.mon),
+            "tue": int(instance.tue),
+            "wed": int(instance.wed),
+            "thu": int(instance.thu),
+            "fri": int(instance.fri),
+            "sat": int(instance.sat),
+            "hol1": int(instance.hol1),
+            "hol2": int(instance.hol2),
+            "hol3": int(instance.hol3)
         }])
         return response
 
@@ -31,16 +31,16 @@ class TimeSpanSyncMixin(ControlIDSyncMixin):
                 "time_zone_id": instance.time_zone.id,
                 "start": instance.start,
                 "end": instance.end,
-                "sun": instance.sun,
-                "mon": instance.mon,
-                "tue": instance.tue,
-                "wed": instance.wed,
-                "thu": instance.thu,
-                "fri": instance.fri,
-                "sat": instance.sat,
-                "hol1": instance.hol1,
-                "hol2": instance.hol2,
-                "hol3": instance.hol3
+                "sun": int(instance.sun),  # Converte boolean para int (0/1)
+                "mon": int(instance.mon),
+                "tue": int(instance.tue),
+                "wed": int(instance.wed),
+                "thu": int(instance.thu),
+                "fri": int(instance.fri),
+                "sat": int(instance.sat),
+                "hol1": int(instance.hol1),
+                "hol2": int(instance.hol2),
+                "hol3": int(instance.hol3)
             },
             {"time_spans": {"id": instance.id}}
         )
