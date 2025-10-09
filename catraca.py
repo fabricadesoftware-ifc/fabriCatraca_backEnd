@@ -193,7 +193,7 @@ def find_duplicates_by_name(users: List[Dict], keep: str, ignore_if_registration
 
 def main():
     parser = argparse.ArgumentParser(description="Remoção de usuários duplicados na catraca (Control iD)")
-    parser.add_argument("--device-url", default=os.getenv("CATRAKA_URL", "http://localhost:8080"), help="URL/IP da catraca (ex: http://192.168.0.10)")
+    parser.add_argument("--device-url", default=os.getenv("CATRAKA_URL", "http://191.52.62.21"), help="URL/IP da catraca (ex: http://192.168.0.10)")
     parser.add_argument("--username", default=os.getenv("CATRAKA_USER", "admin"), help="Usuário de login na catraca")
     parser.add_argument("--password", default=os.getenv("CATRAKA_PASS", "admin"), help="Senha de login na catraca")
 
