@@ -2,10 +2,10 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default"]
+groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:e2a6698107b0e0ba8f621c74a1bb19325491367d163e0269bc003960cd2de0d3"
+content_hash = "sha256:3dd06a0cc9fcc580a88df3d16945aed8f4e0fc28da65105574bf8a7e8eae1751"
 
 [[metadata.targets]]
 requires_python = ">=3.13"
@@ -882,7 +882,7 @@ name = "pygraphviz"
 version = "1.14"
 requires_python = ">=3.10"
 summary = "Python interface to Graphviz"
-groups = ["default"]
+groups = ["dev"]
 files = [
     {file = "pygraphviz-1.14.tar.gz", hash = "sha256:c10df02377f4e39b00ae17c862f4ee7e5767317f1c6b2dfd04cea6acc7fc2bea"},
 ]
