@@ -17,21 +17,11 @@ APPEND_SLASH=False
 BROKER_URL = os.getenv("BROKER_URL", "amqp://rafaelbochi:2012@localhost/fabricapainel")
 ALLOWED_HOSTS = ['*']
 CSRF_TRUSTED_ORIGINS = [
-    # Subdomínios de fexcompany.me
-    "https://*.fexcompany.me",
-    # Subdomínios de fabricadesoftware.ifc.edu.br
-    "https://*.fabricadesoftware.ifc.edu.br",
-    # Front-end local
-    "http://localhost:8000",
-    "http://localhost:5173",
-    "http://localhost:3000",
+    "https://catraca.fabricadesoftware.ifc.edu.br",
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # Frontend em desenvolvimento
-    "http://localhost:3000",
-    "https://*.fexcompany.me",
-    "https://*.fabricadesoftware.ifc.edu.br",
+    "https://catraca.fabricadesoftware.ifc.edu.br",
 ]
 
 # Permitir cookies nas requisições cross-origin
