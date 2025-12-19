@@ -34,14 +34,15 @@ class MonitorConfigSyncMixin(ControlIDSyncMixin):
             if hasattr(instance, 'request_timeout') and instance.request_timeout is not None:
                 monitor_data['request_timeout'] = str(instance.request_timeout)
             
-            if hasattr(instance, 'hostname') and instance.hostname:
-                monitor_data['hostname'] = str(instance.hostname)
+            # Removemos a verificação "and instance.hostname" para permitir enviar string vazia (limpar config)
+            if hasattr(instance, 'hostname'):
+                monitor_data['hostname'] = str(instance.hostname or "")
             
-            if hasattr(instance, 'port') and instance.port is not None:
-                monitor_data['port'] = str(instance.port)
+            if hasattr(instance, 'port'):
+                monitor_data['port'] = str(instance.port or "")
             
-            if hasattr(instance, 'path') and instance.path:
-                monitor_data['path'] = str(instance.path)
+            if hasattr(instance, 'path'):
+                monitor_data['path'] = str(instance.path or "")
             
             # Campos extras que podem existir em algumas catracas
             if hasattr(instance, 'inform_access_event_id') and instance.inform_access_event_id is not None:
@@ -95,7 +96,9 @@ class MonitorConfigSyncMixin(ControlIDSyncMixin):
                     "path",
                     "hostname", 
                     "port",
-                    "request_timeout"
+                    "request_timeout",
+                    "alive_interval",
+                    "inform_access_event_id"
                 ]
             }
             

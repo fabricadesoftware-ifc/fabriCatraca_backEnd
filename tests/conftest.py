@@ -184,12 +184,14 @@ def mock_catraca_response():
         
         responses = {
             'system': {
-                'system': {
+                'general': {
                     'name': 'Catraca Teste',
                     'date': '30/09/2025',
                     'time': '14:30:00',
                     'timezone': 'America/Sao_Paulo',
-                    'dst': '0'
+                    'dst': '0',
+                    'online': '1',
+                    'language': 'pt_BR'
                 }
             },
             'catra': {
@@ -205,6 +207,21 @@ def mock_catraca_response():
                     'push_request_timeout': '15000',
                     'push_request_period': '60',
                     'push_remote_address': '192.168.1.100:8080'
+                }
+            },
+            'hardware': {
+                'hardware': {
+                    'beep_enabled': '1',
+                }
+            },
+            'security': {
+                'security': {
+                    'password_only': '0',
+                }
+            },
+            'ui': {
+                'ui': {
+                    'screen_always_on': '0',
                 }
             }
         }

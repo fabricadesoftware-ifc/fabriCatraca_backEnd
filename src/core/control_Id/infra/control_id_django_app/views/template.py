@@ -1,5 +1,4 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 from drf_spectacular.utils import extend_schema
@@ -18,67 +17,71 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """
         Cria um template biométrico.
-        Parâmetros:
-            enrollment_device_id: ID da catraca para fazer o cadastro (obrigatório)
+        Fluxo:
+        1. Valida dados de entrada (user_id, device_id)
+        2. Realiza cadastro remoto na catraca (remote_enroll)
+        3. Salva no banco de dados com o template retornado
+        4. Replica para outras catracas
         """
-        enrollment_device_id = request.data.get('enrollment_device_id')
-        
-        if not enrollment_device_id:
-            return Response({
-                "error": "É necessário especificar uma catraca para cadastro (enrollment_device_id)"
-            }, status=status.HTTP_400_BAD_REQUEST)
-            
         try:
-            # Define a catraca para cadastro
-            enrollment_device = Device.objects.get(id=enrollment_device_id)
-            self.set_device(enrollment_device)
-            
-            # Captura user_id do corpo ou querystring
+            enrollment_device_id = request.data.get('enrollment_device_id')
+            if not enrollment_device_id:
+                return Response({
+                    "error": "É necessário especificar uma catraca para cadastro (enrollment_device_id)"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             user_id = request.data.get('user_id') or request.query_params.get('user_id') or request.data.get('user')
             if not user_id:
                 return Response({
-                    "error": "Erro ao processar template",
-                    "details": "{'user_id': [ErrorDetail(string='Este campo é obrigatório.', code='required')]}"
+                    "error": "Usuário (user_id) é obrigatório"
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Primeiro cria no banco para ter o ID
-            serializer = self.get_serializer(data={
-                "user_id": user_id,
-                "enrollment_device_id": enrollment_device_id
-            })
-            serializer.is_valid(raise_exception=True)
-            instance = serializer.save()
-            print(instance.user)
-            
-            # Faz o cadastro remoto
+            try:
+                enrollment_device = Device.objects.get(id=enrollment_device_id)
+                self.set_device(enrollment_device)
+            except Device.DoesNotExist:
+                return Response({
+                    "error": f"Catraca com ID {enrollment_device_id} não encontrada"
+                }, status=status.HTTP_404_NOT_FOUND)
+
             response = self.remote_enroll(
-                user_id=instance.user.id,
+                user_id=user_id,
                 type="biometry",
-                save=False,  # Não salvar na catraca ainda
+                save=False,
                 sync=True
             )
             
             if response.status_code != status.HTTP_201_CREATED:
-                instance.delete()  # Remove do banco se falhar na catraca
                 return Response({
-                    "error": "Erro no cadastro remoto",
+                    "error": "Erro no cadastro remoto da biometria",
                     "details": response.data
                 }, status=response.status_code)
-                
-            template_data = response.data  # Usa .data em vez de .json()
-            
+
+            template_data = response.data
+            captured_template = template_data.get("template")
+
+            if not captured_template:
+                 return Response({
+                    "error": "Catraca não retornou o template biométrico",
+                    "details": template_data
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
             with transaction.atomic():
-                # Atualiza o template com os dados da catraca
-                instance.template = template_data["template"]
-                instance.save()
+                data = {
+                    "user_id": user_id,
+                    "enrollment_device_id": enrollment_device_id,
+                }
+
+                serializer = self.get_serializer(data=data)
+                serializer.is_valid(raise_exception=True)
+
+                instance = serializer.save(template=captured_template)
                 
-                # Cadastra em todas as catracas ativas
                 devices = Device.objects.filter(is_active=True)
                 
+                errors = []
                 for device in devices:
                     self.set_device(device)
-                    print(instance.user)
-                    
                     create_response = self.create_objects("templates", [{
                         "id": instance.id,
                         "user_id": instance.user.id,
@@ -86,25 +89,20 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                     }])
                     
                     if create_response.status_code != status.HTTP_201_CREATED:
-                        # Se falhar em alguma catraca, reverte tudo
-                        instance.delete()
-                        return Response({
-                            "error": f"Erro ao criar template na catraca {device.name}",
-                            "details": create_response.data
-                        }, status=create_response.status_code)
-                    
-                    # Adiciona a relação com a catraca
-                    instance.devices.add(device)
+                        errors.append(f"{device.name}: {create_response.data}")
+                    else:
+                        instance.devices.add(device)
+                
+                if errors:
+                    print(f"Erros de replicação: {errors}")
                 
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
-                
-        except Device.DoesNotExist:
-            return Response({
-                "error": f"Catraca com ID {enrollment_device_id} não encontrada"
-            }, status=status.HTTP_404_NOT_FOUND)
+
         except Exception as e:
+            import traceback
+            traceback.print_exc() # Log no console para debug
             return Response({
-                "error": "Erro ao processar template",
+                "error": "Erro interno no servidor ao processar biometria",
                 "details": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -114,10 +112,8 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         with transaction.atomic():
-            # Atualiza o template no banco
             instance = serializer.save()
             
-            # Atualiza em todas as catracas ativas
             devices = Device.objects.filter(is_active=True)
             
             for device in devices:
@@ -137,7 +133,6 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         "details": response.data
                     }, status=response.status_code)
                 
-                # Atualiza a relação com a catraca
                 instance.devices.add(device)
         
         return Response(serializer.data)
@@ -146,7 +141,6 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
         
         with transaction.atomic():
-            # Remove de todas as catracas ativas
             devices = Device.objects.filter(is_active=True)
             
             for device in devices:
