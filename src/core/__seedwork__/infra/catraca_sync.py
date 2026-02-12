@@ -278,12 +278,15 @@ class ControlIDSyncMixin:
                 Device,
             )
 
-            devices = Device.objects.filter(is_active=True)
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            if self._device is not None:
+                devices = [self._device]
+            else:
+                devices = list(Device.objects.filter(is_active=True))
+                if not devices:
+                    return Response(
+                        {"error": "Nenhuma catraca ativa encontrada"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             with transaction.atomic():
                 for device in devices:
@@ -321,12 +324,15 @@ class ControlIDSyncMixin:
                 Device,
             )
 
-            devices = Device.objects.filter(is_active=True)
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            if self._device is not None:
+                devices = [self._device]
+            else:
+                devices = list(Device.objects.filter(is_active=True))
+                if not devices:
+                    return Response(
+                        {"error": "Nenhuma catraca ativa encontrada"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             with transaction.atomic():
                 for device in devices:

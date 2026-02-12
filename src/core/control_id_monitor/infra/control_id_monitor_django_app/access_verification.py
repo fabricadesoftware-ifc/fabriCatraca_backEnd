@@ -775,7 +775,110 @@ class AccessVerificationService:
                 lines.append("   → Solução: Sincronize portal_access_rules")
                 problems_found += 1
 
-        # ── 6. Templates/cartões do usuário ──
+        # ── 6. Time zones das regras em comum ──
+        # Verifica se as regras que casam (usuário ∩ portal) têm time_zones
+        # e se os time_spans cobrem o horário atual
+        if portal_id:
+            # Coleta regras do usuário (diretas + via grupo)
+            user_all_rules_set = set()
+            for r in catraca_user_rules:
+                user_all_rules_set.add(int(r.get("access_rule_id", 0)))
+            for gid in [int(g.get("group_id", 0)) for g in catraca_user_groups]:
+                for gr in _load(
+                    "group_access_rules",
+                    where={"group_access_rules": {"group_id": gid}},
+                ):
+                    user_all_rules_set.add(int(gr.get("access_rule_id", 0)))
+
+            portal_rule_ids = set()
+            for r in _load(
+                "portal_access_rules",
+                where={"portal_access_rules": {"portal_id": portal_id}},
+            ):
+                portal_rule_ids.add(int(r.get("access_rule_id", 0)))
+
+            matching_rules = user_all_rules_set & portal_rule_ids
+
+            now = timezone.localtime()
+            now_seconds = now.hour * 3600 + now.minute * 60 + now.second
+            day_map = {
+                0: "mon",
+                1: "tue",
+                2: "wed",
+                3: "thu",
+                4: "fri",
+                5: "sat",
+                6: "sun",
+            }
+            today_field = day_map.get(now.weekday(), "mon")
+
+            for rule_id in sorted(matching_rules):
+                # Busca access_rule_time_zones na catraca
+                art_zones = _load(
+                    "access_rule_time_zones",
+                    where={"access_rule_time_zones": {"access_rule_id": rule_id}},
+                )
+                if not art_zones:
+                    lines.append(
+                        f"❌ Regra {rule_id}: SEM time_zone vinculada na catraca!"
+                    )
+                    lines.append("   → Solução: Sincronize access_rule_time_zones")
+                    problems_found += 1
+                    continue
+
+                tz_ids = [int(z.get("time_zone_id", 0)) for z in art_zones]
+                lines.append(f"✔ Regra {rule_id}: time_zone(s) na catraca: {tz_ids}")
+
+                # Para cada time_zone, verifica os time_spans
+                rule_covers_now = False
+                for tz_id in tz_ids:
+                    spans = _load(
+                        "time_spans",
+                        where={"time_spans": {"time_zone_id": tz_id}},
+                    )
+                    if not spans:
+                        lines.append(
+                            f"   ❌ Time zone {tz_id}: SEM time_spans na catraca!"
+                        )
+                        lines.append("      → Solução: Sincronize time_spans")
+                        problems_found += 1
+                        continue
+
+                    for span in spans:
+                        start = int(span.get("start", 0))
+                        end = int(span.get("end", 0))
+                        day_active = int(span.get(today_field, 0))
+
+                        start_h, start_m = divmod(start, 3600)
+                        start_m //= 60
+                        end_h, end_m = divmod(end, 3600)
+                        end_m //= 60
+
+                        if day_active and start <= now_seconds <= end:
+                            rule_covers_now = True
+                            lines.append(
+                                f"   ✔ Time zone {tz_id}: {start_h:02d}:{start_m:02d}-{end_h:02d}:{end_m:02d} "
+                                f"cobre horário atual ({now.strftime('%H:%M:%S')}, {today_field})"
+                            )
+                        elif not day_active:
+                            lines.append(
+                                f"   ⚠️  Time zone {tz_id}: {start_h:02d}:{start_m:02d}-{end_h:02d}:{end_m:02d} "
+                                f"— dia '{today_field}' DESATIVADO na catraca"
+                            )
+                        else:
+                            lines.append(
+                                f"   ⚠️  Time zone {tz_id}: {start_h:02d}:{start_m:02d}-{end_h:02d}:{end_m:02d} "
+                                f"— horário atual ({now.strftime('%H:%M:%S')}) FORA da faixa"
+                            )
+
+                if not rule_covers_now:
+                    lines.append(
+                        f"   ❌ Regra {rule_id}: NENHUM time_span cobre o horário atual na catraca!"
+                    )
+                    lines.append("      → Esta é provavelmente a causa da negação!")
+                    problems_found += 1
+
+        # ── 7. Templates/cartões do usuário ──
         catraca_templates = _load(
             "templates",
             where={"templates": {"user_id": user_id}},
