@@ -644,7 +644,9 @@ class AccessVerificationService:
             lines.append(f"❌ Catraca inacessível: {e}")
             return lines
 
-        def _load(obj: str, where: Optional[Dict] = None, fields: Optional[List[str]] = None) -> List[Dict]:
+        def _load(
+            obj: str, where: Optional[Dict] = None, fields: Optional[List[str]] = None
+        ) -> List[Dict]:
             payload: Dict[str, Any] = {"object": obj}
             if where:
                 payload["where"] = where
@@ -667,12 +669,16 @@ class AccessVerificationService:
         # ── 1. Usuário existe na catraca? ──
         catraca_users = _load("users", where={"users": {"id": user_id}})
         if not catraca_users:
-            lines.append(f"❌ Usuário '{user_name}' (ID {user_id}) NÃO EXISTE na catraca!")
+            lines.append(
+                f"❌ Usuário '{user_name}' (ID {user_id}) NÃO EXISTE na catraca!"
+            )
             lines.append("   → Solução: Execute uma sincronização de usuários")
             problems_found += 1
         else:
             cu = catraca_users[0]
-            lines.append(f"✔ Usuário existe na catraca: {cu.get('name', '?')} (ID {cu.get('id')})")
+            lines.append(
+                f"✔ Usuário existe na catraca: {cu.get('name', '?')} (ID {cu.get('id')})"
+            )
 
         # ── 2. Regras DIRETAS do usuário na catraca ──
         catraca_user_rules = _load(
@@ -681,7 +687,9 @@ class AccessVerificationService:
         )
         if catraca_user_rules:
             rule_ids = [str(r.get("access_rule_id")) for r in catraca_user_rules]
-            lines.append(f"✔ Regras diretas na catraca: {len(catraca_user_rules)} (IDs: {', '.join(rule_ids)})")
+            lines.append(
+                f"✔ Regras diretas na catraca: {len(catraca_user_rules)} (IDs: {', '.join(rule_ids)})"
+            )
         else:
             lines.append("ℹ️  Sem regras diretas na catraca (pode ser via grupo)")
 
@@ -692,7 +700,9 @@ class AccessVerificationService:
         )
         if catraca_user_groups:
             group_ids = [int(g.get("group_id", 0)) for g in catraca_user_groups]
-            lines.append(f"✔ Grupos na catraca: {len(catraca_user_groups)} (IDs: {', '.join(map(str, group_ids))})")
+            lines.append(
+                f"✔ Grupos na catraca: {len(catraca_user_groups)} (IDs: {', '.join(map(str, group_ids))})"
+            )
 
             # ── 4. Regras dos grupos na catraca ──
             for gid in group_ids:
@@ -701,8 +711,12 @@ class AccessVerificationService:
                     where={"group_access_rules": {"group_id": gid}},
                 )
                 if catraca_group_rules:
-                    grule_ids = [str(r.get("access_rule_id")) for r in catraca_group_rules]
-                    lines.append(f"   ✔ Grupo {gid}: {len(catraca_group_rules)} regra(s) (IDs: {', '.join(grule_ids)})")
+                    grule_ids = [
+                        str(r.get("access_rule_id")) for r in catraca_group_rules
+                    ]
+                    lines.append(
+                        f"   ✔ Grupo {gid}: {len(catraca_group_rules)} regra(s) (IDs: {', '.join(grule_ids)})"
+                    )
                 else:
                     lines.append(f"   ❌ Grupo {gid}: SEM regras de acesso na catraca!")
                     lines.append("      → Solução: Sincronize group_access_rules")
@@ -720,26 +734,41 @@ class AccessVerificationService:
             )
             if catraca_portal_rules:
                 prule_ids = [str(r.get("access_rule_id")) for r in catraca_portal_rules]
-                lines.append(f"✔ Portal '{portal_name}': {len(catraca_portal_rules)} regra(s) (IDs: {', '.join(prule_ids)})")
+                lines.append(
+                    f"✔ Portal '{portal_name}': {len(catraca_portal_rules)} regra(s) (IDs: {', '.join(prule_ids)})"
+                )
 
                 # Comparar: as regras do usuário/grupo coincidem com as do portal?
                 user_all_rules = set()
                 for r in catraca_user_rules:
                     user_all_rules.add(int(r.get("access_rule_id", 0)))
                 for gid in [int(g.get("group_id", 0)) for g in catraca_user_groups]:
-                    for gr in _load("group_access_rules", where={"group_access_rules": {"group_id": gid}}):
+                    for gr in _load(
+                        "group_access_rules",
+                        where={"group_access_rules": {"group_id": gid}},
+                    ):
                         user_all_rules.add(int(gr.get("access_rule_id", 0)))
 
-                portal_rule_set = {int(r.get("access_rule_id", 0)) for r in catraca_portal_rules}
+                portal_rule_set = {
+                    int(r.get("access_rule_id", 0)) for r in catraca_portal_rules
+                }
                 matching = user_all_rules & portal_rule_set
 
                 if matching:
-                    lines.append(f"✔ Regras em comum (usuário ∩ portal) na catraca: {matching}")
+                    lines.append(
+                        f"✔ Regras em comum (usuário ∩ portal) na catraca: {matching}"
+                    )
                 else:
-                    lines.append("❌ NENHUMA regra em comum entre usuário e portal NA CATRACA!")
-                    lines.append(f"   Regras do usuário/grupos: {user_all_rules or 'nenhuma'}")
+                    lines.append(
+                        "❌ NENHUMA regra em comum entre usuário e portal NA CATRACA!"
+                    )
+                    lines.append(
+                        f"   Regras do usuário/grupos: {user_all_rules or 'nenhuma'}"
+                    )
                     lines.append(f"   Regras do portal: {portal_rule_set}")
-                    lines.append("   → Solução: Sincronize portal_access_rules e group_access_rules")
+                    lines.append(
+                        "   → Solução: Sincronize portal_access_rules e group_access_rules"
+                    )
                     problems_found += 1
             else:
                 lines.append(f"❌ Portal '{portal_name}' SEM regras na catraca!")
@@ -759,15 +788,21 @@ class AccessVerificationService:
         )
 
         if catraca_templates:
-            lines.append(f"✔ Templates biométricos na catraca: {len(catraca_templates)}")
+            lines.append(
+                f"✔ Templates biométricos na catraca: {len(catraca_templates)}"
+            )
         else:
-            lines.append("⚠️  Sem templates biométricos na catraca (facial/digital não cadastrado)")
+            lines.append(
+                "⚠️  Sem templates biométricos na catraca (facial/digital não cadastrado)"
+            )
             lines.append("   → Se o acesso é por biometria, este é o problema!")
             problems_found += 1
 
         if catraca_cards:
             card_values = [str(c.get("value", "?")) for c in catraca_cards]
-            lines.append(f"✔ Cartões na catraca: {len(catraca_cards)} (valores: {', '.join(card_values)})")
+            lines.append(
+                f"✔ Cartões na catraca: {len(catraca_cards)} (valores: {', '.join(card_values)})"
+            )
         else:
             lines.append("⚠️  Sem cartões RFID na catraca")
             lines.append("   → Se o acesso é por cartão, este é o problema!")
