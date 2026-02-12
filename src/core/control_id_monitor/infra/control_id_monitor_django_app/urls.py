@@ -24,10 +24,11 @@ def monitor_root(request, format=None):
 
 urlpatterns = [
     path('', monitor_root, name='monitor-root'),
-    
+
     # Endpoint para receber notificações da catraca (PUSH)
     path('notifications/dao', receive_dao_notification, name='monitor-dao-notification'),
-    
+
     # Rotas do ViewSet (CRUD de MonitorConfig)
     path('', include(router.urls)),
 ]
+
