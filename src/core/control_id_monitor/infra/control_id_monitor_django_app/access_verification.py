@@ -11,9 +11,10 @@ os models Django e o ORM.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 from django.utils import timezone
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -220,10 +221,15 @@ class AccessVerificationService:
         access_rule_id: Optional[int] = None,
         device_name: str = "",
         access_time: Optional[datetime] = None,
+        device=None,
     ) -> str:
         """
         Analisa um evento de acesso e retorna uma string com o diagnóstico
         PRECISO, logando no console.
+
+        Args:
+            device: Instância de Device (model Django) para consultar a catraca
+                    quando houver inconsistência. Se None, não consulta.
 
         Returns:
             str: Diagnóstico completo do acesso
@@ -327,6 +333,25 @@ class AccessVerificationService:
         lines.append("")
         lines.append("   " + "-" * 50)
         lines.append(f"   🔍 MOTIVO: {verdict.precise_reason}")
+
+        # ── 7. Se INCONSISTÊNCIA, consultar catraca para descobrir o que está diferente ──
+        if "INCONSISTÊNCIA" in verdict.precise_reason and device and user:
+            lines.append("")
+            lines.append("   🔎 VERIFICAÇÃO CRUZADA COM A CATRACA:")
+            lines.append("   " + "-" * 50)
+            try:
+                catraca_lines = self._cross_check_with_catraca(
+                    device=device,
+                    user_id=user.id,  # type: ignore[attr-defined]
+                    user_name=user.name,  # type: ignore[attr-defined]
+                    portal_id=portal.id if portal else None,  # type: ignore[attr-defined]
+                    portal_name=portal.name if portal else None,  # type: ignore[attr-defined]
+                )
+                for cl in catraca_lines:
+                    lines.append(f"   {cl}")
+            except Exception as e:
+                lines.append(f"   ⚠️  Erro ao consultar catraca: {e}")
+
         lines.append("=" * 70)
         lines.append("")
 
@@ -575,6 +600,194 @@ class AccessVerificationService:
         full_summary = "; ".join(summary_parts) if summary_parts else "nenhum intervalo"
         details.append("   → Resultado: FORA do horário permitido")
         return False, details, full_summary
+
+    def _cross_check_with_catraca(
+        self,
+        device,
+        user_id: int,
+        user_name: str,
+        portal_id: Optional[int],
+        portal_name: Optional[str],
+    ) -> List[str]:
+        """
+        Consulta a catraca diretamente para descobrir diferenças entre
+        o banco Django e o que está de fato configurado no equipamento.
+
+        Verifica:
+        1. Se o usuário existe na catraca
+        2. Se o usuário tem regras de acesso na catraca
+        3. Se o usuário pertence a grupos na catraca
+        4. Se os grupos têm regras na catraca
+        5. Se o portal tem regras de acesso na catraca
+        6. Se o usuário tem templates biométricos/cartões na catraca
+        """
+        lines: List[str] = []
+        base_url = (
+            f"http://{device.ip}"
+            if not device.ip.startswith(("http://", "https://"))
+            else device.ip
+        )
+
+        # Login na catraca
+        try:
+            resp = requests.post(
+                f"{base_url}/login.fcgi",
+                json={"login": device.username, "password": device.password},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            session = resp.json().get("session")
+            if not session:
+                lines.append("❌ Não foi possível logar na catraca")
+                return lines
+        except Exception as e:
+            lines.append(f"❌ Catraca inacessível: {e}")
+            return lines
+
+        def _load(obj: str, where: Optional[Dict] = None, fields: Optional[List[str]] = None) -> List[Dict]:
+            payload: Dict[str, Any] = {"object": obj}
+            if where:
+                payload["where"] = where
+            if fields:
+                payload["fields"] = fields
+            try:
+                r = requests.post(
+                    f"{base_url}/load_objects.fcgi?session={session}",
+                    json=payload,
+                    timeout=8,
+                )
+                if r.status_code != 200:
+                    return []
+                return r.json().get(obj, [])
+            except Exception:
+                return []
+
+        problems_found = 0
+
+        # ── 1. Usuário existe na catraca? ──
+        catraca_users = _load("users", where={"users": {"id": user_id}})
+        if not catraca_users:
+            lines.append(f"❌ Usuário '{user_name}' (ID {user_id}) NÃO EXISTE na catraca!")
+            lines.append("   → Solução: Execute uma sincronização de usuários")
+            problems_found += 1
+        else:
+            cu = catraca_users[0]
+            lines.append(f"✔ Usuário existe na catraca: {cu.get('name', '?')} (ID {cu.get('id')})")
+
+        # ── 2. Regras DIRETAS do usuário na catraca ──
+        catraca_user_rules = _load(
+            "user_access_rules",
+            where={"user_access_rules": {"user_id": user_id}},
+        )
+        if catraca_user_rules:
+            rule_ids = [str(r.get("access_rule_id")) for r in catraca_user_rules]
+            lines.append(f"✔ Regras diretas na catraca: {len(catraca_user_rules)} (IDs: {', '.join(rule_ids)})")
+        else:
+            lines.append("ℹ️  Sem regras diretas na catraca (pode ser via grupo)")
+
+        # ── 3. Grupos do usuário na catraca ──
+        catraca_user_groups = _load(
+            "user_groups",
+            where={"user_groups": {"user_id": user_id}},
+        )
+        if catraca_user_groups:
+            group_ids = [int(g.get("group_id", 0)) for g in catraca_user_groups]
+            lines.append(f"✔ Grupos na catraca: {len(catraca_user_groups)} (IDs: {', '.join(map(str, group_ids))})")
+
+            # ── 4. Regras dos grupos na catraca ──
+            for gid in group_ids:
+                catraca_group_rules = _load(
+                    "group_access_rules",
+                    where={"group_access_rules": {"group_id": gid}},
+                )
+                if catraca_group_rules:
+                    grule_ids = [str(r.get("access_rule_id")) for r in catraca_group_rules]
+                    lines.append(f"   ✔ Grupo {gid}: {len(catraca_group_rules)} regra(s) (IDs: {', '.join(grule_ids)})")
+                else:
+                    lines.append(f"   ❌ Grupo {gid}: SEM regras de acesso na catraca!")
+                    lines.append("      → Solução: Sincronize group_access_rules")
+                    problems_found += 1
+        else:
+            lines.append("❌ Usuário NÃO pertence a nenhum grupo na catraca!")
+            lines.append("   → Solução: Sincronize user_groups")
+            problems_found += 1
+
+        # ── 5. Portal tem regras na catraca? ──
+        if portal_id:
+            catraca_portal_rules = _load(
+                "portal_access_rules",
+                where={"portal_access_rules": {"portal_id": portal_id}},
+            )
+            if catraca_portal_rules:
+                prule_ids = [str(r.get("access_rule_id")) for r in catraca_portal_rules]
+                lines.append(f"✔ Portal '{portal_name}': {len(catraca_portal_rules)} regra(s) (IDs: {', '.join(prule_ids)})")
+
+                # Comparar: as regras do usuário/grupo coincidem com as do portal?
+                user_all_rules = set()
+                for r in catraca_user_rules:
+                    user_all_rules.add(int(r.get("access_rule_id", 0)))
+                for gid in [int(g.get("group_id", 0)) for g in catraca_user_groups]:
+                    for gr in _load("group_access_rules", where={"group_access_rules": {"group_id": gid}}):
+                        user_all_rules.add(int(gr.get("access_rule_id", 0)))
+
+                portal_rule_set = {int(r.get("access_rule_id", 0)) for r in catraca_portal_rules}
+                matching = user_all_rules & portal_rule_set
+
+                if matching:
+                    lines.append(f"✔ Regras em comum (usuário ∩ portal) na catraca: {matching}")
+                else:
+                    lines.append("❌ NENHUMA regra em comum entre usuário e portal NA CATRACA!")
+                    lines.append(f"   Regras do usuário/grupos: {user_all_rules or 'nenhuma'}")
+                    lines.append(f"   Regras do portal: {portal_rule_set}")
+                    lines.append("   → Solução: Sincronize portal_access_rules e group_access_rules")
+                    problems_found += 1
+            else:
+                lines.append(f"❌ Portal '{portal_name}' SEM regras na catraca!")
+                lines.append("   → Solução: Sincronize portal_access_rules")
+                problems_found += 1
+
+        # ── 6. Templates/cartões do usuário ──
+        catraca_templates = _load(
+            "templates",
+            where={"templates": {"user_id": user_id}},
+            fields=["id", "user_id"],
+        )
+        catraca_cards = _load(
+            "cards",
+            where={"cards": {"user_id": user_id}},
+            fields=["id", "user_id", "value"],
+        )
+
+        if catraca_templates:
+            lines.append(f"✔ Templates biométricos na catraca: {len(catraca_templates)}")
+        else:
+            lines.append("⚠️  Sem templates biométricos na catraca (facial/digital não cadastrado)")
+            lines.append("   → Se o acesso é por biometria, este é o problema!")
+            problems_found += 1
+
+        if catraca_cards:
+            card_values = [str(c.get("value", "?")) for c in catraca_cards]
+            lines.append(f"✔ Cartões na catraca: {len(catraca_cards)} (valores: {', '.join(card_values)})")
+        else:
+            lines.append("⚠️  Sem cartões RFID na catraca")
+            lines.append("   → Se o acesso é por cartão, este é o problema!")
+
+        # ── Resumo ──
+        lines.append("")
+        if problems_found == 0:
+            lines.append(
+                "✔ TUDO SINCRONIZADO — dados na catraca batem com o banco. "
+                "Causa provável: anti-passback ou restrição de firmware."
+            )
+        else:
+            lines.append(
+                f"❌ {problems_found} PROBLEMA(S) DE SINCRONIZAÇÃO encontrado(s)!"
+            )
+            lines.append(
+                "   → Execute uma sincronização completa via API: POST /api/config/sync/"
+            )
+
+        return lines
 
     def _log_diagnosis(self, diagnosis: str, is_granted: bool):
         """Loga o diagnóstico no nível apropriado"""

@@ -322,6 +322,7 @@ class MonitorNotificationHandler:
                             access_rule_id=access_rule.id if access_rule else None,  # type: ignore[attr-defined]
                             device_name=device.name,
                             access_time=timestamp,
+                            device=device,
                         )
                     except Exception as verify_err:
                         logger.warning(
