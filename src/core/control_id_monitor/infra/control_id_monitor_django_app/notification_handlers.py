@@ -270,12 +270,13 @@ class MonitorNotificationHandler:
                     pass
 
             # Log detalhado dos valores recebidos para debug
+            logger.info(f"📋 [ACCESS_LOG] RAW values da catraca: {values}")
             logger.info(
-                f"📋 [ACCESS_LOG] Valores recebidos: log_id={log_id}, event={event}, "
-                f"device_catraca_id={device_id}→device_django={device.name}, "
-                f"portal_id={portal_id}→portal={'SIM (' + portal.name + ')' if portal else 'NÃO ENCONTRADO'}, "
-                f"user_id={user_id}→user={user.name if user else 'N/A'}, "
-                f"rule_id={rule_id}→rule={'SIM' if access_rule else 'N/A'}"
+                f"📋 [ACCESS_LOG] Resolução: log_id={log_id}, event={event}, "
+                f"device_catraca_id={device_id}→device_django={device.name}(id={device.id}), "  # type: ignore[attr-defined]
+                f"portal_id={portal_id}→portal={'SIM (' + portal.name + ', id=' + str(portal.id) + ')' if portal else 'NÃO ENCONTRADO'}, "
+                f"user_id={user_id}→user={user.name + '(id=' + str(user.id) + ')' if user else 'N/A'}, "
+                f"rule_id={rule_id}→rule={'SIM (' + access_rule.name + ')' if access_rule else 'N/A'}"
             )
 
             if change_type == "inserted":
@@ -286,13 +287,14 @@ class MonitorNotificationHandler:
                     else datetime.now(tz=dt_timezone.utc)
                 )
 
-                # Cria o log
-                log, created = AccessLogs.objects.get_or_create(
+                # Cria ou atualiza o log
+                # Usa update_or_create para garantir que portal, user e
+                # access_rule sejam atualizados mesmo em push duplicado
+                log, created = AccessLogs.objects.update_or_create(
                     device=device,
                     identifier_id=str(log_id),
-                    time=timestamp,
                     defaults={
-                        "id": values.get("id"),
+                        "time": timestamp,
                         "event_type": int(event) if event else 10,
                         "user": user,
                         "portal": portal,
