@@ -276,6 +276,11 @@ class AccessVerificationService:
             lines.append(f"   👤 Usuário: {user.name} (ID: {user.id})")  # type: ignore[attr-defined]
             if hasattr(user, "registration") and user.registration:
                 lines.append(f"      Matrícula: {user.registration}")
+            # Verifica se está marcado como visitante
+            if hasattr(user, "user_type_id") and user.user_type_id == 1:
+                lines.append(
+                    "   ⚠️  VISITANTE (user_type_id=1) — firmware pode restringir acesso!"
+                )
         else:
             verdict.user_found = False
             lines.append(f"   👤 Usuário: NÃO IDENTIFICADO (user_id={user_id})")
@@ -679,6 +684,20 @@ class AccessVerificationService:
             lines.append(
                 f"✔ Usuário existe na catraca: {cu.get('name', '?')} (ID {cu.get('id')})"
             )
+
+            # Verificar se o usuário está marcado como visitante na catraca
+            catraca_user_type = cu.get("user_type_id")
+            if catraca_user_type is not None and int(catraca_user_type) == 1:
+                lines.append(
+                    "⚠️  Usuário marcado como VISITANTE (user_type_id=1) na catraca!"
+                )
+                lines.append(
+                    "   → Visitantes podem ter restrições adicionais de acesso no firmware."
+                )
+                lines.append(
+                    '   → Se não é visitante, corrija via PATCH /api/users/<id>/ com {"user_type_id": 0}'
+                )
+                problems_found += 1
 
         # ── 2. Regras DIRETAS do usuário na catraca ──
         catraca_user_rules = _load(
