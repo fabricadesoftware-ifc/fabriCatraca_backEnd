@@ -15,6 +15,8 @@ from django.utils import timezone
 from django.db import transaction
 import logging
 
+from .access_verification import access_verifier
+
 logger = logging.getLogger(__name__)
 
 
@@ -223,6 +225,23 @@ class MonitorNotificationHandler:
                 )
                 
                 logger.info(f"✅ [ACCESS_LOG] {'Criado' if created else 'Já existia'} log {log_id} do device {device.name}")
+                
+                # ── Verificação de acesso: loga o MOTIVO no console ──
+                if created:
+                    try:
+                        access_verifier.analyze_access(
+                            user_id=values.get('user_id'),
+                            portal_id=values.get('portal_id'),
+                            event_type=int(event) if event else 0,
+                            access_rule_id=values.get('access_rule'),
+                            device_name=device.name,
+                            access_time=timestamp,
+                        )
+                    except Exception as verify_err:
+                        logger.warning(
+                            f"⚠️ [ACCESS_VERIFY] Erro na verificação de acesso: {verify_err}",
+                            exc_info=True,
+                        )
                 
                 return {
                     'success': True,
