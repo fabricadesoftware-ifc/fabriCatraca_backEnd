@@ -123,18 +123,55 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
     # ── 2. Acertar data/hora ────────────────────────────────────────────────
     def set_datetime(self):
-        """Sincroniza relógio da catraca com o servidor."""
+        """
+        Sincroniza relógio da catraca com o servidor.
+        Usa set_system_time.fcgi (endpoint oficial) + habilita NTP UTC-3.
+        """
+        result = {}
+
         try:
             now = timezone.localtime()
-            payload = {
-                "general": {
-                    "datetime": str(int(now.timestamp())),
+
+            # Passo 1 — Setar data/hora manualmente via set_system_time.fcgi
+            time_payload = {
+                "day": now.day,
+                "month": now.month,
+                "year": now.year,
+                "hour": now.hour,
+                "minute": now.minute,
+                "second": now.second,
+            }
+            resp = self._make_request(
+                "set_system_time.fcgi", json_data=time_payload
+            )
+            result["set_time"] = {
+                "ok": resp.status_code == 200,
+                "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+
+            # Passo 2 — Habilitar NTP com fuso horário de Brasília (UTC-3)
+            ntp_payload = {
+                "ntp": {
+                    "enabled": "1",
+                    "timezone": "UTC-3",
                 }
             }
-            resp = self._make_request("set_configuration.fcgi", json_data=payload)
-            return {"ok": resp.status_code == 200, "datetime": now.isoformat()}
+            ntp_resp = self._make_request(
+                "set_configuration.fcgi", json_data=ntp_payload
+            )
+            result["ntp"] = {
+                "ok": ntp_resp.status_code == 200,
+                "timezone": "UTC-3",
+                "enabled": True,
+            }
+
+            result["ok"] = result["set_time"]["ok"]
+            return result
+
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            result["ok"] = False
+            result["error"] = str(e)
+            return result
 
     # ── 3. Configurar monitor ───────────────────────────────────────────────
     def configure_monitor(self):
