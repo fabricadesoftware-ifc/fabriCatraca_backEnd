@@ -94,6 +94,22 @@ AVAILABLE_STEPS = {
     "config_identifier": "Envia seção 'identifier' (pin_enabled, card_enabled, mfa, etc.)",
     "config_push_server": "Envia seção 'push_server'",
     "config_all": "Envia TODAS as configurações de uma vez",
+    # Destroy individual (apaga UMA tabela)
+    "destroy_users": "APAGA todos os users da catraca",
+    "destroy_time_zones": "APAGA todos os time_zones",
+    "destroy_time_spans": "APAGA todos os time_spans",
+    "destroy_access_rules": "APAGA todos os access_rules",
+    "destroy_groups": "APAGA todos os groups (⚠️ SUSPEITO)",
+    "destroy_areas": "APAGA todos os areas",
+    "destroy_portals": "APAGA todos os portals",
+    "destroy_user_groups": "APAGA relações user↔group",
+    "destroy_user_access_rules": "APAGA relações user↔access_rule",
+    "destroy_group_access_rules": "APAGA relações group↔access_rule",
+    "destroy_portal_access_rules": "APAGA relações portal↔access_rule",
+    "destroy_access_rule_time_zones": "APAGA relações access_rule↔time_zone",
+    "destroy_cards": "APAGA todos os cards",
+    "destroy_templates": "APAGA todos os templates",
+    "destroy_pins": "APAGA todos os pins",
     # Utilitários
     "disable_identifier": "Desabilita pin/card (seta ambos para 0)",
     "set_datetime": "Acerta relógio + configura NTP",
@@ -538,6 +554,30 @@ def _execute_step(engine, step, db_data=None):
     # ── Push all data (destroy + create, sem configs) ─────────────────────
     if step == "push_all_data":
         return engine.push_data(db_data)
+
+    # ── Destroy individual de uma tabela ──────────────────────────────────
+    destroy_table_map = {
+        "destroy_users": "users",
+        "destroy_time_zones": "time_zones",
+        "destroy_time_spans": "time_spans",
+        "destroy_access_rules": "access_rules",
+        "destroy_groups": "groups",
+        "destroy_areas": "areas",
+        "destroy_portals": "portals",
+        "destroy_user_groups": "user_groups",
+        "destroy_user_access_rules": "user_access_rules",
+        "destroy_group_access_rules": "group_access_rules",
+        "destroy_portal_access_rules": "portal_access_rules",
+        "destroy_access_rule_time_zones": "access_rule_time_zones",
+        "destroy_cards": "cards",
+        "destroy_templates": "templates",
+        "destroy_pins": "pins",
+    }
+
+    if step in destroy_table_map:
+        table = destroy_table_map[step]
+        ok = engine._destroy_table(table)
+        return {"ok": ok, "table": table, "action": "destroy"}
 
     # ── Configurações individuais ─────────────────────────────────────────
     config_section_map = {
