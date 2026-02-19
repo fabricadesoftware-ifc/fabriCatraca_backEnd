@@ -10,8 +10,9 @@ Fluxo por device:
   3. Aguardar reboot + re-login
   4. Acertar data/hora
   5. Configurar monitor (push notifications)
-  6. Enviar configurações do device (local_identification, operation_mode, etc.)
-  7. Enviar todos os dados do banco (users, groups, regras, etc.)
+  6. Enviar todos os dados do banco (users, groups, regras, etc.)
+  7. Enviar configurações do device (local_identification, pin_enabled, etc.)
+     — DEPOIS dos dados, para que o firmware carregue access_rules corretas
   8. Enviar PINs de identificação
 """
 
@@ -621,16 +622,20 @@ class _EasySetupEngine(ControlIDSyncMixin):
         logger.info(f"[EASY_SETUP] [{self.device.name}] Configurando monitor...")
         report["steps"]["monitor"] = self.configure_monitor()
 
-        # Etapa 5 — Enviar configurações do device (local_identification, operation_mode, etc.)
-        logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
-        report["steps"]["device_settings"] = self.configure_device_settings()
-
-        # Etapa 6 — Coletar e enviar dados
+        # Etapa 5 — Coletar e enviar dados ANTES de habilitar modos de identificação.
+        # Motivo: set_configuration com pin_identification_enabled faz o firmware
+        # carregar access_rules em memória. Se factory defaults (type=0) ainda
+        # existirem, o identifier plugin cacheia type=0 e crasha ao digitar PIN.
         logger.info(f"[EASY_SETUP] [{self.device.name}] Coletando dados do DB...")
         db_data = self.collect_db_data()
 
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando dados para catraca...")
         report["steps"]["push"] = self.push_data(db_data)
+
+        # Etapa 6 — Configurações do device (identifier, operation_mode, etc.)
+        # Feito DEPOIS do push para que o firmware carregue access_rules corretas.
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
+        report["steps"]["device_settings"] = self.configure_device_settings()
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
 
