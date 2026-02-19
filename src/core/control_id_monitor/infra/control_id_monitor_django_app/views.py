@@ -505,8 +505,9 @@ def receive_dao_notification(request):
             )
             return Response(result, status=status.HTTP_200_OK)
         else:
+            error_detail = result.get("error") or result.get("errors") or "Erro desconhecido"
             logger.error(
-                f"❌ [MONITOR] Erro processando notificação: {result.get('error')}"
+                f"❌ [MONITOR] Erro processando notificação: {error_detail}"
             )
             return Response(result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

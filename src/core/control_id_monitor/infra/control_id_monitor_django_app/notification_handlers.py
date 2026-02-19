@@ -341,49 +341,64 @@ class MonitorNotificationHandler:
                 }
 
             elif change_type == "updated":
-                # Atualiza log existente
-                log = AccessLogs.objects.filter(
-                    device=device, identifier_id=str(log_id)
-                ).first()
-                if log:
-                    timestamp = (
-                        datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
-                        if time_unix
-                        else log.time
-                    )
+                # Atualiza log existente — ou cria se não existir
+                # A catraca pode enviar "updated" mesmo na primeira vez
+                # (ex: quando o log é gerado internamente e enviado como update)
+                timestamp = (
+                    datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
+                    if time_unix
+                    else datetime.now(tz=dt_timezone.utc)
+                )
 
-                    log.time = timestamp
-                    log.event_type = int(event) if event else log.event_type
-                    log.card_value = values.get("card_value", log.card_value)
-                    log.qr_code = values.get("qr_code", log.qr_code)
-                    log.uhf_value = values.get("uhf_value", log.uhf_value)
-                    log.pin_value = values.get("pin_value", log.pin_value)
+                log, created = AccessLogs.objects.update_or_create(
+                    device=device,
+                    identifier_id=str(log_id),
+                    defaults={
+                        "time": timestamp,
+                        "event_type": int(event) if event else 10,
+                        "user": user,
+                        "portal": portal,
+                        "access_rule": access_rule,
+                        "card_value": values.get("card_value", ""),
+                        "qr_code": values.get("qr_code")
+                        or values.get("qrcode_value", ""),
+                        "uhf_value": values.get("uhf_value")
+                        or values.get("uhf_tag", ""),
+                        "pin_value": values.get("pin_value", ""),
+                        "confidence": values.get("confidence", 0),
+                        "mask": values.get("mask", ""),
+                    },
+                )
 
-                    # Atualiza portal e user se vieram no payload
-                    if portal:
-                        log.portal = portal
-                    if user:
-                        log.user = user
-                    if access_rule:
-                        log.access_rule = access_rule
+                action_label = "created (via updated)" if created else "updated"
+                logger.info(
+                    f"✅ [ACCESS_LOG] {action_label} log {log_id} do device {device.name}"
+                )
 
-                    log.save()
+                # Se foi criado agora, roda a verificação de acesso
+                if created:
+                    try:
+                        access_verifier.analyze_access(
+                            user_id=user.id if user else None,
+                            portal_id=portal.id if portal else None,
+                            event_type=int(event) if event else 0,
+                            access_rule_id=access_rule.id if access_rule else None,
+                            device_name=device.name,
+                            access_time=timestamp,
+                            device=device,
+                        )
+                    except Exception as verify_err:
+                        logger.warning(
+                            f"⚠️ [ACCESS_VERIFY] Erro na verificação de acesso: {verify_err}",
+                            exc_info=True,
+                        )
 
-                    logger.info(
-                        f"✅ [ACCESS_LOG] Atualizado log {log_id} do device {device.name}"
-                    )
-                    return {
-                        "success": True,
-                        "object": "access_logs",
-                        "action": "updated",
-                        "log_id": log_id,
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "object": "access_logs",
-                        "error": f"Log {log_id} não encontrado para atualização",
-                    }
+                return {
+                    "success": True,
+                    "object": "access_logs",
+                    "action": action_label,
+                    "log_id": log_id,
+                }
 
             elif change_type == "deleted":
                 # Remove log
