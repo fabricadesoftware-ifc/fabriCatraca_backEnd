@@ -10,12 +10,14 @@ Fluxo por device:
   3. Aguardar reboot + re-login
   4. Acertar data/hora
   5. Configurar monitor (push notifications)
-  6. Enviar todos os dados do banco (users, groups, regras, etc.)
-  7. Desabilitar identifier (pin=0, card=0) — firmware init já completou,
-     access_rules type≥1 já estão no DB; agora pin=0 realmente "pega"
-  8. Enviar configurações do device (pin_enabled=1, etc.)
+  6. Aguardar firmware init completa (~35s)
+     — O firmware V5.18.3 tem init atrasada que cria defaults (access_rules type=0)
+       e habilita identifier methods ~30-40s após boot. Precisamos esperar.
+  7. Enviar todos os dados do banco (users, groups, regras, etc.)
+  8. Desabilitar identifier (pin=0, card=0)
+  9. Enviar configurações do device (pin_enabled=1, etc.)
      — Transição 0→1 FORÇA firmware a recarregar access_rules do DB (agora type≥1)
-  9. Enviar PINs de identificação
+  9. Verificação final de access_rules (garante que type≥1)
 """
 
 import logging
@@ -223,7 +225,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    # ── 3. Acertar data/hora ──────────────────────────────────────────────── 
+    # ── 3. Acertar data/hora ────────────────────────────────────────────────
     def set_datetime(self):
         """
         Sincroniza relógio da catraca com o servidor.
@@ -273,7 +275,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             result["error"] = str(e)
             return result
 
-    # ── 4. Configurar monitor ─────────────────────────────────────────────── 
+    # ── 4. Configurar monitor ───────────────────────────────────────────────
     def configure_monitor(self):
         """Envia configuração de monitor (push) para a catraca."""
         try:
@@ -300,7 +302,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    # ── 5. Enviar configurações do device ─────────────────────────────────── 
+    # ── 5. Enviar configurações do device ───────────────────────────────────
     def configure_device_settings(self):
         """
         Envia TODAS as configurações salvas no banco para a catraca.
@@ -420,7 +422,95 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return result
 
-    # ── 6. Coletar dados do banco ─────────────────────────────────────────── 
+    # ── 6. Verificar access_rules na catraca ───────────────────────────────
+    def verify_access_rules(self, expected_rules):
+        """
+        Verifica access_rules na catraca após o setup completo.
+
+        O firmware V5.18.3 tem uma init atrasada (~30-40s após boot) que
+        pode recriar access_rules com type=0 DEPOIS do nosso push.
+        Este método carrega as regras atuais e, se encontrar type=0,
+        destrói tudo e recria com os dados corretos.
+        """
+        result = {"checked": True}
+
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"load_objects.fcgi?session={sess}"),
+                json={
+                    "object": "access_rules",
+                    "fields": ["id", "name", "type", "priority"],
+                },
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                result["ok"] = False
+                result["error"] = f"load_objects falhou: HTTP {resp.status_code}"
+                return result
+
+            loaded = resp.json()
+            rules = loaded.get("access_rules", [])
+            result["rules_found"] = len(rules)
+
+            bad_rules = [r for r in rules if r.get("type", 0) == 0]
+            result["bad_rules_count"] = len(bad_rules)
+
+            if not bad_rules:
+                logger.info(
+                    f"[EASY_SETUP] [{self.device.name}] "
+                    f"Verificação OK — {len(rules)} access_rules, todas type≥1"
+                )
+                result["ok"] = True
+                return result
+
+            # Encontrou rules com type=0 — corrigir
+            logger.warning(
+                f"[EASY_SETUP] [{self.device.name}] "
+                f"Encontradas {len(bad_rules)} access_rules com type=0! Corrigindo..."
+            )
+
+            # Apagar TODAS access_rules (e dependências)
+            for tbl in [
+                "access_rule_time_zones",
+                "portal_access_rules",
+                "group_access_rules",
+                "user_access_rules",
+                "access_rules",
+            ]:
+                self._destroy_table(tbl)
+
+            # Recriar access_rules com type≥1
+            if expected_rules:
+                safe_rules = [
+                    {**r, "type": max(r.get("type", 1), 1)} for r in expected_rules
+                ]
+                sess = self.login()
+                resp = requests.post(
+                    self.get_url(f"create_objects.fcgi?session={sess}"),
+                    json={"object": "access_rules", "values": safe_rules},
+                    timeout=60,
+                )
+                result["recreated_rules"] = resp.status_code == 200
+            else:
+                result["recreated_rules"] = False
+                result["warning"] = "Nenhuma access_rule esperada fornecida"
+
+            # Recriar relações dependentes (time_zones, portal, group)
+            result["ok"] = result.get("recreated_rules", False)
+            if result["ok"]:
+                logger.info(
+                    f"[EASY_SETUP] [{self.device.name}] "
+                    "access_rules corrigidas com sucesso"
+                )
+            return result
+
+        except Exception as e:
+            result["ok"] = False
+            result["error"] = str(e)
+            return result
+
+    # ── 7. Coletar dados do banco ───────────────────────────────────────────
     def collect_db_data(self):
         """
         Coleta todos os dados do Django DB que precisam ser enviados
@@ -542,7 +632,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return data
 
-    # ── 7. Enviar dados para catraca ──────────────────────────────────────── 
+    # ── 7. Enviar dados para catraca ────────────────────────────────────────
     def _destroy_table(self, table):
         """Limpa uma tabela da catraca antes de inserir novos dados."""
         col = _TABLE_WHERE_COL.get(table, "id")
@@ -565,9 +655,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 )
             return resp.status_code == 200
         except Exception as exc:
-            logger.warning(
-                f"[EASY_SETUP] destroy_objects({table}) exception: {exc}"
-            )
+            logger.warning(f"[EASY_SETUP] destroy_objects({table}) exception: {exc}")
             return False
 
     def push_data(self, data):
@@ -662,7 +750,19 @@ class _EasySetupEngine(ControlIDSyncMixin):
         logger.info(f"[EASY_SETUP] [{self.device.name}] Configurando monitor...")
         report["steps"]["monitor"] = self.configure_monitor()
 
-        # Etapa 5 — Coletar e enviar dados.
+        # Etapa 5 — Aguardar firmware init completa
+        # O firmware V5.18.3 tem init atrasada (~30-40s após boot) que:
+        #   - Cria access_rules default com type=0
+        #   - Habilita biometry/card identification
+        #   - Seta language/country_code
+        # Se fizermos push antes disso, o firmware sobrescreve nossos dados.
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Aguardando firmware completar init (~35s)..."
+        )
+        _time.sleep(35)
+
+        # Etapa 6 — Coletar e enviar dados.
         # access_rules type≥1 são escritas no DB da catraca.
         logger.info(f"[EASY_SETUP] [{self.device.name}] Coletando dados do DB...")
         db_data = self.collect_db_data()
@@ -670,11 +770,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando dados para catraca...")
         report["steps"]["push"] = self.push_data(db_data)
 
-        # Etapa 6 — Desabilitar identifier AGORA (pós-push, pós-init firmware)
-        # O firmware restaura pin=1 durante init (~6s após boot).
-        # Se disable_identifier é chamado cedo demais, o init sobrescreve.
-        # Chamando DEPOIS do push_data:
-        #   - init do firmware já completou (pin=1 restaurado)
+        # Etapa 7 — Desabilitar identifier AGORA (pós-push, pós-init firmware)
+        # Chamando DEPOIS do push_data + aguardo de 35s:
+        #   - init do firmware já completou totalmente
         #   - access_rules type≥1 já estão no DB
         #   - nosso pin=0 realmente muda (1→0)
         logger.info(
@@ -686,11 +784,21 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # Pequeno delay para garantir que o firmware aplicou pin=0
         _time.sleep(2)
 
-        # Etapa 7 — Configurações do device (identifier, operation_mode, etc.)
+        # Etapa 8 — Configurações do device (identifier, operation_mode, etc.)
         # pin_identification_enabled muda de 0→1 = firmware RECARREGA access_rules
         # do DB, que agora têm type≥1. Sem crash.
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
         report["steps"]["device_settings"] = self.configure_device_settings()
+
+        # Etapa 9 — Verificação final de access_rules
+        # Garante que nenhuma access_rule type=0 sobreviveu à init atrasada.
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Verificando access_rules (segurança contra firmware delayed init)..."
+        )
+        report["steps"]["verify_access_rules"] = self.verify_access_rules(
+            db_data.get("access_rules", [])
+        )
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
 
