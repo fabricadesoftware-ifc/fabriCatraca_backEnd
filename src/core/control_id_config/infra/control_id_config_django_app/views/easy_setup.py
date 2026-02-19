@@ -17,7 +17,7 @@ Fluxo por device:
   8. Desabilitar identifier (pin=0, card=0)
   9. Enviar configurações do device (pin_enabled=1, etc.)
      — Transição 0→1 FORÇA firmware a recarregar access_rules do DB (agora type≥1)
-  9. Verificação final de access_rules (garante que type≥1)
+  9. Polling de verificação de access_rules (30s × 6, auto-correção se type=0)
 """
 
 import logging
@@ -422,93 +422,147 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return result
 
-    # ── 6. Verificar access_rules na catraca ───────────────────────────────
-    def verify_access_rules(self, expected_rules):
+    # ── 6. Verificar access_rules na catraca (polling) ──────────────────────
+    def verify_access_rules(self, db_data, max_duration_s=180, interval_s=30):
         """
-        Verifica access_rules na catraca após o setup completo.
+        Polling de access_rules na catraca após o setup completo.
 
-        O firmware V5.18.3 tem uma init atrasada (~30-40s após boot) que
-        pode recriar access_rules com type=0 DEPOIS do nosso push.
-        Este método carrega as regras atuais e, se encontrar type=0,
-        destrói tudo e recria com os dados corretos.
+        O firmware V5.18.3 tem init atrasada em MÚLTIPLAS ondas:
+          - Onda 1 (~30-40s após boot): cria defaults, habilita biometry/card
+          - Onda 2 (~2-3min após boot): recria access_rules com type=0
+
+        Este método faz polling periódico, corrigindo type=0 sempre que
+        aparecer, e forçando reload do identifier após cada correção.
+        Para após 2 checks limpos consecutivos ou ao expirar max_duration_s.
         """
-        result = {"checked": True}
+        result = {
+            "checked": True,
+            "polls": 0,
+            "fixes_applied": 0,
+            "consecutive_clean": 0,
+        }
+        deadline = _time.monotonic() + max_duration_s
+        expected_rules = db_data.get("access_rules", [])
 
-        try:
-            sess = self.login()
-            resp = requests.post(
-                self.get_url(f"load_objects.fcgi?session={sess}"),
-                json={
-                    "object": "access_rules",
-                    "fields": ["id", "name", "type", "priority"],
-                },
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                result["ok"] = False
-                result["error"] = f"load_objects falhou: HTTP {resp.status_code}"
-                return result
+        while _time.monotonic() < deadline:
+            result["polls"] += 1
+            poll_num = result["polls"]
 
-            loaded = resp.json()
-            rules = loaded.get("access_rules", [])
-            result["rules_found"] = len(rules)
-
-            bad_rules = [r for r in rules if r.get("type", 0) == 0]
-            result["bad_rules_count"] = len(bad_rules)
-
-            if not bad_rules:
-                logger.info(
-                    f"[EASY_SETUP] [{self.device.name}] "
-                    f"Verificação OK — {len(rules)} access_rules, todas type≥1"
-                )
-                result["ok"] = True
-                return result
-
-            # Encontrou rules com type=0 — corrigir
-            logger.warning(
-                f"[EASY_SETUP] [{self.device.name}] "
-                f"Encontradas {len(bad_rules)} access_rules com type=0! Corrigindo..."
-            )
-
-            # Apagar TODAS access_rules (e dependências)
-            for tbl in [
-                "access_rule_time_zones",
-                "portal_access_rules",
-                "group_access_rules",
-                "user_access_rules",
-                "access_rules",
-            ]:
-                self._destroy_table(tbl)
-
-            # Recriar access_rules com type≥1
-            if expected_rules:
-                safe_rules = [
-                    {**r, "type": max(r.get("type", 1), 1)} for r in expected_rules
-                ]
+            try:
+                # Carregar access_rules atuais da catraca
                 sess = self.login()
                 resp = requests.post(
+                    self.get_url(f"load_objects.fcgi?session={sess}"),
+                    json={
+                        "object": "access_rules",
+                        "fields": ["id", "name", "type", "priority"],
+                    },
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        f"[EASY_SETUP] [{self.device.name}] "
+                        f"Poll #{poll_num}: load_objects falhou HTTP {resp.status_code}"
+                    )
+                    _time.sleep(interval_s)
+                    continue
+
+                rules = resp.json().get("access_rules", [])
+                bad_rules = [r for r in rules if r.get("type", 0) == 0]
+
+                if not bad_rules:
+                    result["consecutive_clean"] += 1
+                    logger.info(
+                        f"[EASY_SETUP] [{self.device.name}] "
+                        f"Poll #{poll_num}: OK — {len(rules)} rules, "
+                        f"todas type≥1 (clean {result['consecutive_clean']}/2)"
+                    )
+                    if result["consecutive_clean"] >= 2:
+                        result["ok"] = True
+                        logger.info(
+                            f"[EASY_SETUP] [{self.device.name}] "
+                            "Verificação estável — 2 checks limpos consecutivos ✓"
+                        )
+                        return result
+                else:
+                    # Encontrou type=0 — corrigir
+                    result["consecutive_clean"] = 0
+                    result["fixes_applied"] += 1
+                    logger.warning(
+                        f"[EASY_SETUP] [{self.device.name}] "
+                        f"Poll #{poll_num}: {len(bad_rules)} rules type=0! "
+                        f"Fix #{result['fixes_applied']}..."
+                    )
+                    self._fix_access_rules(db_data, expected_rules)
+
+            except Exception as e:
+                logger.error(
+                    f"[EASY_SETUP] [{self.device.name}] Poll #{poll_num} erro: {e}"
+                )
+
+            _time.sleep(interval_s)
+
+        # Expirou — reportar resultado
+        result["ok"] = result["consecutive_clean"] >= 1
+        if not result["ok"]:
+            logger.error(
+                f"[EASY_SETUP] [{self.device.name}] "
+                f"Verificação expirou após {max_duration_s}s sem estabilizar!"
+            )
+        return result
+
+    def _fix_access_rules(self, db_data, expected_rules):
+        """
+        Destrói access_rules type=0 e recria todos os dados dependentes.
+        Depois força reload do identifier via disable→configure.
+        """
+        # 1. Destruir access_rules e todas as relações dependentes
+        for tbl in [
+            "access_rule_time_zones",
+            "portal_access_rules",
+            "group_access_rules",
+            "user_access_rules",
+            "access_rules",
+        ]:
+            self._destroy_table(tbl)
+
+        # 2. Recriar access_rules com type≥1
+        if expected_rules:
+            safe_rules = [
+                {**r, "type": max(r.get("type", 1), 1)} for r in expected_rules
+            ]
+            sess = self.login()
+            requests.post(
+                self.get_url(f"create_objects.fcgi?session={sess}"),
+                json={"object": "access_rules", "values": safe_rules},
+                timeout=60,
+            )
+
+        # 3. Recriar relações dependentes
+        for tbl in [
+            "user_access_rules",
+            "group_access_rules",
+            "portal_access_rules",
+            "access_rule_time_zones",
+        ]:
+            values = db_data.get(tbl, [])
+            if values:
+                sess = self.login()
+                requests.post(
                     self.get_url(f"create_objects.fcgi?session={sess}"),
-                    json={"object": "access_rules", "values": safe_rules},
+                    json={"object": tbl, "values": values},
                     timeout=60,
                 )
-                result["recreated_rules"] = resp.status_code == 200
-            else:
-                result["recreated_rules"] = False
-                result["warning"] = "Nenhuma access_rule esperada fornecida"
 
-            # Recriar relações dependentes (time_zones, portal, group)
-            result["ok"] = result.get("recreated_rules", False)
-            if result["ok"]:
-                logger.info(
-                    f"[EASY_SETUP] [{self.device.name}] "
-                    "access_rules corrigidas com sucesso"
-                )
-            return result
+        # 4. Forçar identifier a recarregar do DB limpo
+        self.disable_identifier()
+        _time.sleep(2)
+        self.configure_device_settings()
 
-        except Exception as e:
-            result["ok"] = False
-            result["error"] = str(e)
-            return result
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Fix aplicado: rules recriadas + identifier recarregado"
+        )
 
     # ── 7. Coletar dados do banco ───────────────────────────────────────────
     def collect_db_data(self):
@@ -790,15 +844,16 @@ class _EasySetupEngine(ControlIDSyncMixin):
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
         report["steps"]["device_settings"] = self.configure_device_settings()
 
-        # Etapa 9 — Verificação final de access_rules
-        # Garante que nenhuma access_rule type=0 sobreviveu à init atrasada.
+        # Etapa 9 — Verificação contínua de access_rules (polling 180s)
+        # O firmware tem init em MÚLTIPLAS ondas:
+        #   Onda 1 (~35s): coberta pelo delay da Etapa 5
+        #   Onda 2 (~2-3min): recria access_rules type=0 tardiamente
+        # Polling a cada 30s garante que corrigimos QUALQUER onda.
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] "
-            "Verificando access_rules (segurança contra firmware delayed init)..."
+            "Iniciando polling de access_rules (30s × 6 = 180s max)..."
         )
-        report["steps"]["verify_access_rules"] = self.verify_access_rules(
-            db_data.get("access_rules", [])
-        )
+        report["steps"]["verify_access_rules"] = self.verify_access_rules(db_data)
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
 
