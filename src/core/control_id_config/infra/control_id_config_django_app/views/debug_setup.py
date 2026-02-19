@@ -198,14 +198,46 @@ class _DebugSetupEngine(_EasySetupEngine):
             sess = self.login()
 
             if sections is None:
+                # A API Control iD exige lista de campos por seção
                 sections = {
-                    "general": [],
-                    "identifier": [],
-                    "catra": [],
-                    "push_server": [],
-                    "monitor": [],
-                    "ntp": [],
-                    "online_client": [],
+                    "general": [
+                        "online",
+                        "local_identification",
+                        "language",
+                        "catra_timeout",
+                        "beep_enabled",
+                        "ssh_enabled",
+                        "bell_enabled",
+                        "bell_relay",
+                        "exception_mode",
+                    ],
+                    "identifier": [
+                        "pin_identification_enabled",
+                        "card_identification_enabled",
+                        "multi_factor_authentication",
+                        "verbose_logging",
+                    ],
+                    "catra": [
+                        "anti_passback",
+                        "daily_reset",
+                        "gateway",
+                        "operation_mode",
+                    ],
+                    "push_server": [
+                        "push_request_timeout",
+                        "push_request_period",
+                        "push_remote_address",
+                    ],
+                    "monitor": [
+                        "hostname",
+                        "port",
+                        "path",
+                        "request_timeout",
+                    ],
+                    "ntp": [
+                        "enabled",
+                        "timezone",
+                    ],
                 }
 
             resp = requests.post(
