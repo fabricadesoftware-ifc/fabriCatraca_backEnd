@@ -288,13 +288,14 @@ class MonitorNotificationHandler:
                 )
 
                 # Cria ou atualiza o log
-                # Usa update_or_create para garantir que portal, user e
-                # access_rule sejam atualizados mesmo em push duplicado
+                # Lookup: device + identifier_id + time
+                # O time no lookup evita colisão quando a catraca
+                # limpa seus logs internos e reinicia a contagem de IDs
                 log, created = AccessLogs.objects.update_or_create(
                     device=device,
                     identifier_id=str(log_id),
+                    time=timestamp,
                     defaults={
-                        "time": timestamp,
                         "event_type": int(event) if event else 10,
                         "user": user,
                         "portal": portal,
@@ -350,11 +351,14 @@ class MonitorNotificationHandler:
                     else datetime.now(tz=dt_timezone.utc)
                 )
 
+                # Lookup: device + identifier_id + time
+                # O time no lookup evita colisão quando a catraca
+                # limpa seus logs internos e reinicia a contagem de IDs
                 log, created = AccessLogs.objects.update_or_create(
                     device=device,
                     identifier_id=str(log_id),
+                    time=timestamp,
                     defaults={
-                        "time": timestamp,
                         "event_type": int(event) if event else 10,
                         "user": user,
                         "portal": portal,

@@ -62,12 +62,18 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
                 # Cria o PIN de identificação na tabela 'pins' da catraca
                 if instance.pin:
-                    pin_resp = self.create_objects("pins", [{
-                        "user_id": instance.id,
-                        "value": instance.pin,
-                    }])
+                    pin_resp = self.create_objects(
+                        "pins",
+                        [
+                            {
+                                "user_id": instance.id,
+                                "value": instance.pin,
+                            }
+                        ],
+                    )
                     if pin_resp.status_code != status.HTTP_201_CREATED:
                         import logging
+
                         logging.getLogger(__name__).warning(
                             f"Falha ao criar PIN na catraca {device.name}: {pin_resp.data}"
                         )
@@ -124,10 +130,15 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     )
                     if pin_resp.status_code != status.HTTP_200_OK:
                         # PIN pode não existir ainda, tenta criar
-                        self.create_objects("pins", [{
-                            "user_id": instance.id,
-                            "value": instance.pin,
-                        }])
+                        self.create_objects(
+                            "pins",
+                            [
+                                {
+                                    "user_id": instance.id,
+                                    "value": instance.pin,
+                                }
+                            ],
+                        )
 
                 # Atualiza a relação com a catraca
                 device.users.add(instance)

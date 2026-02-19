@@ -936,19 +936,22 @@ class AccessVerificationService:
         )
         if catraca_pins:
             pin_values = [str(p.get("value", "?")) for p in catraca_pins]
-            lines.append(
-                f"✔ PIN de identificação na catraca: {', '.join(pin_values)}"
-            )
+            lines.append(f"✔ PIN de identificação na catraca: {', '.join(pin_values)}")
         else:
-            lines.append("❌ Sem PIN de identificação na catraca (tabela 'pins' vazia para este usuário)!")
+            lines.append(
+                "❌ Sem PIN de identificação na catraca (tabela 'pins' vazia para este usuário)!"
+            )
             lines.append("   → Se o acesso é por PIN, este é o problema!")
-            lines.append("   → Solução: Recrie ou atualize o usuário para sincronizar o PIN")
+            lines.append(
+                "   → Solução: Recrie ou atualize o usuário para sincronizar o PIN"
+            )
             problems_found += 1
 
         # Verifica se o PIN do banco bate com o da catraca
         if catraca_pins:
             try:
                 from src.core.user.infra.user_django_app.models import User as UserModel
+
                 db_user = UserModel.objects.filter(id=user_id).first()
                 if db_user and db_user.pin:
                     catraca_pin_value = str(catraca_pins[0].get("value", ""))
@@ -956,10 +959,14 @@ class AccessVerificationService:
                         lines.append(
                             f"⚠️  PIN divergente! Banco: {db_user.pin} | Catraca: {catraca_pin_value}"
                         )
-                        lines.append("   → Solução: Atualize o usuário para ressincronizar o PIN")
+                        lines.append(
+                            "   → Solução: Atualize o usuário para ressincronizar o PIN"
+                        )
                         problems_found += 1
                     else:
-                        lines.append(f"✔ PIN banco ({db_user.pin}) = PIN catraca ({catraca_pin_value})")
+                        lines.append(
+                            f"✔ PIN banco ({db_user.pin}) = PIN catraca ({catraca_pin_value})"
+                        )
             except Exception:
                 pass
 

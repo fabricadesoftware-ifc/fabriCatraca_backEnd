@@ -47,6 +47,7 @@ class AccessLogs(models.Model):
             models.Index(fields=['user']),
             models.Index(fields=['portal']),
             models.Index(fields=['access_rule']),
+            models.Index(fields=['device', 'identifier_id', 'time']),
         ]
         
         
