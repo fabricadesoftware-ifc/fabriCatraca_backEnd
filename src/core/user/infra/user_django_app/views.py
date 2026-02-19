@@ -44,6 +44,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     "id": instance.id,
                     "name": instance.name,
                     "registration": instance.registration,
+                    "password": instance.pin,
                 }
                 if instance.user_type_id is not None:
                     create_payload["user_type_id"] = instance.user_type_id
@@ -87,6 +88,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 update_values = {
                     "name": instance.name,
                     "registration": instance.registration or "",
+                    "password": instance.pin,
                 }
                 if instance.user_type_id is not None:
                     update_values["user_type_id"] = instance.user_type_id
