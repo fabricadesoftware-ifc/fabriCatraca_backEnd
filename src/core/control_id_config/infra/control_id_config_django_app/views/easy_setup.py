@@ -712,27 +712,146 @@ class _EasySetupEngine(ControlIDSyncMixin):
             logger.warning(f"[EASY_SETUP] destroy_objects({table}) exception: {exc}")
             return False
 
+    def _load_existing_ids(self, table):
+        """Lê IDs existentes de uma tabela na catraca."""
+        col = _TABLE_WHERE_COL.get(table, "id")
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"load_objects.fcgi?session={sess}"),
+                json={"object": table, "fields": [col]},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                rows = resp.json().get(table, [])
+                return {r[col] for r in rows}
+        except Exception:
+            pass
+        return set()
+
+    def _modify_objects(self, table, values):
+        """Atualiza objetos existentes numa tabela da catraca (modify_objects)."""
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"modify_objects.fcgi?session={sess}"),
+                json={"object": table, "values": values},
+                timeout=60,
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def _fix_default_access_rules(self):
+        """
+        Lê access_rules da catraca e corrige qualquer uma com type=0
+        para type=1, evitando o erro "Invalid op type: 0".
+        Retorna quantas regras foram corrigidas.
+        """
+        fixed = 0
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"load_objects.fcgi?session={sess}"),
+                json={"object": "access_rules", "fields": ["id", "type"]},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                return fixed
+
+            rules = resp.json().get("access_rules", [])
+            bad_rules = [r for r in rules if r.get("type", 0) == 0]
+
+            for rule in bad_rules:
+                sess = self.login()
+                resp = requests.post(
+                    self.get_url(f"modify_objects.fcgi?session={sess}"),
+                    json={
+                        "object": "access_rules",
+                        "values": [{"id": rule["id"], "type": 1}],
+                    },
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    fixed += 1
+                    logger.info(
+                        f"[EASY_SETUP] [{self.device.name}] "
+                        f"access_rule id={rule['id']} type 0→1 corrigido"
+                    )
+        except Exception as e:
+            logger.warning(
+                f"[EASY_SETUP] [{self.device.name}] "
+                f"Erro ao corrigir access_rules: {e}"
+            )
+        return fixed
+
     def push_data(self, data):
         """
         Envia os dados coletados para a catraca na ordem correta de FK.
 
-        Duas fases:
-          1. DESTROY ALL em ordem reversa (junction → parent) — respeita FK
-          2. CREATE ALL em ordem direta (parent → junction)
+        Estratégia SEGURA (sem destroy total):
+          ⚠️ NÃO destruímos todas as tabelas de uma vez — isso corrompe
+          o firmware V5.18.3 e causa crash permanente.
 
-        Isso garante que factory defaults (como access_rule type=0)
-        sejam removidos mesmo quando há FK entre tabelas.
+        Abordagem:
+          1. Corrigir access_rules default (type=0 → type=1)
+          2. Destruir APENAS tabelas de junção (relações) — são seguras
+          3. Criar dados novos (ignora UNIQUE se já existir)
+          4. Recriar relações
+
+        Após factory reset + delay de 40s, a catraca tem defaults do
+        firmware (user Teste, grupo Padrão, access_rule type=0).
+        Não destruímos essas entidades-pai — apenas corrigimos e
+        adicionamos por cima.
         """
         results = {}
 
-        # ── Fase 1: Destroy ALL em ordem reversa de FK ──────────────────
-        logger.info(f"[EASY_SETUP] [{self.device.name}] Fase 1 — destroy (reverse)...")
-        for table in reversed(PUSH_ORDER):
+        # ── Fase 0: Corrigir access_rules type=0 ─────────────────────
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Fase 0 — corrigir access_rules type=0..."
+        )
+        fixed = self._fix_default_access_rules()
+        results["_fix_type0"] = {"ok": True, "fixed": fixed}
+
+        # ── Fase 1: Destruir APENAS tabelas de junção ─────────────────
+        # Tabelas de junção (relações M:N) são seguras de destruir.
+        # Entidades-pai (users, groups, access_rules, time_zones, etc.)
+        # NÃO são destruídas — isso corrompe o firmware.
+        JUNCTION_TABLES = [
+            "access_rule_time_zones",
+            "portal_access_rules",
+            "group_access_rules",
+            "user_access_rules",
+            "user_groups",
+            "pins",
+            "cards",
+            "templates",
+        ]
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Fase 1 — destroy junções (seguro)..."
+        )
+        for table in JUNCTION_TABLES:
             self._destroy_table(table)
 
-        # ── Fase 2: Create em ordem direta de FK ────────────────────────
-        logger.info(f"[EASY_SETUP] [{self.device.name}] Fase 2 — create (forward)...")
-        for table in PUSH_ORDER:
+        # ── Fase 2: Criar entidades-pai (ignora UNIQUE) ──────────────
+        # Se o firmware já criou defaults com o mesmo ID, o create
+        # vai dar UNIQUE — isso é OK, o dado já está lá.
+        PARENT_TABLES = [
+            "users",
+            "time_zones",
+            "time_spans",
+            "access_rules",
+            "groups",
+            "areas",
+            "portals",
+        ]
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Fase 2 — create entidades-pai..."
+        )
+        for table in PARENT_TABLES:
             values = data.get(table, [])
             if not values:
                 results[table] = {"ok": True, "count": 0, "skipped": True}
@@ -745,18 +864,80 @@ class _EasySetupEngine(ControlIDSyncMixin):
                     json={"object": table, "values": values},
                     timeout=60,
                 )
+                ok = resp.status_code == 200
                 results[table] = {
-                    "ok": resp.status_code == 200,
+                    "ok": ok,
                     "count": len(values),
                     "status": resp.status_code,
                 }
-                if resp.status_code != 200:
+                if not ok:
                     body = resp.text[:500]
-                    results[table]["detail"] = body
-                    logger.warning(
-                        f"[EASY_SETUP] create_objects({table}) falhou: "
-                        f"HTTP {resp.status_code} — {body}"
-                    )
+                    # UNIQUE constraint é aceitável — dado já existe
+                    if "UNIQUE" in body:
+                        results[table]["ok"] = True
+                        results[table]["note"] = "UNIQUE (dado já existia)"
+                        logger.info(
+                            f"[EASY_SETUP] create_objects({table}): "
+                            f"UNIQUE — dado já existe, ok"
+                        )
+                    else:
+                        results[table]["detail"] = body
+                        logger.warning(
+                            f"[EASY_SETUP] create_objects({table}) falhou: "
+                            f"HTTP {resp.status_code} — {body}"
+                        )
+            except Exception as e:
+                results[table] = {
+                    "ok": False,
+                    "count": len(values),
+                    "error": str(e),
+                }
+
+        # ── Fase 3: Recriar todas as relações (junções) ───────────────
+        RELATION_TABLES = [
+            "user_groups",
+            "user_access_rules",
+            "group_access_rules",
+            "portal_access_rules",
+            "access_rule_time_zones",
+            "cards",
+            "templates",
+            "pins",
+        ]
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Fase 3 — create relações..."
+        )
+        for table in RELATION_TABLES:
+            values = data.get(table, [])
+            if not values:
+                results[table] = {"ok": True, "count": 0, "skipped": True}
+                continue
+
+            try:
+                sess = self.login()
+                resp = requests.post(
+                    self.get_url(f"create_objects.fcgi?session={sess}"),
+                    json={"object": table, "values": values},
+                    timeout=60,
+                )
+                ok = resp.status_code == 200
+                results[table] = {
+                    "ok": ok,
+                    "count": len(values),
+                    "status": resp.status_code,
+                }
+                if not ok:
+                    body = resp.text[:500]
+                    if "UNIQUE" in body:
+                        results[table]["ok"] = True
+                        results[table]["note"] = "UNIQUE (dado já existia)"
+                    else:
+                        results[table]["detail"] = body
+                        logger.warning(
+                            f"[EASY_SETUP] create_objects({table}) falhou: "
+                            f"HTTP {resp.status_code} — {body}"
+                        )
             except Exception as e:
                 results[table] = {
                     "ok": False,

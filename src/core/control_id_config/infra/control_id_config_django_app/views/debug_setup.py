@@ -121,8 +121,11 @@ AVAILABLE_STEPS = {
     "list_steps": "Lista todos os passos disponíveis",
     # Combo
     "push_all_data": "Destroy + create TODOS os dados (sem tocar em configs)",
+    "push_safe": "Push SEGURO: corrige type=0, destroi apenas juncoes, cria por cima",
     # Preview (apenas mostra o que seria enviado, SEM enviar)
     "preview_db_data": "Mostra TODOS os dados que seriam enviados (sem enviar nada)",
+    # Fix
+    "fix_access_rules": "Corrige access_rules type=0 para type=1 (sem destruir nada)",
 }
 
 
@@ -556,6 +559,15 @@ def _execute_step(engine, step, db_data=None):
     # ── Push all data (destroy + create, sem configs) ─────────────────────
     if step == "push_all_data":
         return engine.push_data(db_data)
+
+    # ── Push safe (nova estratégia: sem destroy de entidades-pai) ────────
+    if step == "push_safe":
+        return engine.push_data(db_data)
+
+    # ── Fix access_rules type=0 ─────────────────────────────────────────
+    if step == "fix_access_rules":
+        fixed = engine._fix_default_access_rules()
+        return {"ok": True, "fixed": fixed}
 
     # ── Destroy individual de uma tabela ──────────────────────────────────
     destroy_table_map = {
