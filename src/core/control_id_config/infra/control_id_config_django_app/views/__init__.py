@@ -6,12 +6,10 @@ from .device_config_view import DeviceConfigView
 from .easy_setup import easy_setup
 
 __all__ = [
-    'SystemConfigViewSet',
-    'HardwareConfigViewSet',
-    'SecurityConfigViewSet', 
-    'UIConfigViewSet',
-    'DeviceConfigView',
-    'easy_setup',
+    "SystemConfigViewSet",
+    "HardwareConfigViewSet",
+    "SecurityConfigViewSet",
+    "UIConfigViewSet",
+    "DeviceConfigView",
+    "easy_setup",
 ]
-
-

@@ -91,6 +91,7 @@ PUSH_ORDER = [
 #  Helper — Motor de setup por device
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class _EasySetupEngine(ControlIDSyncMixin):
     """
     Herda ControlIDSyncMixin para reutilizar login, _make_request, etc.
@@ -171,9 +172,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
         device = self.device
 
         # Usuários vinculados a este device
-        users_qs = User.objects.filter(
-            devices=device
-        ).exclude(is_staff=True, is_superuser=True)
+        users_qs = User.objects.filter(devices=device).exclude(
+            is_staff=True, is_superuser=True
+        )
         user_ids = set(users_qs.values_list("id", flat=True))
 
         data = {}
@@ -199,11 +200,24 @@ class _EasySetupEngine(ControlIDSyncMixin):
         data["time_zones"] = list(TimeZone.objects.values("id", "name"))
 
         # TimeSpans
-        data["time_spans"] = list(TimeSpan.objects.values(
-            "id", "time_zone_id", "start", "end",
-            "sun", "mon", "tue", "wed", "thu", "fri", "sat",
-            "hol1", "hol2", "hol3",
-        ))
+        data["time_spans"] = list(
+            TimeSpan.objects.values(
+                "id",
+                "time_zone_id",
+                "start",
+                "end",
+                "sun",
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "hol1",
+                "hol2",
+                "hol3",
+            )
+        )
 
         # AccessRules
         data["access_rules"] = list(
@@ -223,9 +237,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # Relações (filtradas por users deste device onde aplicável)
         data["user_groups"] = list(
-            UserGroup.objects.filter(user_id__in=user_ids).values(
-                "user_id", "group_id"
-            )
+            UserGroup.objects.filter(user_id__in=user_ids).values("user_id", "group_id")
         )
 
         data["user_access_rules"] = list(
@@ -253,9 +265,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # Templates (biometria)
         data["templates"] = list(
-            Template.objects.filter(user_id__in=user_ids).values(
-                "user_id", "template"
-            )
+            Template.objects.filter(user_id__in=user_ids).values("user_id", "template")
         )
 
         return data
@@ -337,10 +347,10 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # Resumo rápido
         push = report["steps"]["push"]
-        total_pushed = sum(
-            v.get("count", 0) for v in push.values() if v.get("ok")
+        total_pushed = sum(v.get("count", 0) for v in push.values() if v.get("ok"))
+        total_errors = sum(
+            1 for v in push.values() if not v.get("ok") and not v.get("skipped")
         )
-        total_errors = sum(1 for v in push.values() if not v.get("ok") and not v.get("skipped"))
         report["summary"] = {
             "records_pushed": total_pushed,
             "tables_with_errors": total_errors,
@@ -352,6 +362,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Views
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
@@ -375,23 +386,29 @@ def _list_devices(request):
         monitor = MonitorConfig.objects.filter(device=d).first()
         user_count = d.users.exclude(is_staff=True, is_superuser=True).count()
 
-        device_list.append({
-            "id": d.id,
-            "name": d.name,
-            "ip": d.ip,
-            "is_default": d.is_default,
-            "user_count": user_count,
-            "monitor_configured": monitor.is_configured if monitor else False,
-            "monitor_url": monitor.full_url if monitor and monitor.is_configured else None,
-            "selected": True,  # Por padrão todas marcadas
-        })
+        device_list.append(
+            {
+                "id": d.id,
+                "name": d.name,
+                "ip": d.ip,
+                "is_default": d.is_default,
+                "user_count": user_count,
+                "monitor_configured": monitor.is_configured if monitor else False,
+                "monitor_url": monitor.full_url
+                if monitor and monitor.is_configured
+                else None,
+                "selected": True,  # Por padrão todas marcadas
+            }
+        )
 
-    return Response({
-        "devices": device_list,
-        "total": len(device_list),
-        "hint": "POST com {\"device_ids\": [1,2]} para executar o setup. "
-                "Omita device_ids para executar em todos.",
-    })
+    return Response(
+        {
+            "devices": device_list,
+            "total": len(device_list),
+            "hint": 'POST com {"device_ids": [1,2]} para executar o setup. '
+            "Omita device_ids para executar em todos.",
+        }
+    )
 
 
 def _execute_setup(request):
@@ -432,16 +449,14 @@ def _execute_setup(request):
         )
 
     # Resumo geral
-    total_ok = sum(
-        1
-        for r in results
-        if r.get("steps", {}).get("login", {}).get("ok")
-    )
+    total_ok = sum(1 for r in results if r.get("steps", {}).get("login", {}).get("ok"))
 
-    return Response({
-        "success": True,
-        "message": f"Easy Setup concluído em {len(results)} device(s)",
-        "devices_ok": total_ok,
-        "devices_total": len(results),
-        "results": results,
-    })
+    return Response(
+        {
+            "success": True,
+            "message": f"Easy Setup concluído em {len(results)} device(s)",
+            "devices_ok": total_ok,
+            "devices_total": len(results),
+            "results": results,
+        }
+    )

@@ -1,6 +1,11 @@
 from django.db import models
-from src.core.control_Id.infra.control_id_django_app.models import Device, Portal, AccessRule
+from src.core.control_Id.infra.control_id_django_app.models import (
+    Device,
+    Portal,
+    AccessRule,
+)
 from src.core.user.infra.user_django_app.models import User
+
 
 class EventType(models.IntegerChoices):
     EQUIPAMENTO_INVALIDO = 1
@@ -27,30 +32,30 @@ class AccessLogs(models.Model):
     identifier_id = models.CharField(max_length=255)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     portal = models.ForeignKey(Portal, on_delete=models.SET_NULL, blank=True, null=True)
-    access_rule = models.ForeignKey(AccessRule, on_delete=models.SET_NULL, blank=True, null=True)
+    access_rule = models.ForeignKey(
+        AccessRule, on_delete=models.SET_NULL, blank=True, null=True
+    )
     qr_code = models.CharField(max_length=255)
     uhf_value = models.CharField(max_length=255)
     pin_value = models.CharField(max_length=255)
     card_value = models.CharField(max_length=255)
     confidence = models.IntegerField()
     mask = models.CharField(max_length=255)
-    
+
     class Meta:
-        db_table = 'access_logs'
-        verbose_name = 'Log de Acesso'
-        verbose_name_plural = 'Logs de Acesso'
-        ordering = ['-time']
+        db_table = "access_logs"
+        verbose_name = "Log de Acesso"
+        verbose_name_plural = "Logs de Acesso"
+        ordering = ["-time"]
         indexes = [
-            models.Index(fields=['time']),
-            models.Index(fields=['event_type']),
-            models.Index(fields=['device']),
-            models.Index(fields=['user']),
-            models.Index(fields=['portal']),
-            models.Index(fields=['access_rule']),
-            models.Index(fields=['device', 'identifier_id', 'time']),
+            models.Index(fields=["time"]),
+            models.Index(fields=["event_type"]),
+            models.Index(fields=["device"]),
+            models.Index(fields=["user"]),
+            models.Index(fields=["portal"]),
+            models.Index(fields=["access_rule"]),
+            models.Index(fields=["device", "identifier_id", "time"]),
         ]
-        
-        
-        
+
     def __str__(self):
         return f"{self.time} - {self.event_type} - {self.device} - {self.identifier_id} - {self.user} - {self.portal} - {self.access_rule} - {self.qr_code} - {self.uhf_value} - {self.pin_value} - {self.card_value} - {self.confidence} - {self.mask}"
