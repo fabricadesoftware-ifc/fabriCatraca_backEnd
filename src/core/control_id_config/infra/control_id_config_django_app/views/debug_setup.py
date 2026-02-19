@@ -121,6 +121,8 @@ AVAILABLE_STEPS = {
     "list_steps": "Lista todos os passos disponíveis",
     # Combo
     "push_all_data": "Destroy + create TODOS os dados (sem tocar em configs)",
+    # Preview (apenas mostra o que seria enviado, SEM enviar)
+    "preview_db_data": "Mostra TODOS os dados que seriam enviados (sem enviar nada)",
 }
 
 
@@ -621,5 +623,16 @@ def _execute_step(engine, step, db_data=None):
             results[table] = engine.read_objects(table)
         results["config"] = engine.read_configuration()
         return {"ok": True, "data": results}
+
+    if step == "preview_db_data":
+        preview_data = engine.collect_db_data()
+        summary = {}
+        for table in PUSH_ORDER:
+            items = preview_data.get(table, [])
+            summary[table] = {
+                "count": len(items),
+                "sample": items[:3] if items else [],
+            }
+        return {"ok": True, "tables": summary, "full_data": preview_data}
 
     return {"ok": False, "error": f"Step '{step}' não implementado"}
