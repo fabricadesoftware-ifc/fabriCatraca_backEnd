@@ -8,11 +8,11 @@ Fluxo por device:
   1. Login
   2. Factory reset (reset_to_factory_default.fcgi, keep_network_info=true)
   3. Aguardar reboot + re-login
-  4. Desabilitar identifier (pin=0, card=0) — evita que firmware use access_rules
-     factory default (type=0) cacheadas na memória durante boot
-  5. Acertar data/hora
-  6. Configurar monitor (push notifications)
-  7. Enviar todos os dados do banco (users, groups, regras, etc.)
+  4. Acertar data/hora
+  5. Configurar monitor (push notifications)
+  6. Enviar todos os dados do banco (users, groups, regras, etc.)
+  7. Desabilitar identifier (pin=0, card=0) — firmware init já completou,
+     access_rules type≥1 já estão no DB; agora pin=0 realmente "pega"
   8. Enviar configurações do device (pin_enabled=1, etc.)
      — Transição 0→1 FORÇA firmware a recarregar access_rules do DB (agora type≥1)
   9. Enviar PINs de identificação
@@ -188,20 +188,20 @@ class _EasySetupEngine(ControlIDSyncMixin):
     # ── 2. Desabilitar identifier (pin/card off) ───────────────────────────
     def disable_identifier(self):
         """
-        Desabilita métodos de identificação na catraca ANTES de enviar dados.
+        Desabilita métodos de identificação na catraca DEPOIS do push_data.
 
-        Motivo: após factory reset, o firmware pode bootar com
-        pin_identification_enabled=1 (factory default). Quando o plugin
-        identifier inicia com PIN habilitado, ele carrega access_rules
-        em memória — que nesse ponto ainda são factory defaults com type=0.
+        Motivo: após factory reset, o firmware restaura
+        pin_identification_enabled=1 (factory default) durante sua
+        inicialização interna (~6s após boot).  Se chamarmos
+        disable_identifier cedo demais (logo após login), o init do
+        firmware sobrescreve nosso pin=0 de volta para pin=1.
 
-        Se não desabilitarmos ANTES de push_data, ao chamar
-        set_configuration(pin_enabled=1) depois, o valor NÃO muda
-        (já era 1), então o firmware NÃO recarrega access_rules.
-
-        Solução: forçar pin_identification_enabled=0 primeiro.
-        Depois do push_data, configure_device_settings() envia pin=1,
-        criando transição 0→1 que FORÇA reload das access_rules do DB.
+        Chamar APÓS push_data garante que:
+        a) O init do firmware já completou (pin=1 já restaurado)
+        b) access_rules type≥1 já estão no DB da catraca
+        c) Nosso set_configuration(pin=0) realmente muda o valor (1→0)
+        d) configure_device_settings(pin=1) logo depois cria transição
+           0→1 que FORÇA firmware a recarregar access_rules do DB
         """
         try:
             resp = self._make_request(
@@ -223,7 +223,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    # ── 3. Acertar data/hora ────────────────────────────────────────────────
+    # ── 3. Acertar data/hora ──────────────────────────────────────────────── 
     def set_datetime(self):
         """
         Sincroniza relógio da catraca com o servidor.
@@ -273,7 +273,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             result["error"] = str(e)
             return result
 
-    # ── 4. Configurar monitor ───────────────────────────────────────────────
+    # ── 4. Configurar monitor ─────────────────────────────────────────────── 
     def configure_monitor(self):
         """Envia configuração de monitor (push) para a catraca."""
         try:
@@ -300,7 +300,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    # ── 5. Enviar configurações do device ───────────────────────────────────
+    # ── 5. Enviar configurações do device ─────────────────────────────────── 
     def configure_device_settings(self):
         """
         Envia TODAS as configurações salvas no banco para a catraca.
@@ -420,7 +420,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return result
 
-    # ── 6. Coletar dados do banco ───────────────────────────────────────────
+    # ── 6. Coletar dados do banco ─────────────────────────────────────────── 
     def collect_db_data(self):
         """
         Coleta todos os dados do Django DB que precisam ser enviados
@@ -542,7 +542,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return data
 
-    # ── 7. Enviar dados para catraca ────────────────────────────────────────
+    # ── 7. Enviar dados para catraca ──────────────────────────────────────── 
     def _destroy_table(self, table):
         """Limpa uma tabela da catraca antes de inserir novos dados."""
         col = _TABLE_WHERE_COL.get(table, "id")
@@ -654,34 +654,37 @@ class _EasySetupEngine(ControlIDSyncMixin):
             report["elapsed_s"] = round(_time.monotonic() - t0, 2)
             return report
 
-        # Etapa 3 — Desabilitar identifier (evitar cache de access_rules type=0)
-        # Após factory reset, o firmware pode bootar com pin_identification_enabled=1
-        # (factory default), carregando access_rules (type=0) em memória.
-        # Desabilitar AGORA garante que:
-        # a) O plugin identifier não use regras type=0 enquanto fazemos push
-        # b) Quando re-habilitarmos em configure_device_settings (pin=1),
-        #    a transição 0→1 FORÇA o firmware a recarregar access_rules do DB
-        logger.info(
-            f"[EASY_SETUP] [{self.device.name}] "
-            "Desabilitando identifier (evitar cache type=0)..."
-        )
-        report["steps"]["disable_identifier"] = self.disable_identifier()
-
-        # Etapa 4 — Acertar data/hora
+        # Etapa 3 — Acertar data/hora
         logger.info(f"[EASY_SETUP] [{self.device.name}] Acertando relógio...")
         report["steps"]["datetime"] = self.set_datetime()
 
-        # Etapa 5 — Configurar monitor
+        # Etapa 4 — Configurar monitor
         logger.info(f"[EASY_SETUP] [{self.device.name}] Configurando monitor...")
         report["steps"]["monitor"] = self.configure_monitor()
 
-        # Etapa 6 — Coletar e enviar dados com identifier desabilitado.
+        # Etapa 5 — Coletar e enviar dados.
         # access_rules type≥1 são escritas no DB da catraca.
         logger.info(f"[EASY_SETUP] [{self.device.name}] Coletando dados do DB...")
         db_data = self.collect_db_data()
 
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando dados para catraca...")
         report["steps"]["push"] = self.push_data(db_data)
+
+        # Etapa 6 — Desabilitar identifier AGORA (pós-push, pós-init firmware)
+        # O firmware restaura pin=1 durante init (~6s após boot).
+        # Se disable_identifier é chamado cedo demais, o init sobrescreve.
+        # Chamando DEPOIS do push_data:
+        #   - init do firmware já completou (pin=1 restaurado)
+        #   - access_rules type≥1 já estão no DB
+        #   - nosso pin=0 realmente muda (1→0)
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Desabilitando identifier (pós-push, forçar transição 0→1)..."
+        )
+        report["steps"]["disable_identifier"] = self.disable_identifier()
+
+        # Pequeno delay para garantir que o firmware aplicou pin=0
+        _time.sleep(2)
 
         # Etapa 7 — Configurações do device (identifier, operation_mode, etc.)
         # pin_identification_enabled muda de 0→1 = firmware RECARREGA access_rules
