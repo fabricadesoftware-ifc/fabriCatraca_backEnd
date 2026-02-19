@@ -9,8 +9,9 @@ Fluxo por device:
   2. Limpar TODOS os dados da catraca (destroy_objects)
   3. Acertar data/hora
   4. Configurar monitor (push notifications)
-  5. Enviar todos os dados do banco (users, groups, regras, etc.)
-  6. Enviar PINs de identificação
+  5. Enviar configurações do device (local_identification, operation_mode, etc.)
+  6. Enviar todos os dados do banco (users, groups, regras, etc.)
+  7. Enviar PINs de identificação
 """
 
 import logging
@@ -39,6 +40,14 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     TimeZone,
     UserAccessRule,
     UserGroup,
+)
+from src.core.control_id_config.infra.control_id_config_django_app.models import (
+    CatraConfig,
+    HardwareConfig,
+    PushServerConfig,
+    SecurityConfig,
+    SystemConfig,
+    UIConfig,
 )
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import (
     MonitorConfig,
@@ -141,9 +150,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 "minute": now.minute,
                 "second": now.second,
             }
-            resp = self._make_request(
-                "set_system_time.fcgi", json_data=time_payload
-            )
+            resp = self._make_request("set_system_time.fcgi", json_data=time_payload)
             result["set_time"] = {
                 "ok": resp.status_code == 200,
                 "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -200,7 +207,120 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    # ── 4. Coletar dados do banco ───────────────────────────────────────────
+    # ── 4. Enviar configurações do device ───────────────────────────────────
+    def configure_device_settings(self):
+        """
+        Envia TODAS as configurações salvas no banco para a catraca.
+
+        Após factory reset a catraca perde configurações críticas como:
+        - general.local_identification (necessário para processar PIN/cartão)
+        - catra.operation_mode (modo de operação da gaveta)
+        - identifier (MFA, log type)
+        - hardware (beep, ssh)
+        - push_server
+        - general.screen_always_on (UI)
+
+        Monta UM ÚNICO payload consolidado e envia via set_configuration.fcgi.
+        """
+        device = self.device
+        result = {"sections": {}}
+
+        def bool_to_str(value):
+            return "1" if value else "0"
+
+        payload = {}
+
+        # ── general (SystemConfig + HardwareConfig + UIConfig) ──
+        general = {}
+
+        sys_cfg = SystemConfig.objects.filter(device=device).first()
+        if sys_cfg:
+            general["catra_timeout"] = str(sys_cfg.catra_timeout or 30000)
+            general["online"] = bool_to_str(sys_cfg.online)
+            general["local_identification"] = bool_to_str(sys_cfg.local_identification)
+            general["language"] = str(sys_cfg.language or "pt_BR")
+            result["sections"]["system"] = True
+        else:
+            # Defaults seguros — local_identification DEVE ser 1
+            general["local_identification"] = "1"
+            general["online"] = "1"
+            general["language"] = "pt_BR"
+            result["sections"]["system"] = "defaults"
+
+        hw_cfg = HardwareConfig.objects.filter(device=device).first()
+        if hw_cfg:
+            general["beep_enabled"] = bool_to_str(hw_cfg.beep_enabled)
+            general["ssh_enabled"] = bool_to_str(hw_cfg.ssh_enabled)
+            general["bell_enabled"] = bool_to_str(hw_cfg.bell_enabled)
+            general["bell_relay"] = str(hw_cfg.bell_relay)
+            general["exception_mode"] = "emergency" if hw_cfg.exception_mode else "none"
+            result["sections"]["hardware"] = True
+
+        ui_cfg = UIConfig.objects.filter(device=device).first()
+        if ui_cfg:
+            general["screen_always_on"] = bool_to_str(ui_cfg.screen_always_on)
+            result["sections"]["ui"] = True
+
+        if general:
+            payload["general"] = general
+
+        # ── catra (CatraConfig) ──
+        catra_cfg = CatraConfig.objects.filter(device=device).first()
+        if catra_cfg:
+            payload["catra"] = {
+                "anti_passback": bool_to_str(catra_cfg.anti_passback),
+                "daily_reset": bool_to_str(catra_cfg.daily_reset),
+                "gateway": catra_cfg.gateway,
+                "operation_mode": catra_cfg.operation_mode,
+            }
+            result["sections"]["catra"] = True
+        else:
+            # Default seguro
+            payload["catra"] = {
+                "operation_mode": "blocked",
+                "anti_passback": "0",
+                "daily_reset": "0",
+                "gateway": "clockwise",
+            }
+            result["sections"]["catra"] = "defaults"
+
+        # ── identifier (SecurityConfig) ──
+        sec_cfg = SecurityConfig.objects.filter(device=device).first()
+        if sec_cfg:
+            payload["identifier"] = {
+                "multi_factor_authentication": bool_to_str(
+                    getattr(sec_cfg, "multi_factor_authentication_enabled", False)
+                ),
+                "verbose_logging": bool_to_str(
+                    getattr(sec_cfg, "verbose_logging_enabled", True)
+                ),
+            }
+            result["sections"]["security"] = True
+
+        # ── push_server (PushServerConfig) ──
+        ps_cfg = PushServerConfig.objects.filter(device=device).first()
+        if ps_cfg:
+            payload["push_server"] = {
+                "push_request_timeout": str(ps_cfg.push_request_timeout),
+                "push_request_period": str(ps_cfg.push_request_period),
+                "push_remote_address": ps_cfg.push_remote_address or "",
+            }
+            result["sections"]["push_server"] = True
+
+        # ── Envia tudo de uma vez ──
+        try:
+            resp = self._make_request("set_configuration.fcgi", json_data=payload)
+            result["ok"] = resp.status_code == 200
+            result["payload_sections"] = list(payload.keys())
+            if resp.status_code != 200:
+                result["detail"] = resp.text[:300]
+        except Exception as e:
+            result["ok"] = False
+            result["error"] = str(e)
+
+        return result
+
+    # ── 5. Coletar dados do banco ───────────────────────────────────────────
     def collect_db_data(self):
         """
         Coleta todos os dados do Django DB que precisam ser enviados
@@ -253,8 +373,18 @@ class _EasySetupEngine(ControlIDSyncMixin):
             "hol2",
             "hol3",
         )
-        day_fields = ("sun", "mon", "tue", "wed", "thu", "fri", "sat",
-                      "hol1", "hol2", "hol3")
+        day_fields = (
+            "sun",
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri",
+            "sat",
+            "hol1",
+            "hol2",
+            "hol3",
+        )
         data["time_spans"] = [
             {k: (int(v) if k in day_fields else v) for k, v in span.items()}
             for span in raw_spans
@@ -311,7 +441,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return data
 
-    # ── 5. Enviar dados para catraca ────────────────────────────────────────
+    # ── 6. Enviar dados para catraca ────────────────────────────────────────
     def push_data(self, data):
         """
         Envia os dados coletados para a catraca na ordem correta de FK.
@@ -377,7 +507,11 @@ class _EasySetupEngine(ControlIDSyncMixin):
         logger.info(f"[EASY_SETUP] [{self.device.name}] Configurando monitor...")
         report["steps"]["monitor"] = self.configure_monitor()
 
-        # Etapa 5 — Coletar e enviar dados
+        # Etapa 5 — Enviar configurações do device (local_identification, operation_mode, etc.)
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
+        report["steps"]["device_settings"] = self.configure_device_settings()
+
+        # Etapa 6 — Coletar e enviar dados
         logger.info(f"[EASY_SETUP] [{self.device.name}] Coletando dados do DB...")
         db_data = self.collect_db_data()
 

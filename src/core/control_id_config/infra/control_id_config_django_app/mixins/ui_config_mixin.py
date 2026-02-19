@@ -8,16 +8,42 @@ class UIConfigSyncMixin(ControlIDSyncMixin):
     
     def update_ui_config_in_catraca(self, instance):
         """Atualiza configurações de interface na catraca"""
-        
-        # Envia configurações de UI para a catraca via set_configuration.fcgi
-        # Usando a seção 'general' onde screen_always_on está disponível
-        response = self.update_objects(
-            "general",
-            {
-                "screen_always_on": instance.screen_always_on,
-            },
-        )
-        return response
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            def bool_to_str(value):
+                return "1" if value else "0"
+            
+            payload = {
+                "general": {
+                    "screen_always_on": bool_to_str(instance.screen_always_on),
+                }
+            }
+            
+            logger.info(f"[UI_CONFIG] Enviando para catraca: {payload}")
+            
+            # Usa o helper com retry automático de sessão
+            response = self._make_request("set_configuration.fcgi", json_data=payload)
+            
+            logger.info(f"[UI_CONFIG] Resposta - Status: {response.status_code}, Body: {response.text}")
+            
+            if response.status_code == 200:
+                return Response(response.json(), status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "success": False,
+                    "error": f"Erro ao atualizar configuração: {response.status_code}",
+                    "details": response.text
+                }, status=response.status_code)
+                
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception("[UI_CONFIG] Exceção ao atualizar:")
+            return Response({
+                "success": False,
+                "error": f"Exceção ao atualizar configuração: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def sync_ui_config_from_catraca(self):
         """Sincroniza configurações de interface da catraca"""
