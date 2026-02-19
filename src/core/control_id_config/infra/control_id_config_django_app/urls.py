@@ -9,7 +9,8 @@ from .views import (
     HardwareConfigViewSet,
     SecurityConfigViewSet,
     UIConfigViewSet,
-    DeviceConfigView
+    DeviceConfigView,
+    easy_setup,
 )
 from .views.catra_config import CatraConfigViewSet
 from .views.push_server_config import PushServerConfigViewSet
@@ -33,6 +34,7 @@ def config_root(request, format=None):
         'ui_configs': reverse('uiconfig-list', request=request, format=format),
         'catra_configs': reverse('catraconfig-list', request=request, format=format),
         'push_server_configs': reverse('pushserverconfig-list', request=request, format=format),
+        'easy_setup': reverse('easy-setup', request=request, format=format),
         'sync_all_configs': reverse('sync-all-configs', request=request, format=format),
         'sync_config_status': reverse('sync-config-status', request=request, format=format),
         'monitor_configs': 'Moved to /api/control_id_monitor/monitor-configs/',
@@ -40,6 +42,7 @@ def config_root(request, format=None):
 
 urlpatterns = [
     path('', config_root, name='config-root'),
+    path('easy-setup/', easy_setup, name='easy-setup'),
     path('sync/', sync_all_configs, name='sync-all-configs'),
     path('sync/status/', sync_config_status, name='sync-config-status'),
     path('device-config/<int:device_id>/', sync_device_config, name='sync-device-config'),
