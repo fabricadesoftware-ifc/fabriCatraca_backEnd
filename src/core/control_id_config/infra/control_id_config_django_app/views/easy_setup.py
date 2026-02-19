@@ -236,25 +236,29 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # TimeZones
         data["time_zones"] = list(TimeZone.objects.values("id", "name"))
 
-        # TimeSpans
-        data["time_spans"] = list(
-            TimeSpan.objects.values(
-                "id",
-                "time_zone_id",
-                "start",
-                "end",
-                "sun",
-                "mon",
-                "tue",
-                "wed",
-                "thu",
-                "fri",
-                "sat",
-                "hol1",
-                "hol2",
-                "hol3",
-            )
+        # TimeSpans — API Control iD espera 0/1 nos dias, não true/false
+        raw_spans = TimeSpan.objects.values(
+            "id",
+            "time_zone_id",
+            "start",
+            "end",
+            "sun",
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri",
+            "sat",
+            "hol1",
+            "hol2",
+            "hol3",
         )
+        day_fields = ("sun", "mon", "tue", "wed", "thu", "fri", "sat",
+                      "hol1", "hol2", "hol3")
+        data["time_spans"] = [
+            {k: (int(v) if k in day_fields else v) for k, v in span.items()}
+            for span in raw_spans
+        ]
 
         # AccessRules
         data["access_rules"] = list(
