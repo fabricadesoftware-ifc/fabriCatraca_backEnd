@@ -513,26 +513,47 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 json={"object": table, "where": where},
                 timeout=30,
             )
+            if resp.status_code != 200:
+                logger.warning(
+                    f"[EASY_SETUP] destroy_objects({table}) falhou: "
+                    f"HTTP {resp.status_code} — {resp.text[:300]}"
+                )
+            else:
+                logger.debug(
+                    f"[EASY_SETUP] destroy_objects({table}) OK — {resp.text[:100]}"
+                )
             return resp.status_code == 200
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                f"[EASY_SETUP] destroy_objects({table}) exception: {exc}"
+            )
             return False
 
     def push_data(self, data):
         """
         Envia os dados coletados para a catraca na ordem correta de FK.
 
-        Para cada tabela, primeiro destrói dados existentes (factory defaults)
-        e depois cria os novos registros. Isso evita UNIQUE constraint errors.
+        Duas fases:
+          1. DESTROY ALL em ordem reversa (junction → parent) — respeita FK
+          2. CREATE ALL em ordem direta (parent → junction)
+
+        Isso garante que factory defaults (como access_rule type=0)
+        sejam removidos mesmo quando há FK entre tabelas.
         """
         results = {}
+
+        # ── Fase 1: Destroy ALL em ordem reversa de FK ──────────────────
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Fase 1 — destroy (reverse)...")
+        for table in reversed(PUSH_ORDER):
+            self._destroy_table(table)
+
+        # ── Fase 2: Create em ordem direta de FK ────────────────────────
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Fase 2 — create (forward)...")
         for table in PUSH_ORDER:
             values = data.get(table, [])
             if not values:
                 results[table] = {"ok": True, "count": 0, "skipped": True}
                 continue
-
-            # Limpar dados existentes (factory defaults) antes de inserir
-            self._destroy_table(table)
 
             try:
                 sess = self.login()
