@@ -4,7 +4,11 @@ from rest_framework.reverse import reverse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .views import MonitorConfigViewSet, receive_dao_notification
+from .views import (
+    MonitorConfigViewSet,
+    receive_auxiliary_notification,
+    receive_dao_notification,
+)
 
 # Router para as views do Monitor
 router = DefaultRouter()
@@ -33,6 +37,17 @@ urlpatterns = [
     # Endpoint para receber notificações da catraca (PUSH)
     path(
         "notifications/dao", receive_dao_notification, name="monitor-dao-notification"
+    ),
+    # Endpoints auxiliares enviados pelo firmware após reboot/config change
+    path(
+        "notifications/operation_mode",
+        receive_auxiliary_notification,
+        name="monitor-operation-mode",
+    ),
+    path(
+        "notifications/device_is_alive",
+        receive_auxiliary_notification,
+        name="monitor-device-is-alive",
     ),
     # Rotas do ViewSet (CRUD de MonitorConfig)
     path("", include(router.urls)),

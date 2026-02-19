@@ -517,3 +517,20 @@ def receive_dao_notification(request):
             {"success": False, "error": f"Erro interno: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def receive_auxiliary_notification(request):
+    """
+    Recebe notificações auxiliares da catraca (operation_mode, device_is_alive).
+
+    Esses endpoints são chamados pelo firmware após reboot ou troca de
+    modo de operação. Apenas loga e retorna 200 para o device não ficar
+    re-tentando.
+    """
+    logger.info(
+        f"📥 [MONITOR] Notificação auxiliar recebida: "
+        f"{request.path} — {request.data}"
+    )
+    return Response({"success": True})

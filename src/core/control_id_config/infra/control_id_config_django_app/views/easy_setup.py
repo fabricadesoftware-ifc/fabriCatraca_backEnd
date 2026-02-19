@@ -61,6 +61,16 @@ logger = logging.getLogger(__name__)
 _FACTORY_LOGIN = "admin"
 _FACTORY_PASSWORD = "admin"
 
+# Coluna usada no WHERE de destroy_objects para cada tabela.
+# Tabelas de junção NÃO possuem coluna 'id' na Control iD.
+_TABLE_WHERE_COL = {
+    "user_groups": "user_id",
+    "user_access_rules": "user_id",
+    "group_access_rules": "group_id",
+    "portal_access_rules": "portal_id",
+    "access_rule_time_zones": "access_rule_id",
+}
+
 # ── Ordem de push (entidades-pai primeiro, relações depois) ─────────────────
 PUSH_ORDER = [
     "users",
@@ -324,18 +334,27 @@ class _EasySetupEngine(ControlIDSyncMixin):
             }
             result["sections"]["catra"] = "defaults"
 
-        # ── identifier (SecurityConfig) ──
+        # ── identifier (SecurityConfig + métodos de identificação) ──
+        identifier_cfg = {}
         sec_cfg = SecurityConfig.objects.filter(device=device).first()
         if sec_cfg:
-            payload["identifier"] = {
-                "multi_factor_authentication": bool_to_str(
-                    getattr(sec_cfg, "multi_factor_authentication_enabled", False)
-                ),
-                "verbose_logging": bool_to_str(
-                    getattr(sec_cfg, "verbose_logging_enabled", True)
-                ),
-            }
+            identifier_cfg["multi_factor_authentication"] = bool_to_str(
+                getattr(sec_cfg, "multi_factor_authentication_enabled", False)
+            )
+            identifier_cfg["verbose_logging"] = bool_to_str(
+                getattr(sec_cfg, "verbose_logging_enabled", True)
+            )
             result["sections"]["security"] = True
+
+        # Métodos de identificação habilitados.
+        # PIN e ID+Senha são mutuamente exclusivos:
+        #   pin_identification_enabled=1 → modo PIN
+        #   pin_identification_enabled=0 → modo ID+Senha
+        identifier_cfg.setdefault("card_identification_enabled", "1")
+        identifier_cfg.setdefault("pin_identification_enabled", "1")
+
+        payload["identifier"] = identifier_cfg
+        result["sections"]["identifier_methods"] = True
 
         # ── push_server (PushServerConfig) ──
         ps_cfg = PushServerConfig.objects.filter(device=device).first()
@@ -483,10 +502,27 @@ class _EasySetupEngine(ControlIDSyncMixin):
         return data
 
     # ── 6. Enviar dados para catraca ────────────────────────────────────────
+    def _destroy_table(self, table):
+        """Limpa uma tabela da catraca antes de inserir novos dados."""
+        col = _TABLE_WHERE_COL.get(table, "id")
+        where = {table: {col: {">=": 0}}}
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"destroy_objects.fcgi?session={sess}"),
+                json={"object": table, "where": where},
+                timeout=30,
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
     def push_data(self, data):
         """
         Envia os dados coletados para a catraca na ordem correta de FK.
-        Retorna dict com resultado por tabela.
+
+        Para cada tabela, primeiro destrói dados existentes (factory defaults)
+        e depois cria os novos registros. Isso evita UNIQUE constraint errors.
         """
         results = {}
         for table in PUSH_ORDER:
@@ -494,6 +530,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
             if not values:
                 results[table] = {"ok": True, "count": 0, "skipped": True}
                 continue
+
+            # Limpar dados existentes (factory defaults) antes de inserir
+            self._destroy_table(table)
 
             try:
                 sess = self.login()
