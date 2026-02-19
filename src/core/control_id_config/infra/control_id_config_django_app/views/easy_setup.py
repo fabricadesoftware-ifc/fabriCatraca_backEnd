@@ -6,12 +6,13 @@ POST /api/config/easy-setup/  → Executa setup nos devices selecionados
 
 Fluxo por device:
   1. Login
-  2. Limpar TODOS os dados da catraca (destroy_objects)
-  3. Acertar data/hora
-  4. Configurar monitor (push notifications)
-  5. Enviar configurações do device (local_identification, operation_mode, etc.)
-  6. Enviar todos os dados do banco (users, groups, regras, etc.)
-  7. Enviar PINs de identificação
+  2. Factory reset (reset_to_factory_default.fcgi, keep_network_info=true)
+  3. Aguardar reboot + re-login
+  4. Acertar data/hora
+  5. Configurar monitor (push notifications)
+  6. Enviar configurações do device (local_identification, operation_mode, etc.)
+  7. Enviar todos os dados do banco (users, groups, regras, etc.)
+  8. Enviar PINs de identificação
 """
 
 import logging
@@ -56,35 +57,9 @@ from src.core.user.infra.user_django_app.models import User
 
 logger = logging.getLogger(__name__)
 
-# ── Ordem de limpeza (relações primeiro, entidades-pai por último) ──────────
-CLEANUP_ORDER = [
-    "access_logs",
-    "templates",
-    "cards",
-    "pins",
-    "user_access_rules",
-    "user_groups",
-    "group_access_rules",
-    "portal_access_rules",
-    "access_rule_time_zones",
-    "groups",
-    "access_rules",
-    "time_spans",
-    "time_zones",
-    "portals",
-    "areas",
-    "users",
-]
-
-# Tabelas de junção na Control iD NÃO possuem coluna `id`.
-# O destroy_objects precisa usar as colunas reais de cada tabela.
-_JUNCTION_WHERE = {
-    "user_groups": {"user_id": {">": 0}},
-    "user_access_rules": {"user_id": {">": 0}},
-    "group_access_rules": {"group_id": {">": 0}},
-    "portal_access_rules": {"portal_id": {">": 0}},
-    "access_rule_time_zones": {"access_rule_id": {">": 0}},
-}
+# ── Credenciais padrão de fábrica da Control iD ────────────────────────────
+_FACTORY_LOGIN = "admin"
+_FACTORY_PASSWORD = "admin"
 
 # ── Ordem de push (entidades-pai primeiro, relações depois) ─────────────────
 PUSH_ORDER = [
@@ -117,35 +92,85 @@ class _EasySetupEngine(ControlIDSyncMixin):
     Opera em UM device por vez (set_device antes de cada uso).
     """
 
-    # ── 1. Limpar dados ─────────────────────────────────────────────────────
-    def clean_catraca(self):
-        """Remove todas as tabelas da catraca na ordem segura de FK."""
-        results = {}
-        for table in CLEANUP_ORDER:
-            try:
-                # Tabelas de junção não possuem coluna 'id';
-                # usamos a coluna real (user_id, group_id, etc.)
-                if table in _JUNCTION_WHERE:
-                    where_clause = {table: _JUNCTION_WHERE[table]}
-                else:
-                    where_clause = {table: {"id": {">=": 0}}}
+    # ── 1. Factory reset ────────────────────────────────────────────────────
+    def factory_reset(self):
+        """
+        Reseta a catraca para configuração de fábrica mantendo config de rede.
+        Usa reset_to_factory_default.fcgi com keep_network_info=true.
+        Aguarda reboot e faz login novamente.
+        """
+        result = {}
 
-                sess = self.login()
-                resp = requests.post(
-                    self.get_url(f"destroy_objects.fcgi?session={sess}"),
-                    json={
-                        "object": table,
-                        "where": where_clause,
-                    },
-                    timeout=30,
-                )
-                results[table] = {
-                    "status": resp.status_code,
-                    "ok": resp.status_code == 200,
+        # Enviar comando de factory reset
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"reset_to_factory_default.fcgi?session={sess}"),
+                json={"keep_network_info": True},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                return {
+                    "ok": False,
+                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
                 }
-            except Exception as e:
-                results[table] = {"status": 0, "ok": False, "error": str(e)}
-        return results
+            result["reset_sent"] = True
+        except Exception as e:
+            return {"ok": False, "error": f"Erro ao enviar factory reset: {e}"}
+
+        # Invalidar sessão e aguardar reboot
+        self.session = None
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Factory reset enviado, aguardando reboot (~15s)..."
+        )
+        _time.sleep(15)
+
+        # Polling até o device voltar online
+        credentials_to_try = [
+            (self.device.username, self.device.password),
+            (_FACTORY_LOGIN, _FACTORY_PASSWORD),
+        ]
+
+        for attempt in range(12):
+            for login_user, login_pass in credentials_to_try:
+                try:
+                    resp = requests.post(
+                        self.get_url("login.fcgi"),
+                        json={"login": login_user, "password": login_pass},
+                        timeout=5,
+                    )
+                    if resp.status_code == 200 and resp.json().get("session"):
+                        self.session = resp.json()["session"]
+                        used_defaults = (
+                            login_user != self.device.username
+                            or login_pass != self.device.password
+                        )
+                        result["ok"] = True
+                        result["reboot_attempts"] = attempt + 1
+                        if used_defaults:
+                            result["used_default_credentials"] = True
+                            result["warning"] = (
+                                "Factory reset resetou credenciais para admin/admin. "
+                                "Atualize username/password do device no Django."
+                            )
+                        logger.info(
+                            f"[EASY_SETUP] [{self.device.name}] "
+                            f"Online após reboot (tentativa {attempt + 1})"
+                        )
+                        return result
+                except Exception:
+                    pass
+
+            logger.debug(
+                f"[EASY_SETUP] [{self.device.name}] "
+                f"Tentativa {attempt + 1}/12 — device ainda reiniciando..."
+            )
+            _time.sleep(5)
+
+        result["ok"] = False
+        result["error"] = "Device não voltou após factory reset (timeout ~75s)"
+        return result
 
     # ── 2. Acertar data/hora ────────────────────────────────────────────────
     def set_datetime(self):
@@ -483,7 +508,12 @@ class _EasySetupEngine(ControlIDSyncMixin):
                     "status": resp.status_code,
                 }
                 if resp.status_code != 200:
-                    results[table]["detail"] = resp.text[:200]
+                    body = resp.text[:500]
+                    results[table]["detail"] = body
+                    logger.warning(
+                        f"[EASY_SETUP] create_objects({table}) falhou: "
+                        f"HTTP {resp.status_code} — {body}"
+                    )
             except Exception as e:
                 results[table] = {
                     "ok": False,
@@ -511,9 +541,17 @@ class _EasySetupEngine(ControlIDSyncMixin):
             report["elapsed_s"] = round(_time.monotonic() - t0, 2)
             return report
 
-        # Etapa 2 — Limpar dados
-        logger.info(f"[EASY_SETUP] [{self.device.name}] Limpando dados...")
-        report["steps"]["clean"] = self.clean_catraca()
+        # Etapa 2 — Factory reset (mantém rede)
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] Factory reset (keep_network)..."
+        )
+        report["steps"]["factory_reset"] = self.factory_reset()
+        if not report["steps"]["factory_reset"].get("ok"):
+            logger.error(
+                f"[EASY_SETUP] [{self.device.name}] Factory reset FALHOU — abortando"
+            )
+            report["elapsed_s"] = round(_time.monotonic() - t0, 2)
+            return report
 
         # Etapa 3 — Acertar data/hora
         logger.info(f"[EASY_SETUP] [{self.device.name}] Acertando relógio...")
