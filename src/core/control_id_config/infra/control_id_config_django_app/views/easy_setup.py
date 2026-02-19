@@ -76,6 +76,16 @@ CLEANUP_ORDER = [
     "users",
 ]
 
+# Tabelas de junção na Control iD NÃO possuem coluna `id`.
+# O destroy_objects precisa usar as colunas reais de cada tabela.
+_JUNCTION_WHERE = {
+    "user_groups": {"user_id": {">": 0}},
+    "user_access_rules": {"user_id": {">": 0}},
+    "group_access_rules": {"group_id": {">": 0}},
+    "portal_access_rules": {"portal_id": {">": 0}},
+    "access_rule_time_zones": {"access_rule_id": {">": 0}},
+}
+
 # ── Ordem de push (entidades-pai primeiro, relações depois) ─────────────────
 PUSH_ORDER = [
     "users",
@@ -113,12 +123,19 @@ class _EasySetupEngine(ControlIDSyncMixin):
         results = {}
         for table in CLEANUP_ORDER:
             try:
+                # Tabelas de junção não possuem coluna 'id';
+                # usamos a coluna real (user_id, group_id, etc.)
+                if table in _JUNCTION_WHERE:
+                    where_clause = {table: _JUNCTION_WHERE[table]}
+                else:
+                    where_clause = {table: {"id": {">=": 0}}}
+
                 sess = self.login()
                 resp = requests.post(
                     self.get_url(f"destroy_objects.fcgi?session={sess}"),
                     json={
                         "object": table,
-                        "where": {table: {"id": {">=": 0}}},
+                        "where": where_clause,
                     },
                     timeout=30,
                 )
@@ -256,10 +273,8 @@ class _EasySetupEngine(ControlIDSyncMixin):
             general["exception_mode"] = "emergency" if hw_cfg.exception_mode else "none"
             result["sections"]["hardware"] = True
 
-        ui_cfg = UIConfig.objects.filter(device=device).first()
-        if ui_cfg:
-            general["screen_always_on"] = bool_to_str(ui_cfg.screen_always_on)
-            result["sections"]["ui"] = True
+        # NOTA: screen_always_on não é suportado pelo firmware IDBLOCK
+        # (causa "Node or attribute not found"), então não é enviado aqui.
 
         if general:
             payload["general"] = general
@@ -390,10 +405,11 @@ class _EasySetupEngine(ControlIDSyncMixin):
             for span in raw_spans
         ]
 
-        # AccessRules
-        data["access_rules"] = list(
-            AccessRule.objects.values("id", "name", "type", "priority")
-        )
+        # AccessRules — type DEVE ser >= 1 (0 causa "Invalid op type" no firmware)
+        raw_rules = AccessRule.objects.values("id", "name", "type", "priority")
+        data["access_rules"] = [
+            {**rule, "type": max(rule["type"], 1)} for rule in raw_rules
+        ]
 
         # Groups
         data["groups"] = list(CustomGroup.objects.values("id", "name"))
