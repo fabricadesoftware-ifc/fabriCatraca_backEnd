@@ -71,6 +71,13 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             if response.status_code != status.HTTP_201_CREATED:
                 return False, f"Erro ao criar usuário na catraca: {getattr(response, 'data', response.__dict__)}"
 
+            # Cria o PIN de identificação na tabela 'pins' da catraca
+            if hasattr(user, 'pin') and user.pin:
+                self.create_objects("pins", [{
+                    "user_id": user.id,
+                    "value": user.pin,
+                }])
+
             # Associa o user a todos os devices ativos
             for device in devices:
                 device.users.add(user)
@@ -236,6 +243,13 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 if response.status_code != status.HTTP_201_CREATED:
                     transaction.savepoint_rollback(sp)
                     return None, f"Erro ao criar usuário na catraca: {getattr(response, 'data', response.__dict__)}"
+
+                # Cria o PIN de identificação na tabela 'pins' da catraca
+                if instance.pin:
+                    self.create_objects("pins", [{
+                        "user_id": instance.id,
+                        "value": instance.pin,
+                    }])
 
                 for device in Device.objects.filter(is_active=True):
                     device.users.add(instance)

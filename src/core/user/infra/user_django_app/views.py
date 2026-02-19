@@ -44,7 +44,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     "id": instance.id,
                     "name": instance.name,
                     "registration": instance.registration,
-                    "password": instance.pin,
                 }
                 if instance.user_type_id is not None:
                     create_payload["user_type_id"] = instance.user_type_id
@@ -60,6 +59,18 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         },
                         status=response.status_code,
                     )
+
+                # Cria o PIN de identificação na tabela 'pins' da catraca
+                if instance.pin:
+                    pin_resp = self.create_objects("pins", [{
+                        "user_id": instance.id,
+                        "value": instance.pin,
+                    }])
+                    if pin_resp.status_code != status.HTTP_201_CREATED:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            f"Falha ao criar PIN na catraca {device.name}: {pin_resp.data}"
+                        )
 
                 # Adiciona a relação com a catraca
                 device.users.add(instance)
@@ -88,7 +99,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 update_values = {
                     "name": instance.name,
                     "registration": instance.registration or "",
-                    "password": instance.pin,
                 }
                 if instance.user_type_id is not None:
                     update_values["user_type_id"] = instance.user_type_id
@@ -103,6 +113,21 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         },
                         status=response.status_code,
                     )
+
+                # Atualiza o PIN na tabela 'pins' da catraca
+                if instance.pin:
+                    # Tenta atualizar; se não existir, cria
+                    pin_resp = self.update_objects(
+                        "pins",
+                        {"value": instance.pin},
+                        {"pins": {"user_id": instance.id}},
+                    )
+                    if pin_resp.status_code != status.HTTP_200_OK:
+                        # PIN pode não existir ainda, tenta criar
+                        self.create_objects("pins", [{
+                            "user_id": instance.id,
+                            "value": instance.pin,
+                        }])
 
                 # Atualiza a relação com a catraca
                 device.users.add(instance)
@@ -136,6 +161,8 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
             for device in devices:
                 self.set_device(device)
+                # Remove o PIN da tabela 'pins' antes de remover o usuário
+                self.destroy_objects("pins", {"pins": {"user_id": instance.id}})
                 response = self.destroy_objects("users", {"users": {"id": instance.id}})
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     return Response(
