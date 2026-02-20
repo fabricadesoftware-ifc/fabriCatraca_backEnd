@@ -11,13 +11,11 @@ Fluxo por device:
   4. Acertar data/hora
   5. Configurar monitor (push notifications)
   6. Aguardar firmware init completa (~35s)
-     — O firmware V5.18.3 tem init atrasada que cria defaults (access_rules type=0)
-       e habilita identifier methods ~30-40s após boot. Precisamos esperar.
-  7. Enviar todos os dados do banco (users, groups, regras, etc.)
-  8. Desabilitar identifier (pin=0, card=0)
-  9. Enviar configurações do device (pin_enabled=1, etc.)
-     — Transição 0→1 FORÇA firmware a recarregar access_rules do DB (agora type≥1)
-  9. Polling de verificação de access_rules (30s × 6, auto-correção se type=0)
+  7. Corrigir access_rules type=0 → type=1 (modify_objects)
+  8. Enviar dados do banco POR CIMA (create_objects, UNIQUE → skip)
+     ⚠️ NUNCA usar destroy_objects em tabelas-pai! Isso corrompe
+     permanentemente o firmware V5.18.3 (crash ao avaliar acesso).
+  9. Enviar configurações do device
 """
 
 import logging
@@ -788,166 +786,96 @@ class _EasySetupEngine(ControlIDSyncMixin):
             )
         return fixed
 
+    def _create_objects_safe(self, table, values):
+        """
+        Cria objetos numa tabela da catraca, ignorando UNIQUE (já existe).
+
+        ⚠️ NUNCA usar destroy_objects em tabelas-pai! Destruir e recriar
+        tabelas corrompe permanentemente o firmware V5.18.3, causando crash
+        ao avaliar acesso (PIN/card/biometria). Mesmo reboot não corrige.
+
+        Estratégia: apenas CREATE por cima. Se o dado já existe (UNIQUE),
+        é ignorado com sucesso.
+        """
+        if not values:
+            return {"ok": True, "count": 0, "skipped": True}
+
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"create_objects.fcgi?session={sess}"),
+                json={"object": table, "values": values},
+                timeout=60,
+            )
+            ok = resp.status_code == 200
+            result = {
+                "ok": ok,
+                "count": len(values),
+                "status": resp.status_code,
+            }
+            if not ok:
+                body = resp.text[:500]
+                # UNIQUE constraint é aceitável — dado já existe
+                if "UNIQUE" in body:
+                    result["ok"] = True
+                    result["note"] = "UNIQUE (dado já existia)"
+                    logger.info(
+                        f"[EASY_SETUP] create_objects({table}): "
+                        f"UNIQUE — dado já existe, ok"
+                    )
+                else:
+                    result["detail"] = body
+                    logger.warning(
+                        f"[EASY_SETUP] create_objects({table}) falhou: "
+                        f"HTTP {resp.status_code} — {body}"
+                    )
+            return result
+        except Exception as e:
+            return {"ok": False, "count": len(values), "error": str(e)}
+
     def push_data(self, data):
         """
-        Envia os dados coletados para a catraca na ordem correta de FK.
+        Envia os dados coletados para a catraca SEM DESTRUIR NADA.
 
-        Estratégia SEGURA (sem destroy total):
-          ⚠️ NÃO destruímos todas as tabelas de uma vez — isso corrompe
-          o firmware V5.18.3 e causa crash permanente.
+        ⚠️ REGRA CRÍTICA: NUNCA usar destroy_objects em tabelas-pai
+        (users, groups, access_rules, portals, areas, time_zones,
+        time_spans) nem em suas junções (group_access_rules,
+        portal_access_rules, access_rule_time_zones).
 
-        Abordagem:
-          1. Corrigir access_rules default (type=0 → type=1)
-          2. Destruir APENAS tabelas de junção (relações) — são seguras
-          3. Criar dados novos (ignora UNIQUE se já existir)
-          4. Recriar relações
+        Destruir e recriar tabelas corrompe permanentemente o cache
+        interno do firmware V5.18.3, causando crash ao avaliar acesso.
+        Mesmo reboot ou disable→enable identifier não corrige.
 
-        Após factory reset + delay de 40s, a catraca tem defaults do
-        firmware (user Teste, grupo Padrão, access_rule type=0).
-        Não destruímos essas entidades-pai — apenas corrigimos e
-        adicionamos por cima.
+        Estratégia COMPROVADA:
+          1. Corrigir access_rules type=0 → type=1 (modify_objects)
+          2. Criar TUDO com create_objects (UNIQUE → skip, dado já existe)
+          3. Nenhum destroy em nenhuma tabela
+
+        Após factory reset, a catraca preserva dados estruturais
+        (groups, rules, portals, etc.) e limpa apenas users/pins.
+        Criamos users/pins por cima e ignoramos UNIQUE no resto.
         """
         results = {}
 
-        # ── Fase 0: Corrigir access_rules type=0 ─────────────────────
+        # ── Fase 1: Corrigir access_rules type=0 ─────────────────────
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] "
-            "Fase 0 — corrigir access_rules type=0..."
+            "Fase 1 — corrigir access_rules type=0..."
         )
         fixed = self._fix_default_access_rules()
         results["_fix_type0"] = {"ok": True, "fixed": fixed}
 
-        # ── Fase 1: Destruir APENAS tabelas de junção ─────────────────
-        # Tabelas de junção (relações M:N) são seguras de destruir.
-        # Entidades-pai (users, groups, access_rules, time_zones, etc.)
-        # NÃO são destruídas — isso corrompe o firmware.
-        JUNCTION_TABLES = [
-            "portal_access_rules",
-            "access_rule_time_zones",
-            "group_access_rules",
-            "user_access_rules",
-            "user_groups",
-            "pins",
-            "cards",
-            "templates",
-        ]
+        # ── Fase 2: Criar TUDO por cima (UNIQUE → skip) ──────────────
+        # Ordem respeita FK: entidades-pai primeiro, junções depois.
+        # access_rule_time_zones ANTES de portal_access_rules (firmware
+        # crasha se portal é vinculado a regra sem time_zone).
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] "
-            "Fase 1 — destroy junções (seguro)..."
+            "Fase 2 — create por cima (sem destroy)..."
         )
-        for table in JUNCTION_TABLES:
-            self._destroy_table(table)
-
-        # ── Fase 2: Criar entidades-pai (ignora UNIQUE) ──────────────
-        # Se o firmware já criou defaults com o mesmo ID, o create
-        # vai dar UNIQUE — isso é OK, o dado já está lá.
-        PARENT_TABLES = [
-            "users",
-            "time_zones",
-            "time_spans",
-            "access_rules",
-            "groups",
-            "areas",
-            "portals",
-        ]
-        logger.info(
-            f"[EASY_SETUP] [{self.device.name}] "
-            "Fase 2 — create entidades-pai..."
-        )
-        for table in PARENT_TABLES:
+        for table in PUSH_ORDER:
             values = data.get(table, [])
-            if not values:
-                results[table] = {"ok": True, "count": 0, "skipped": True}
-                continue
-
-            try:
-                sess = self.login()
-                resp = requests.post(
-                    self.get_url(f"create_objects.fcgi?session={sess}"),
-                    json={"object": table, "values": values},
-                    timeout=60,
-                )
-                ok = resp.status_code == 200
-                results[table] = {
-                    "ok": ok,
-                    "count": len(values),
-                    "status": resp.status_code,
-                }
-                if not ok:
-                    body = resp.text[:500]
-                    # UNIQUE constraint é aceitável — dado já existe
-                    if "UNIQUE" in body:
-                        results[table]["ok"] = True
-                        results[table]["note"] = "UNIQUE (dado já existia)"
-                        logger.info(
-                            f"[EASY_SETUP] create_objects({table}): "
-                            f"UNIQUE — dado já existe, ok"
-                        )
-                    else:
-                        results[table]["detail"] = body
-                        logger.warning(
-                            f"[EASY_SETUP] create_objects({table}) falhou: "
-                            f"HTTP {resp.status_code} — {body}"
-                        )
-            except Exception as e:
-                results[table] = {
-                    "ok": False,
-                    "count": len(values),
-                    "error": str(e),
-                }
-
-        # ── Fase 3: Recriar todas as relações (junções) ───────────────
-        RELATION_TABLES = [
-            "user_groups",
-            "user_access_rules",
-            "group_access_rules",
-            # ⚠️ access_rule_time_zones ANTES de portal_access_rules!
-            "access_rule_time_zones",
-            "portal_access_rules",
-            "cards",
-            "templates",
-            "pins",
-        ]
-        logger.info(
-            f"[EASY_SETUP] [{self.device.name}] "
-            "Fase 3 — create relações..."
-        )
-        for table in RELATION_TABLES:
-            values = data.get(table, [])
-            if not values:
-                results[table] = {"ok": True, "count": 0, "skipped": True}
-                continue
-
-            try:
-                sess = self.login()
-                resp = requests.post(
-                    self.get_url(f"create_objects.fcgi?session={sess}"),
-                    json={"object": table, "values": values},
-                    timeout=60,
-                )
-                ok = resp.status_code == 200
-                results[table] = {
-                    "ok": ok,
-                    "count": len(values),
-                    "status": resp.status_code,
-                }
-                if not ok:
-                    body = resp.text[:500]
-                    if "UNIQUE" in body:
-                        results[table]["ok"] = True
-                        results[table]["note"] = "UNIQUE (dado já existia)"
-                    else:
-                        results[table]["detail"] = body
-                        logger.warning(
-                            f"[EASY_SETUP] create_objects({table}) falhou: "
-                            f"HTTP {resp.status_code} — {body}"
-                        )
-            except Exception as e:
-                results[table] = {
-                    "ok": False,
-                    "count": len(values),
-                    "error": str(e),
-                }
+            results[table] = self._create_objects_safe(table, values)
 
         return results
 
@@ -955,6 +883,11 @@ class _EasySetupEngine(ControlIDSyncMixin):
     def run_full_setup(self):
         """
         Executa o setup completo num único device.
+
+        ⚠️ REGRA CRÍTICA: Após factory reset, o firmware preserva dados
+        estruturais (groups, rules, portals, etc.) e limpa users/pins.
+        NUNCA destruir tabelas — apenas criar por cima (UNIQUE → skip).
+
         Retorna dict com resultado de cada etapa.
         """
         report = {"device": self.device.name, "steps": {}}
@@ -970,6 +903,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
             return report
 
         # Etapa 2 — Factory reset (mantém rede)
+        # Limpa users/pins/cards/templates e reseta configs.
+        # Preserva: groups, access_rules, portals, areas, time_zones,
+        # time_spans, e todas as junções estruturais.
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] Factory reset (keep_network)..."
         )
@@ -989,56 +925,33 @@ class _EasySetupEngine(ControlIDSyncMixin):
         logger.info(f"[EASY_SETUP] [{self.device.name}] Configurando monitor...")
         report["steps"]["monitor"] = self.configure_monitor()
 
-        # Etapa 5 — Aguardar firmware init completa
-        # O firmware V5.18.3 tem init atrasada (~30-40s após boot) que:
-        #   - Cria access_rules default com type=0
-        #   - Habilita biometry/card identification
-        #   - Seta language/country_code
-        # Se fizermos push antes disso, o firmware sobrescreve nossos dados.
+        # Etapa 5 — Aguardar firmware init completa (~35s)
+        # O firmware V5.18.3 tem init atrasada que pode criar
+        # access_rules type=0 e alterar configs. Esperamos antes de
+        # corrigir/criar dados para não ter race condition.
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] "
             "Aguardando firmware completar init (~35s)..."
         )
         _time.sleep(35)
 
-        # Etapa 6 — Coletar e enviar dados.
-        # access_rules type≥1 são escritas no DB da catraca.
+        # Etapa 6 — Corrigir access_rules type=0 e enviar dados
+        # Primeiro corrige type=0 (modify_objects), depois cria
+        # TUDO por cima (create_objects). UNIQUE → skip.
+        # ⚠️ NENHUM destroy_objects é usado!
         logger.info(f"[EASY_SETUP] [{self.device.name}] Coletando dados do DB...")
         db_data = self.collect_db_data()
 
-        logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando dados para catraca...")
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Enviando dados (create por cima, sem destroy)..."
+        )
         report["steps"]["push"] = self.push_data(db_data)
 
-        # Etapa 7 — Desabilitar identifier AGORA (pós-push, pós-init firmware)
-        # Chamando DEPOIS do push_data + aguardo de 35s:
-        #   - init do firmware já completou totalmente
-        #   - access_rules type≥1 já estão no DB
-        #   - nosso pin=0 realmente muda (1→0)
-        logger.info(
-            f"[EASY_SETUP] [{self.device.name}] "
-            "Desabilitando identifier (pós-push, forçar transição 0→1)..."
-        )
-        report["steps"]["disable_identifier"] = self.disable_identifier()
-
-        # Pequeno delay para garantir que o firmware aplicou pin=0
-        _time.sleep(2)
-
-        # Etapa 8 — Configurações do device (identifier, operation_mode, etc.)
-        # pin_identification_enabled muda de 0→1 = firmware RECARREGA access_rules
-        # do DB, que agora têm type≥1. Sem crash.
+        # Etapa 7 — Configurações do device
+        # Envia todas as configs (identifier, catra, general, push_server).
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
         report["steps"]["device_settings"] = self.configure_device_settings()
-
-        # Etapa 9 — Verificação contínua de access_rules (polling 180s)
-        # O firmware tem init em MÚLTIPLAS ondas:
-        #   Onda 1 (~35s): coberta pelo delay da Etapa 5
-        #   Onda 2 (~2-3min): recria access_rules type=0 tardiamente
-        # Polling a cada 30s garante que corrigimos QUALQUER onda.
-        logger.info(
-            f"[EASY_SETUP] [{self.device.name}] "
-            "Iniciando polling de access_rules (30s × 6 = 180s max)..."
-        )
-        report["steps"]["verify_access_rules"] = self.verify_access_rules(db_data)
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
 
