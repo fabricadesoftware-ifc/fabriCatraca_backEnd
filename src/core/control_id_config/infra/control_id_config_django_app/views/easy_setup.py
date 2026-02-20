@@ -88,8 +88,11 @@ PUSH_ORDER = [
     "user_groups",
     "user_access_rules",
     "group_access_rules",
-    "portal_access_rules",
+    # ⚠️ access_rule_time_zones DEVE vir ANTES de portal_access_rules!
+    # O firmware crasha se um portal é vinculado a uma access_rule que
+    # ainda não tem time_zone associado (null reference no firmware).
     "access_rule_time_zones",
+    "portal_access_rules",
     "cards",
     "templates",
     "pins",
@@ -819,8 +822,8 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # Entidades-pai (users, groups, access_rules, time_zones, etc.)
         # NÃO são destruídas — isso corrompe o firmware.
         JUNCTION_TABLES = [
-            "access_rule_time_zones",
             "portal_access_rules",
+            "access_rule_time_zones",
             "group_access_rules",
             "user_access_rules",
             "user_groups",
@@ -898,8 +901,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
             "user_groups",
             "user_access_rules",
             "group_access_rules",
-            "portal_access_rules",
+            # ⚠️ access_rule_time_zones ANTES de portal_access_rules!
             "access_rule_time_zones",
+            "portal_access_rules",
             "cards",
             "templates",
             "pins",
