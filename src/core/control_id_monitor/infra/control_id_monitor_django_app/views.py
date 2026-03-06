@@ -534,3 +534,175 @@ def receive_auxiliary_notification(request):
         f"{request.path} — {request.data}"
     )
     return Response({"success": True})
+
+
+# ============================================================================
+# VIEW PARA RECEBER EVENTOS DE GIRO DA CATRACA (catra_event)
+# ============================================================================
+
+
+_CATRA_EVENT_NAMES = {
+    7: "TURN_LEFT",
+    8: "TURN_RIGHT",
+    9: "GIVE_UP",
+}
+
+
+@extend_schema(
+    tags=["Monitor (Push Logs) - Webhook"],
+    summary="Recebe eventos de giro da catraca iDBlock (catra_event)",
+    description="""
+    Endpoint exclusivo para a catraca iDBlock que recebe eventos de
+    confirmação de giro. Os eventos possíveis são:
+
+    - **EVENT_TURN_LEFT (type 7)**: giro à esquerda (entrada ou saída).
+    - **EVENT_TURN_RIGHT (type 8)**: giro à direita (entrada ou saída).
+    - **EVENT_GIVE_UP (type 9)**: usuário identificado mas desistiu de passar.
+
+    O campo opcional `access_event_id` associa o evento ao registro
+    correspondente na tabela access_events (quando `inform_access_event_id=1`).
+
+    Cada evento recebido é salvo como AccessLog para que o fluxo de
+    passagens possa ser monitorado no frontend.
+    """,
+    request={
+        "application/json": {
+            "type": "object",
+            "properties": {
+                "event": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "integer", "example": 7},
+                        "name": {"type": "string", "example": "TURN LEFT"},
+                        "time": {"type": "integer", "example": 1484126902},
+                        "uuid": {"type": "string", "example": "0e039178"},
+                    },
+                },
+                "access_event_id": {"type": "integer", "example": 15},
+                "device_id": {"type": "integer", "example": 935107},
+                "time": {"type": "integer", "example": 1484126902},
+            },
+            "required": ["event", "device_id", "time"],
+        }
+    },
+    responses={
+        200: {"description": "Evento processado com sucesso"},
+        400: {"description": "Payload inválido"},
+    },
+)
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def receive_catra_event(request):
+    """
+    Recebe eventos de giro (catra_event) da catraca iDBlock.
+
+    Salva cada evento como um AccessLog para monitoramento de fluxo.
+    """
+    from datetime import datetime, timezone as dt_timezone
+    from src.core.control_Id.infra.control_id_django_app.models import (
+        AccessLogs,
+        Device,
+    )
+    from .models import MonitorConfig
+
+    try:
+        payload = request.data
+        logger.info(f"📥 [CATRA_EVENT] Payload recebido: {payload}")
+
+        if not isinstance(payload, dict):
+            return Response(
+                {"success": False, "error": "Payload deve ser um objeto JSON"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        event_data = payload.get("event")
+        device_id = payload.get("device_id")
+        event_time = payload.get("time")
+
+        if not event_data or not device_id:
+            return Response(
+                {"success": False, "error": "event e device_id são obrigatórios"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        event_type = event_data.get("type", 0)
+        event_name = event_data.get("name", _CATRA_EVENT_NAMES.get(event_type, "UNKNOWN"))
+        event_uuid = event_data.get("uuid", "")
+        access_event_id = payload.get("access_event_id")
+
+        # ── Resolve device ──
+        device = Device.objects.filter(id=device_id).first()
+        if not device:
+            monitor_cfg = MonitorConfig.objects.select_related("device").first()
+            if monitor_cfg:
+                device = monitor_cfg.device
+        if not device:
+            device = Device.objects.filter(is_default=True).first() or Device.objects.filter(is_active=True).first()
+        if not device:
+            logger.error(f"❌ [CATRA_EVENT] Nenhum device para device_id={device_id}")
+            return Response(
+                {"success": False, "error": f"Device {device_id} não encontrado"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ── Timestamp ──
+        timestamp = (
+            datetime.fromtimestamp(int(event_time), tz=dt_timezone.utc)
+            if event_time
+            else datetime.now(tz=dt_timezone.utc)
+        )
+
+        # ── Mapeia event_type da catraca para EventType do model ──
+        # 7 = TURN_LEFT / 8 = TURN_RIGHT → registra como ACESSO_CONCEDIDO (7)
+        # 9 = GIVE_UP → registra como DESISTENCIA_DE_ENTRADA (13)
+        if event_type == 9:
+            model_event_type = 13  # DESISTENCIA_DE_ENTRADA
+        else:
+            model_event_type = 7   # ACESSO_CONCEDIDO
+
+        # ── Identifier único: uuid do evento ou access_event_id ──
+        identifier = event_uuid or str(access_event_id or event_time or "")
+
+        log, created = AccessLogs.objects.update_or_create(
+            device=device,
+            identifier_id=identifier,
+            time=timestamp,
+            defaults={
+                "event_type": model_event_type,
+                "user": None,
+                "portal": None,
+                "access_rule": None,
+                "card_value": "",
+                "qr_code": "",
+                "uhf_value": "",
+                "pin_value": "",
+                "confidence": 0,
+                "mask": "",
+            },
+        )
+
+        action = "created" if created else "already_exists"
+        logger.info(
+            f"✅ [CATRA_EVENT] {action} — {event_name} (type={event_type}) "
+            f"device={device.name} uuid={event_uuid} access_event_id={access_event_id}"
+        )
+
+        return Response(
+            {
+                "success": True,
+                "action": action,
+                "event_name": event_name,
+                "event_type": event_type,
+                "model_event_type": model_event_type,
+                "device": str(device),
+                "time": str(timestamp),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except Exception as e:
+        logger.error(f"❌ [CATRA_EVENT] Erro: {e}", exc_info=True)
+        return Response(
+            {"success": False, "error": f"Erro interno: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

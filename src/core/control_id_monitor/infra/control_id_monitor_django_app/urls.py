@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from .views import (
     MonitorConfigViewSet,
     receive_auxiliary_notification,
+    receive_catra_event,
     receive_dao_notification,
 )
 
@@ -48,6 +49,12 @@ urlpatterns = [
         "notifications/device_is_alive",
         receive_auxiliary_notification,
         name="monitor-device-is-alive",
+    ),
+    # Endpoint para eventos de giro da catraca (catra_event)
+    path(
+        "notifications/catra_event",
+        receive_catra_event,
+        name="monitor-catra-event",
     ),
     # Rotas do ViewSet (CRUD de MonitorConfig)
     path("", include(router.urls)),
