@@ -20,6 +20,7 @@ Fluxo por device:
 
 import logging
 import time as _time
+import uuid as _uuid
 
 import requests
 from django.utils import timezone
@@ -95,6 +96,22 @@ PUSH_ORDER = [
     "templates",
     "pins",
 ]
+
+# Tabelas com coluna "id" que suportam upsert (modify_objects).
+# Quando já existe um registro com o mesmo ID na catraca (ex: defaults
+# criados pelo firmware após factory reset), usa modify_objects para
+# ATUALIZAR com os dados corretos do Django DB, em vez de apenas pular.
+_UPSERTABLE_TABLES = frozenset(
+    {
+        "users",
+        "time_zones",
+        "time_spans",
+        "access_rules",
+        "groups",
+        "areas",
+        "portals",
+    }
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -402,13 +419,20 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # ── push_server (PushServerConfig) ──
         ps_cfg = PushServerConfig.objects.filter(device=device).first()
-        if ps_cfg:
+        if ps_cfg and ps_cfg.push_remote_address:
             payload["push_server"] = {
                 "push_request_timeout": str(ps_cfg.push_request_timeout),
                 "push_request_period": str(ps_cfg.push_request_period),
-                "push_remote_address": ps_cfg.push_remote_address or "",
+                "push_remote_address": ps_cfg.push_remote_address,
             }
             result["sections"]["push_server"] = True
+        else:
+            # Sem PushServerConfig → desabilitar online_client para evitar
+            # "cURL error: <url> malformed" a cada 5s após factory reset.
+            payload["online_client"] = {
+                "enabled": "0",
+            }
+            result["sections"]["push_server"] = "disabled (no config)"
 
         # ── Envia tudo de uma vez ──
         try:
@@ -781,57 +805,178 @@ class _EasySetupEngine(ControlIDSyncMixin):
                     )
         except Exception as e:
             logger.warning(
-                f"[EASY_SETUP] [{self.device.name}] "
-                f"Erro ao corrigir access_rules: {e}"
+                f"[EASY_SETUP] [{self.device.name}] Erro ao corrigir access_rules: {e}"
             )
         return fixed
 
     def _create_objects_safe(self, table, values):
         """
-        Cria objetos numa tabela da catraca, ignorando UNIQUE (já existe).
+        Cria objetos numa tabela da catraca com estratégia UPSERT.
 
-        ⚠️ NUNCA usar destroy_objects em tabelas-pai! Destruir e recriar
-        tabelas corrompe permanentemente o firmware V5.18.3, causando crash
-        ao avaliar acesso (PIN/card/biometria). Mesmo reboot não corrige.
+        ⚠️ NUNCA usar destroy_objects em tabelas-pai!
 
-        Estratégia: apenas CREATE por cima. Se o dado já existe (UNIQUE),
-        é ignorado com sucesso.
+        Estratégia:
+        1. Tenta criar BATCH completo (mais rápido).
+        2. Se falhar com UNIQUE/FOREIGN KEY:
+           a) Entity tables (com 'id'): carrega IDs existentes,
+              usa modify_objects para ATUALIZAR existentes e
+              create_objects para os novos. Garante que defaults
+              do firmware sejam sobrescritos com dados corretos.
+           b) Junction tables (sem 'id'): cria um a um, pula UNIQUE
+              (a relação já está estabelecida).
         """
         if not values:
             return {"ok": True, "count": 0, "skipped": True}
 
         try:
+            # Tenta o batch completo primeiro
             sess = self.login()
             resp = requests.post(
                 self.get_url(f"create_objects.fcgi?session={sess}"),
                 json={"object": table, "values": values},
                 timeout=60,
             )
-            ok = resp.status_code == 200
-            result = {
-                "ok": ok,
+            if resp.status_code == 200:
+                return {"ok": True, "count": len(values), "status": 200}
+
+            body = resp.text[:500]
+
+            # Se batch falhou por constraint, estratégia depende do tipo
+            if "UNIQUE" in body or "FOREIGN KEY" in body or "constraint" in body:
+                if table in _UPSERTABLE_TABLES:
+                    # Entity table → upsert (modify existing + create new)
+                    return self._upsert_entity_objects(table, values)
+                else:
+                    # Junction table → um a um, pula UNIQUE
+                    return self._create_junction_one_by_one(table, values)
+
+            # Falha diferente de constraint
+            logger.warning(
+                f"[EASY_SETUP] create_objects({table}) falhou: "
+                f"HTTP {resp.status_code} — {body}"
+            )
+            return {
+                "ok": False,
                 "count": len(values),
                 "status": resp.status_code,
+                "detail": body,
             }
-            if not ok:
-                body = resp.text[:500]
-                # UNIQUE constraint é aceitável — dado já existe
-                if "UNIQUE" in body:
-                    result["ok"] = True
-                    result["note"] = "UNIQUE (dado já existia)"
-                    logger.info(
-                        f"[EASY_SETUP] create_objects({table}): "
-                        f"UNIQUE — dado já existe, ok"
-                    )
-                else:
-                    result["detail"] = body
-                    logger.warning(
-                        f"[EASY_SETUP] create_objects({table}) falhou: "
-                        f"HTTP {resp.status_code} — {body}"
-                    )
-            return result
         except Exception as e:
             return {"ok": False, "count": len(values), "error": str(e)}
+
+    def _upsert_entity_objects(self, table, values):
+        """
+        Upsert para entity tables (com coluna 'id').
+        Atualiza registros que já existem na catraca (ex: defaults do
+        firmware) e cria os novos.
+        """
+        existing_ids = self._load_existing_ids(table)
+        to_create = [v for v in values if v.get("id") not in existing_ids]
+        to_modify = [v for v in values if v.get("id") in existing_ids]
+
+        modified = 0
+        created = 0
+        errors = 0
+
+        # Atualizar registros existentes com dados corretos do Django DB
+        if to_modify:
+            ok = self._modify_objects(table, to_modify)
+            if ok:
+                modified = len(to_modify)
+            else:
+                # Fallback: um a um
+                for item in to_modify:
+                    if self._modify_objects(table, [item]):
+                        modified += 1
+                    else:
+                        errors += 1
+                        logger.debug(
+                            f"[EASY_SETUP] modify_objects({table}) "
+                            f"falhou para id={item.get('id')}"
+                        )
+
+        # Criar novos registros
+        for item in to_create:
+            try:
+                sess = self.login()
+                r = requests.post(
+                    self.get_url(f"create_objects.fcgi?session={sess}"),
+                    json={"object": table, "values": [item]},
+                    timeout=30,
+                )
+                if r.status_code == 200:
+                    created += 1
+                elif "UNIQUE" in r.text:
+                    # Race condition: apareceu entre load e create → modify
+                    if self._modify_objects(table, [item]):
+                        modified += 1
+                    else:
+                        errors += 1
+                else:
+                    errors += 1
+                    logger.debug(
+                        f"[EASY_SETUP] create_objects({table}) "
+                        f"item falhou: {r.text[:200]}"
+                    )
+            except Exception:
+                errors += 1
+
+        logger.info(
+            f"[EASY_SETUP] upsert({table}): "
+            f"{modified} atualizados, {created} criados, {errors} erros"
+        )
+        return {
+            "ok": errors == 0,
+            "count": len(values),
+            "modified": modified,
+            "created": created,
+            "errors": errors,
+            "note": "upsert",
+        }
+
+    def _create_junction_one_by_one(self, table, values):
+        """
+        Cria registros de junção um a um, pulando UNIQUE.
+        Para tabelas como group_access_rules, portal_access_rules, etc.
+        Se o registro já existe, a relação já está estabelecida.
+        """
+        created = 0
+        skipped = 0
+        errors = 0
+
+        for item in values:
+            try:
+                sess = self.login()
+                r = requests.post(
+                    self.get_url(f"create_objects.fcgi?session={sess}"),
+                    json={"object": table, "values": [item]},
+                    timeout=30,
+                )
+                if r.status_code == 200:
+                    created += 1
+                elif "UNIQUE" in r.text:
+                    skipped += 1
+                else:
+                    errors += 1
+                    logger.debug(
+                        f"[EASY_SETUP] create_objects({table}) "
+                        f"item falhou: {r.text[:200]}"
+                    )
+            except Exception:
+                errors += 1
+
+        logger.info(
+            f"[EASY_SETUP] create_one_by_one({table}): "
+            f"{created} criados, {skipped} já existiam, {errors} erros"
+        )
+        return {
+            "ok": errors == 0,
+            "count": len(values),
+            "created": created,
+            "skipped_unique": skipped,
+            "errors": errors,
+            "note": "one-by-one",
+        }
 
     def push_data(self, data):
         """
@@ -1022,7 +1167,10 @@ def _list_devices(request):
 
 
 def _execute_setup(request):
-    """Executa o Easy Setup nos devices selecionados."""
+    """Dispara o Easy Setup como Celery task assíncrona."""
+    from ..models import EasySetupLog
+    from ..tasks import run_easy_setup_task
+
     device_ids = request.data.get("device_ids")
 
     if device_ids:
@@ -1044,29 +1192,145 @@ def _execute_setup(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    engine = _EasySetupEngine()
-    results = []
+    # Gerar task_id único para agrupar logs desta execução
+    task_id = str(_uuid.uuid4())
+    resolved_ids = list(devices.values_list("id", flat=True))
 
+    # Criar logs PENDING para cada device (frontend já pode ver)
     for device in devices:
-        logger.info(
-            f"[EASY_SETUP] ═══ Iniciando setup: {device.name} ({device.ip}) ═══"
-        )
-        engine.set_device(device)
-        report = engine.run_full_setup()
-        results.append(report)
-        logger.info(
-            f"[EASY_SETUP] ═══ Concluído: {device.name} em {report.get('elapsed_s', '?')}s ═══"
+        EasySetupLog.objects.create(
+            task_id=task_id,
+            device=device,
+            status=EasySetupLog.Status.PENDING,
         )
 
-    # Resumo geral
-    total_ok = sum(1 for r in results if r.get("steps", {}).get("login", {}).get("ok"))
+    # Disparar task assíncrona
+    run_easy_setup_task.delay(resolved_ids, task_id)
 
     return Response(
         {
-            "success": True,
-            "message": f"Easy Setup concluído em {len(results)} device(s)",
-            "devices_ok": total_ok,
-            "devices_total": len(results),
-            "results": results,
+            "task_id": task_id,
+            "message": f"Easy Setup iniciado para {len(resolved_ids)} device(s)",
+            "device_ids": resolved_ids,
+            "status_url": f"easy-setup/status/{task_id}/",
+        },
+        status=status.HTTP_202_ACCEPTED,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def easy_setup_status(request, task_id):
+    """
+    Consulta o andamento/resultado de uma execução do Easy Setup.
+    Retorna status individual de cada device + resumo geral.
+    """
+    from ..models import EasySetupLog
+
+    logs = EasySetupLog.objects.filter(task_id=task_id).select_related("device")
+    if not logs.exists():
+        return Response(
+            {"error": "Task não encontrada"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    devices_data = []
+    for log in logs:
+        entry = {
+            "device_id": log.device_id,
+            "device_name": log.device.name,
+            "status": log.status,
+            "started_at": log.started_at,
+            "finished_at": log.finished_at,
+        }
+        # Só inclui report completo se já finalizou
+        if log.status not in (
+            EasySetupLog.Status.PENDING,
+            EasySetupLog.Status.RUNNING,
+        ):
+            entry["report"] = log.report
+        devices_data.append(entry)
+
+    # Status geral
+    statuses = [l.status for l in logs]
+    if all(s == EasySetupLog.Status.PENDING for s in statuses):
+        overall = "pending"
+    elif any(s == EasySetupLog.Status.RUNNING for s in statuses):
+        overall = "running"
+    elif any(s == EasySetupLog.Status.PENDING for s in statuses):
+        overall = "running"  # Ainda tem devices na fila
+    elif all(s == EasySetupLog.Status.SUCCESS for s in statuses):
+        overall = "success"
+    elif all(s == EasySetupLog.Status.FAILED for s in statuses):
+        overall = "failed"
+    else:
+        overall = "partial"
+
+    return Response(
+        {
+            "task_id": task_id,
+            "overall_status": overall,
+            "devices": devices_data,
+            "total": len(devices_data),
+            "completed": sum(
+                1
+                for s in statuses
+                if s not in (EasySetupLog.Status.PENDING, EasySetupLog.Status.RUNNING)
+            ),
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def easy_setup_history(request):
+    """
+    Lista execuções recentes do Easy Setup (agrupadas por task_id).
+    Query params: ?limit=10
+    """
+    from ..models import EasySetupLog
+
+    limit = int(request.query_params.get("limit", 10))
+
+    # Buscar task_ids distintos mais recentes
+    task_ids = (
+        EasySetupLog.objects.order_by("-started_at")
+        .values_list("task_id", flat=True)
+        .distinct()[:limit]
+    )
+
+    executions = []
+    for tid in task_ids:
+        logs = EasySetupLog.objects.filter(task_id=tid).select_related("device")
+        statuses = [l.status for l in logs]
+
+        if all(s == EasySetupLog.Status.SUCCESS for s in statuses):
+            overall = "success"
+        elif all(s == EasySetupLog.Status.FAILED for s in statuses):
+            overall = "failed"
+        elif any(
+            s in (EasySetupLog.Status.PENDING, EasySetupLog.Status.RUNNING)
+            for s in statuses
+        ):
+            overall = "running"
+        else:
+            overall = "partial"
+
+        executions.append(
+            {
+                "task_id": tid,
+                "overall_status": overall,
+                "devices": [
+                    {
+                        "device_name": l.device.name,
+                        "status": l.status,
+                        "elapsed_s": l.report.get("elapsed_s") if l.report else None,
+                    }
+                    for l in logs
+                ],
+                "started_at": min(l.started_at for l in logs),
+                "total_devices": len(logs),
+            }
+        )
+
+    return Response({"executions": executions})

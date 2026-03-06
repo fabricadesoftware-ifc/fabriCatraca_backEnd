@@ -3,7 +3,7 @@ from .hardware_config import HardwareConfigViewSet
 from .security_config import SecurityConfigViewSet
 from .ui_config import UIConfigViewSet
 from .device_config_view import DeviceConfigView
-from .easy_setup import easy_setup
+from .easy_setup import easy_setup, easy_setup_status, easy_setup_history
 from .debug_setup import debug_setup
 
 __all__ = [
@@ -13,5 +13,7 @@ __all__ = [
     "UIConfigViewSet",
     "DeviceConfigView",
     "easy_setup",
+    "easy_setup_status",
+    "easy_setup_history",
     "debug_setup",
 ]

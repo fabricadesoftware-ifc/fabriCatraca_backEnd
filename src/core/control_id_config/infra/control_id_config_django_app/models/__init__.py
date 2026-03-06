@@ -4,13 +4,14 @@ from .security_config import SecurityConfig
 from .ui_config import UIConfig
 from .catra_config import CatraConfig
 from .push_server_config import PushServerConfig
+from .easy_setup_log import EasySetupLog
 
 __all__ = [
-    'SystemConfig',
-    'HardwareConfig', 
-    'SecurityConfig',
-    'UIConfig',
-    'CatraConfig',
-    'PushServerConfig'
+    "SystemConfig",
+    "HardwareConfig",
+    "SecurityConfig",
+    "UIConfig",
+    "CatraConfig",
+    "PushServerConfig",
+    "EasySetupLog",
 ]
-

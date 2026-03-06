@@ -11,6 +11,8 @@ from .views import (
     UIConfigViewSet,
     DeviceConfigView,
     easy_setup,
+    easy_setup_status,
+    easy_setup_history,
     debug_setup,
 )
 from .views.catra_config import CatraConfigViewSet
@@ -47,6 +49,9 @@ def config_root(request, format=None):
                 "pushserverconfig-list", request=request, format=format
             ),
             "easy_setup": reverse("easy-setup", request=request, format=format),
+            "easy_setup_history": reverse(
+                "easy-setup-history", request=request, format=format
+            ),
             "sync_all_configs": reverse(
                 "sync-all-configs", request=request, format=format
             ),
@@ -61,6 +66,10 @@ def config_root(request, format=None):
 urlpatterns = [
     path("", config_root, name="config-root"),
     path("easy-setup/", easy_setup, name="easy-setup"),
+    path(
+        "easy-setup/status/<str:task_id>/", easy_setup_status, name="easy-setup-status"
+    ),
+    path("easy-setup/history/", easy_setup_history, name="easy-setup-history"),
     path("debug-setup/", debug_setup, name="debug-setup"),
     path("sync/", sync_all_configs, name="sync-all-configs"),
     path("sync/status/", sync_config_status, name="sync-config-status"),
