@@ -21,7 +21,7 @@ from src.core.control_id_monitor.infra.control_id_monitor_django_app.models impo
 from src.core.user.infra.user_django_app.models import User
 
 # Re-export para manter compatibilidade com imports existentes
-from .easy_setup_engine import _EasySetupEngine  # noqa: F401
+from .easy_setup_engine import PUSH_ORDER, _EasySetupEngine  # noqa: F401
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
