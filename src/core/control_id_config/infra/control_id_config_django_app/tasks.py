@@ -14,7 +14,7 @@ def run_easy_setup_task(self, device_ids: list[int], task_id: str) -> dict:
 
     from src.core.control_Id.infra.control_id_django_app.models import Device
     from .models import EasySetupLog
-    from .views.easy_setup import _EasySetupEngine
+    from .views.easy_setup_engine import _EasySetupEngine
 
     devices = Device.objects.filter(id__in=device_ids, is_active=True)
     if not devices.exists():
