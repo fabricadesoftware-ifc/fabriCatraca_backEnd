@@ -18,6 +18,7 @@ from src.core.control_Id.infra.control_id_django_app.models import Device
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import (
     MonitorConfig,
 )
+from src.core.user.infra.user_django_app.models import User
 
 # Re-export para manter compatibilidade com imports existentes
 from .easy_setup_engine import _EasySetupEngine  # noqa: F401
@@ -45,10 +46,19 @@ def _list_devices(request):
     """Retorna devices ativos com informações úteis para o frontend."""
     devices = Device.objects.filter(is_active=True).order_by("name")
     device_list = []
+    global_user_count = User.objects.exclude(is_staff=True, is_superuser=True).count()
+    reference_monitor = (
+        MonitorConfig.objects.filter(device__is_default=True)
+        .exclude(hostname="")
+        .first()
+        or MonitorConfig.objects.exclude(hostname="").first()
+    )
 
     for d in devices:
         monitor = MonitorConfig.objects.filter(device=d).first()
-        user_count = d.users.exclude(is_staff=True, is_superuser=True).count()
+        effective_monitor = (
+            monitor if monitor and monitor.is_configured else reference_monitor
+        )
 
         device_list.append(
             {
@@ -56,11 +66,15 @@ def _list_devices(request):
                 "name": d.name,
                 "ip": d.ip,
                 "is_default": d.is_default,
-                "user_count": user_count,
-                "monitor_configured": monitor.is_configured if monitor else False,
-                "monitor_url": monitor.full_url
-                if monitor and monitor.is_configured
-                else None,
+                "user_count": global_user_count,
+                "monitor_configured": (
+                    effective_monitor.is_configured if effective_monitor else False
+                ),
+                "monitor_url": (
+                    effective_monitor.full_url
+                    if effective_monitor and effective_monitor.is_configured
+                    else None
+                ),
                 "selected": True,  # Por padrão todas marcadas
             }
         )
@@ -82,7 +96,19 @@ def _execute_setup(request):
 
     device_ids = request.data.get("device_ids")
 
-    if device_ids:
+    if device_ids is not None and not isinstance(device_ids, list):
+        return Response(
+            {"error": "device_ids deve ser uma lista de IDs ou omitido"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if device_ids == []:
+        return Response(
+            {"error": "Selecione ao menos um device para executar o setup"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if device_ids is not None:
         devices = Device.objects.filter(id__in=device_ids, is_active=True)
         missing = set(device_ids) - set(devices.values_list("id", flat=True))
         if missing:

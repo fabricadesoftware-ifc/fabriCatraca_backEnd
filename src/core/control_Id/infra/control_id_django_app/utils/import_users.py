@@ -95,10 +95,6 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     ],
                 )
 
-            # Associa o user a todos os devices ativos
-            for device in devices:
-                device.users.add(user)
-
             return True, "Usuário criado com sucesso em todas as catracas"
 
         except Exception as e:
@@ -312,9 +308,6 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                             }
                         ],
                     )
-
-                for device in Device.objects.filter(is_active=True):
-                    device.users.add(instance)
 
                 transaction.savepoint_commit(sp)
                 return instance, None

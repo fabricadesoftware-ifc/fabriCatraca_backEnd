@@ -100,6 +100,99 @@ class _EasySetupEngine(ControlIDSyncMixin):
     Opera em UM device por vez (set_device antes de cada uso).
     """
 
+    def _wait_for_device_online(
+        self,
+        max_attempts=24,
+        interval_s=5,
+        credentials_to_try=None,
+    ):
+        """
+        Aguarda a catraca voltar a responder ao login apos reboot/reset.
+
+        Usa polling ativo em vez de sleep fixo. Login bem-sucedido indica que
+        a API ja voltou, embora o firmware ainda possa concluir etapas internas
+        depois disso.
+        """
+        if credentials_to_try is None:
+            credentials_to_try = [
+                (self.device.username, self.device.password),
+                (_FACTORY_LOGIN, _FACTORY_PASSWORD),
+            ]
+
+        for attempt in range(1, max_attempts + 1):
+            for login_user, login_pass in credentials_to_try:
+                try:
+                    resp = requests.post(
+                        self.get_url("login.fcgi"),
+                        json={"login": login_user, "password": login_pass},
+                        timeout=5,
+                    )
+                    if resp.status_code == 200 and resp.json().get("session"):
+                        self.session = resp.json()["session"]
+                        return {
+                            "ok": True,
+                            "attempts": attempt,
+                            "used_default_credentials": (
+                                login_user != self.device.username
+                                or login_pass != self.device.password
+                            ),
+                        }
+                except Exception:
+                    pass
+
+            logger.debug(
+                f"[EASY_SETUP] [{self.device.name}] "
+                f"Tentativa {attempt}/{max_attempts} - device ainda indisponivel..."
+            )
+            _time.sleep(interval_s)
+
+        return {
+            "ok": False,
+            "error": (
+                f"Device nao voltou a responder login apos "
+                f"{max_attempts * interval_s}s"
+            ),
+        }
+
+    def _get_reference_device(self):
+        return (
+            self.device.__class__.objects.filter(is_default=True).first()
+            or self.device.__class__.objects.filter(is_active=True).order_by("id").first()
+        )
+
+    def _get_device_scoped_config(self, model, *, predicate=None):
+        """
+        Busca configuração na seguinte ordem:
+        1. configuração do próprio device
+        2. configuração do device padrão
+        3. primeira configuração válida disponível
+        """
+        candidates = []
+
+        current = model.objects.filter(device=self.device).first()
+        if current:
+            candidates.append(current)
+
+        reference_device = self._get_reference_device()
+        if reference_device and reference_device != self.device:
+            reference = model.objects.filter(device=reference_device).first()
+            if reference:
+                candidates.append(reference)
+
+        first_available = model.objects.order_by("id").first()
+        if first_available:
+            candidates.append(first_available)
+
+        seen_ids = set()
+        for candidate in candidates:
+            if candidate.id in seen_ids:
+                continue
+            seen_ids.add(candidate.id)
+            if predicate is None or predicate(candidate):
+                return candidate
+
+        return None
+
     # ── 1. Factory reset ────────────────────────────────────────────────────
     def factory_reset(self):
         """
@@ -272,7 +365,10 @@ class _EasySetupEngine(ControlIDSyncMixin):
     def configure_monitor(self):
         """Envia configuração de monitor (push) para a catraca."""
         try:
-            monitor = MonitorConfig.objects.filter(device=self.device).first()
+            monitor = self._get_device_scoped_config(
+                MonitorConfig,
+                predicate=lambda cfg: cfg.is_configured,
+            )
             if not monitor or not monitor.is_configured:
                 return {
                     "ok": False,
@@ -291,6 +387,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             return {
                 "ok": resp.status_code == 200,
                 "full_url": monitor.full_url,
+                "source_device_id": monitor.device_id,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -310,7 +407,6 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         Monta UM ÚNICO payload consolidado e envia via set_configuration.fcgi.
         """
-        device = self.device
         result = {"sections": {}}
 
         def bool_to_str(value):
@@ -321,13 +417,13 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # ── general (SystemConfig + HardwareConfig + UIConfig) ──
         general = {}
 
-        sys_cfg = SystemConfig.objects.filter(device=device).first()
+        sys_cfg = self._get_device_scoped_config(SystemConfig)
         if sys_cfg:
             general["catra_timeout"] = str(sys_cfg.catra_timeout or 30000)
             general["online"] = bool_to_str(sys_cfg.online)
             general["local_identification"] = bool_to_str(sys_cfg.local_identification)
             general["language"] = str(sys_cfg.language or "pt_BR")
-            result["sections"]["system"] = True
+            result["sections"]["system"] = {"source_device_id": sys_cfg.device_id}
         else:
             # Defaults seguros — local_identification DEVE ser 1
             general["local_identification"] = "1"
@@ -335,14 +431,14 @@ class _EasySetupEngine(ControlIDSyncMixin):
             general["language"] = "pt_BR"
             result["sections"]["system"] = "defaults"
 
-        hw_cfg = HardwareConfig.objects.filter(device=device).first()
+        hw_cfg = self._get_device_scoped_config(HardwareConfig)
         if hw_cfg:
             general["beep_enabled"] = bool_to_str(hw_cfg.beep_enabled)
             general["ssh_enabled"] = bool_to_str(hw_cfg.ssh_enabled)
             general["bell_enabled"] = bool_to_str(hw_cfg.bell_enabled)
             general["bell_relay"] = str(hw_cfg.bell_relay)
             general["exception_mode"] = "emergency" if hw_cfg.exception_mode else "none"
-            result["sections"]["hardware"] = True
+            result["sections"]["hardware"] = {"source_device_id": hw_cfg.device_id}
 
         # NOTA: screen_always_on não é suportado pelo firmware IDBLOCK
         # (causa "Node or attribute not found"), então não é enviado aqui.
@@ -351,7 +447,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             payload["general"] = general
 
         # ── catra (CatraConfig) ──
-        catra_cfg = CatraConfig.objects.filter(device=device).first()
+        catra_cfg = self._get_device_scoped_config(CatraConfig)
         if catra_cfg:
             payload["catra"] = {
                 "anti_passback": bool_to_str(catra_cfg.anti_passback),
@@ -359,7 +455,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 "gateway": catra_cfg.gateway,
                 "operation_mode": catra_cfg.operation_mode,
             }
-            result["sections"]["catra"] = True
+            result["sections"]["catra"] = {"source_device_id": catra_cfg.device_id}
         else:
             # Default seguro
             payload["catra"] = {
@@ -372,7 +468,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # ── identifier (SecurityConfig + métodos de identificação) ──
         identifier_cfg = {}
-        sec_cfg = SecurityConfig.objects.filter(device=device).first()
+        sec_cfg = self._get_device_scoped_config(SecurityConfig)
         if sec_cfg:
             identifier_cfg["multi_factor_authentication"] = bool_to_str(
                 getattr(sec_cfg, "multi_factor_authentication_enabled", False)
@@ -380,7 +476,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             identifier_cfg["verbose_logging"] = bool_to_str(
                 getattr(sec_cfg, "verbose_logging_enabled", True)
             )
-            result["sections"]["security"] = True
+            result["sections"]["security"] = {"source_device_id": sec_cfg.device_id}
 
         # Métodos de identificação habilitados.
         # PIN e ID+Senha são mutuamente exclusivos:
@@ -393,14 +489,17 @@ class _EasySetupEngine(ControlIDSyncMixin):
         result["sections"]["identifier_methods"] = True
 
         # ── push_server (PushServerConfig) ──
-        ps_cfg = PushServerConfig.objects.filter(device=device).first()
+        ps_cfg = self._get_device_scoped_config(
+            PushServerConfig,
+            predicate=lambda cfg: bool(cfg.push_remote_address),
+        )
         if ps_cfg and ps_cfg.push_remote_address:
             payload["push_server"] = {
                 "push_request_timeout": str(ps_cfg.push_request_timeout),
                 "push_request_period": str(ps_cfg.push_request_period),
                 "push_remote_address": ps_cfg.push_remote_address,
             }
-            result["sections"]["push_server"] = True
+            result["sections"]["push_server"] = {"source_device_id": ps_cfg.device_id}
         else:
             # Sem PushServerConfig → desabilitar online_client para evitar
             # "cURL error: <url> malformed" a cada 5s após factory reset.
@@ -570,10 +669,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
         Coleta todos os dados do Django DB que precisam ser enviados
         para esta catraca.
         """
-        device = self.device
-
-        # Usuários vinculados a este device
-        users_qs = User.objects.filter(devices=device).exclude(
+        # O backend Django é a fonte de verdade. As catracas recebem um
+        # espelho do estado global salvo no banco.
+        users_qs = User.objects.exclude(
             is_staff=True, is_superuser=True
         )
         user_ids = set(users_qs.values_list("id", flat=True))
@@ -1084,6 +1182,152 @@ class _EasySetupEngine(ControlIDSyncMixin):
         report["summary"] = {
             "records_pushed": total_pushed,
             "tables_with_errors": total_errors,
+        }
+
+        return report
+
+    def _legacy_factory_reset_v1(self):
+        """
+        Reseta a catraca para configuracao de fabrica mantendo config de rede.
+        Usa polling ativo para detectar quando a API volta a responder.
+        """
+        result = {}
+
+        try:
+            sess = self.login()
+            resp = requests.post(
+                self.get_url(f"reset_to_factory_default.fcgi?session={sess}"),
+                json={"keep_network_info": True},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                return {
+                    "ok": False,
+                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+                }
+            result["reset_sent"] = True
+        except Exception as e:
+            return {"ok": False, "error": f"Erro ao enviar factory reset: {e}"}
+
+        self.session = None
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Factory reset enviado, aguardando catraca voltar online..."
+        )
+
+        online_result = self._wait_for_device_online()
+        result.update(online_result)
+        if result.get("ok") and result.get("used_default_credentials"):
+            result["warning"] = (
+                "Factory reset resetou credenciais para admin/admin. "
+                "Atualize username/password do device no Django."
+            )
+
+        if result.get("ok"):
+            logger.info(
+                f"[EASY_SETUP] [{self.device.name}] "
+                f"Online apos reboot (tentativa {result.get('attempts')})"
+            )
+        return result
+
+    def _legacy_fix_access_rules_v1(self, db_data, expected_rules):
+        """
+        Corrige access_rules problemáticas sem destruir tabelas.
+        Depois força reload do identifier via disable -> configure.
+        """
+        safe_rules = [{**r, "type": max(r.get("type", 1), 1)} for r in expected_rules]
+        if safe_rules:
+            self._create_objects_safe("access_rules", safe_rules)
+
+        for table in [
+            "user_access_rules",
+            "group_access_rules",
+            "portal_access_rules",
+            "access_rule_time_zones",
+        ]:
+            values = db_data.get(table, [])
+            if values:
+                self._create_objects_safe(table, values)
+
+        self.disable_identifier()
+        _time.sleep(2)
+        self.configure_device_settings()
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Fix aplicado: rules corrigidas e identifier recarregado"
+        )
+
+    def _legacy_run_full_setup_v1(self):
+        """
+        Executa o setup completo num unico device.
+        """
+        report = {"device": self.device.name, "steps": {}}
+        t0 = _time.monotonic()
+
+        try:
+            self.login(force_new=True)
+            report["steps"]["login"] = {"ok": True}
+        except Exception as e:
+            report["steps"]["login"] = {"ok": False, "error": str(e)}
+            report["elapsed_s"] = round(_time.monotonic() - t0, 2)
+            return report
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] Factory reset (keep_network)..."
+        )
+        report["steps"]["factory_reset"] = self.factory_reset()
+        if not report["steps"]["factory_reset"].get("ok"):
+            logger.error(
+                f"[EASY_SETUP] [{self.device.name}] Factory reset FALHOU - abortando"
+            )
+            report["elapsed_s"] = round(_time.monotonic() - t0, 2)
+            return report
+
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Acertando relogio...")
+        report["steps"]["datetime"] = self.set_datetime()
+
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Configurando monitor...")
+        report["steps"]["monitor"] = self.configure_monitor()
+
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Coletando dados do DB...")
+        db_data = self.collect_db_data()
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Enviando dados (create por cima, sem destroy)..."
+        )
+        report["steps"]["push"] = self.push_data(db_data)
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Forcando reload do identifier (disable -> enable)..."
+        )
+        report["steps"]["disable_identifier"] = self.disable_identifier()
+
+        logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configuracoes...")
+        report["steps"]["device_settings"] = self.configure_device_settings()
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Verificando access_rules apos estabilizacao do firmware..."
+        )
+        report["steps"]["verify_access_rules"] = self.verify_access_rules(db_data)
+
+        report["elapsed_s"] = round(_time.monotonic() - t0, 2)
+
+        push = report["steps"]["push"]
+        total_pushed = sum(v.get("count", 0) for v in push.values() if v.get("ok"))
+        total_errors = sum(
+            1 for v in push.values() if not v.get("ok") and not v.get("skipped")
+        )
+        report["summary"] = {
+            "records_pushed": total_pushed,
+            "tables_with_errors": total_errors,
+            "device_settings_ok": report["steps"]["device_settings"].get("ok", False),
+            "verify_access_rules_ok": report["steps"]["verify_access_rules"].get(
+                "ok", False
+            ),
         }
 
         return report

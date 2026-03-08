@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from src.core.control_Id.infra.control_id_django_app.models import Template, Device
-from src.core.control_Id.infra.control_id_django_app.serializers import DeviceSerializer
 from src.core.user.infra.user_django_app.models import User
 
 
@@ -22,8 +21,6 @@ class TemplateSerializer(serializers.ModelSerializer):
         required=True
     )
 
-    devices = DeviceSerializer(many=True, read_only=True)
-
     enrollment_device_id = serializers.PrimaryKeyRelatedField(
         write_only=True,
         required=True,
@@ -37,22 +34,14 @@ class TemplateSerializer(serializers.ModelSerializer):
             'id',
             'user', 'user_id',
             'template', 'finger_type', 'finger_position',
-            'devices', 'enrollment_device_id'
+            'enrollment_device_id'
         ]
-        read_only_fields = ['id', 'template', 'finger_type', 'finger_position', 'devices']
+        read_only_fields = ['id', 'template', 'finger_type', 'finger_position']
 
     def create(self, validated_data):
-        devices = validated_data.pop('devices', [])
         validated_data.pop('enrollment_device_id', None)
-        instance = super().create(validated_data)
-        if devices:
-            instance.devices.set(devices)
-        return instance
+        return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        devices = validated_data.pop('devices', None)
         validated_data.pop('enrollment_device_id', None)
-        instance = super().update(instance, validated_data)
-        if devices is not None:
-            instance.devices.set(devices)
-        return instance
+        return super().update(instance, validated_data)

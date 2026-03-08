@@ -79,7 +79,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         )
 
                 # Adiciona a relação com a catraca
-                device.users.add(instance)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -141,7 +140,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         )
 
                 # Atualiza a relação com a catraca
-                device.users.add(instance)
 
         return Response(serializer.data)
 
@@ -156,7 +154,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             instance.cards.all().delete()  # Cartões
 
             # Remove relações ManyToMany
-            instance.devices.clear()  # Relação com dispositivos
             instance.groups.clear()  # Grupos do Django
             instance.user_permissions.clear()  # Permissões do Django
 
@@ -232,7 +229,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                             },
                         )
                         # Adiciona a relação com a catraca
-                        user.devices.add(device)
 
                 return Response(
                     {

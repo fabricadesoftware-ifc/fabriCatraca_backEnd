@@ -4,8 +4,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True)
-def run_easy_setup_task(self, device_ids: list[int], task_id: str) -> dict:
+def _is_step_ok(step: dict, treat_missing_as_failure: bool = True) -> bool:
+    if not isinstance(step, dict):
+        return not treat_missing_as_failure
+    return step.get("ok", False)
+
+
+def _legacy_run_easy_setup_task_v1(self, device_ids: list[int], task_id: str) -> dict:
     """
     Task Celery assíncrona para execução do Easy Setup.
     Cada device recebe seu próprio EasySetupLog com relatório detalhado.
@@ -31,7 +36,9 @@ def run_easy_setup_task(self, device_ids: list[int], task_id: str) -> dict:
             defaults={"status": EasySetupLog.Status.RUNNING},
         )
         log_entry.status = EasySetupLog.Status.RUNNING
-        log_entry.save(update_fields=["status"])
+        log_entry.started_at = tz.now()
+        log_entry.finished_at = None
+        log_entry.save(update_fields=["status", "started_at", "finished_at"])
 
         logger.info(
             f"[EASY_SETUP_TASK] ═══ Iniciando setup: {device.name} ({device.ip}) ═══"
@@ -75,6 +82,120 @@ def run_easy_setup_task(self, device_ids: list[int], task_id: str) -> dict:
             results.append({"device": device.name, "error": str(e)})
 
     total_ok = sum(1 for r in results if r.get("steps", {}).get("login", {}).get("ok"))
+    return {
+        "success": True,
+        "task_id": task_id,
+        "devices_ok": total_ok,
+        "devices_total": len(results),
+    }
+
+
+@shared_task(bind=True)
+def run_easy_setup_task(self, device_ids: list[int], task_id: str) -> dict:
+    """
+    Task Celery assíncrona para execução do Easy Setup.
+    Cada device recebe seu próprio EasySetupLog com relatório detalhado.
+    """
+    from django.utils import timezone as tz
+
+    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from .models import EasySetupLog
+    from .views.easy_setup_engine import _EasySetupEngine
+
+    devices = Device.objects.filter(id__in=device_ids, is_active=True)
+    if not devices.exists():
+        return {"success": False, "error": "Nenhuma catraca ativa encontrada"}
+
+    engine = _EasySetupEngine()
+    results = []
+
+    for device in devices:
+        log_entry, _ = EasySetupLog.objects.get_or_create(
+            task_id=task_id,
+            device=device,
+            defaults={"status": EasySetupLog.Status.RUNNING},
+        )
+        log_entry.status = EasySetupLog.Status.RUNNING
+        log_entry.started_at = tz.now()
+        log_entry.finished_at = None
+        log_entry.save(update_fields=["status", "started_at", "finished_at"])
+
+        logger.info(
+            f"[EASY_SETUP_TASK] ═══ Iniciando setup: {device.name} ({device.ip}) ═══"
+        )
+        try:
+            engine.set_device(device)
+            report = engine.run_full_setup()
+
+            push = report.get("steps", {}).get("push", {})
+            tables_with_errors = sum(
+                1
+                for v in push.values()
+                if isinstance(v, dict) and not v.get("ok") and not v.get("skipped")
+            )
+            critical_steps = {
+                "login": _is_step_ok(report.get("steps", {}).get("login")),
+                "factory_reset": _is_step_ok(
+                    report.get("steps", {}).get("factory_reset")
+                ),
+                "disable_identifier": _is_step_ok(
+                    report.get("steps", {}).get("disable_identifier")
+                ),
+                "device_settings": _is_step_ok(
+                    report.get("steps", {}).get("device_settings")
+                ),
+                "verify_access_rules": _is_step_ok(
+                    report.get("steps", {}).get("verify_access_rules")
+                ),
+            }
+            optional_warnings = {
+                "datetime": _is_step_ok(
+                    report.get("steps", {}).get("datetime"),
+                    treat_missing_as_failure=False,
+                ),
+                "monitor": _is_step_ok(
+                    report.get("steps", {}).get("monitor"),
+                    treat_missing_as_failure=False,
+                ),
+            }
+            failed_critical = [name for name, ok in critical_steps.items() if not ok]
+            warning_steps = [name for name, ok in optional_warnings.items() if not ok]
+
+            if failed_critical:
+                log_status = EasySetupLog.Status.FAILED
+            elif tables_with_errors > 0 or warning_steps:
+                log_status = EasySetupLog.Status.PARTIAL
+            else:
+                log_status = EasySetupLog.Status.SUCCESS
+
+            report.setdefault("summary", {})
+            report["summary"]["failed_critical_steps"] = failed_critical
+            report["summary"]["warning_steps"] = warning_steps
+
+            log_entry.status = log_status
+            log_entry.report = report
+            log_entry.finished_at = tz.now()
+            log_entry.save(update_fields=["status", "report", "finished_at"])
+
+            results.append(report)
+            logger.info(
+                f"[EASY_SETUP_TASK] ═══ Concluído: {device.name} "
+                f"[{log_status}] em {report.get('elapsed_s', '?')}s ═══"
+            )
+        except Exception as e:
+            logger.exception(f"[EASY_SETUP_TASK] ═══ ERRO: {device.name} - {e} ═══")
+            log_entry.status = EasySetupLog.Status.FAILED
+            log_entry.report = {"error": str(e)}
+            log_entry.finished_at = tz.now()
+            log_entry.save(update_fields=["status", "report", "finished_at"])
+            results.append({"device": device.name, "error": str(e)})
+
+    total_ok = sum(
+        1
+        for r in results
+        if not r.get("summary", {}).get("failed_critical_steps")
+        and not r.get("summary", {}).get("warning_steps")
+    )
     return {
         "success": True,
         "task_id": task_id,

@@ -1,7 +1,6 @@
 from src.core.user.infra.user_django_app.models import User
 from rest_framework import serializers
 from src.core.control_Id.infra.control_id_django_app.models import Card, Device
-from src.core.control_Id.infra.control_id_django_app.serializers import DeviceSerializer
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
@@ -22,8 +21,6 @@ class CardSerializer(serializers.ModelSerializer):
         required=True
     )
 
-    devices = DeviceSerializer(many=True, read_only=True)
-
     enrollment_device_id = serializers.PrimaryKeyRelatedField(
         write_only=True,
         required=True,
@@ -33,21 +30,13 @@ class CardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Card
-        fields = ['id', 'value', 'user', 'user_id', 'devices', 'enrollment_device_id']
-        read_only_fields = ['id', 'value', 'devices']
+        fields = ['id', 'value', 'user', 'user_id', 'enrollment_device_id']
+        read_only_fields = ['id', 'value']
 
     def create(self, validated_data):
-        devices = validated_data.pop('devices', [])
         validated_data.pop('enrollment_device_id', None)
-        instance = super().create(validated_data)
-        if devices:
-            instance.devices.set(devices)
-        return instance
+        return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        devices = validated_data.pop('devices', None)
         validated_data.pop('enrollment_device_id', None)
-        instance = super().update(instance, validated_data)
-        if devices is not None:
-            instance.devices.set(devices)
-        return instance
+        return super().update(instance, validated_data)

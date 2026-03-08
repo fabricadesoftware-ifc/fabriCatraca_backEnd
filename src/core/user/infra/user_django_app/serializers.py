@@ -1,14 +1,9 @@
 from rest_framework import serializers
 from .models import User
-from src.core.control_Id.infra.control_id_django_app.serializers.device import (
-    DeviceSerializer,
-)
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from django.contrib.auth.models import Group
 
 
 class UserSerializer(serializers.ModelSerializer):
-    devices = DeviceSerializer(many=True, read_only=True)
     user_groups = serializers.SerializerMethodField()
 
     class Meta:
@@ -19,7 +14,6 @@ class UserSerializer(serializers.ModelSerializer):
             "registration",
             "user_type_id",
             "pin",
-            "devices",
             "user_groups",
         ]
 

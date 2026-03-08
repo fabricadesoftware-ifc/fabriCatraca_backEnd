@@ -90,8 +90,6 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                     
                     if create_response.status_code != status.HTTP_201_CREATED:
                         errors.append(f"{device.name}: {create_response.data}")
-                    else:
-                        instance.devices.add(device)
                 
                 if errors:
                     print(f"Erros de replicação: {errors}")
@@ -132,9 +130,6 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                         "error": f"Erro ao atualizar template na catraca {device.name}",
                         "details": response.data
                     }, status=response.status_code)
-                
-                instance.devices.add(device)
-        
         return Response(serializer.data)
 
     def destroy(self, request, *args, **kwargs):

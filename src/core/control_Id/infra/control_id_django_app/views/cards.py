@@ -92,7 +92,6 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                         }, status=create_response.status_code)
                     
                     # Adiciona a relação com a catraca
-                    instance.devices.add(device)
 
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -136,7 +135,6 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                     }, status=response.status_code)
                 
                 # Atualiza a relação com a catraca
-                instance.devices.add(device)
 
         return Response(serializer.data)
 

@@ -6,8 +6,6 @@ class Template(models.Model):
     template = models.TextField()  # Dados da biometria em base64
     finger_type = models.IntegerField(default=0)  # 0 para dedo comum, 1 para dedo de pânico
     finger_position = models.IntegerField(default=0)  # Campo reservado
-    devices = models.ManyToManyField('control_id_django_app.Device', related_name='templates', blank=True)
-
     def __str__(self):
         return f"Biometria {self.id} do usuário {self.user.name}"
 

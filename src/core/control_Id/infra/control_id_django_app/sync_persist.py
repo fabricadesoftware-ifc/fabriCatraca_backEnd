@@ -118,7 +118,6 @@ def persist_all(
                 registration=user_data["registration"],
                 user_type_id=user_type,
             )
-            user.devices.set(devices)
             users_created += 1
 
         print(f"[SYNC] ✅ {users_created} usuários criados")
@@ -342,9 +341,6 @@ def persist_all(
                         )
                     )
             templates = Template.objects.bulk_create(templates)
-            for t, t_data in zip(templates, all_templates):
-                if User.objects.filter(id=t_data["user_id"]).exists():
-                    t.devices.set(t_data["devices"])
             transaction.savepoint_commit(sp_templates)
         except Exception:
             transaction.savepoint_rollback(sp_templates)
@@ -359,9 +355,6 @@ def persist_all(
                 if User.objects.filter(id=c["user_id"]).exists():
                     cards_models.append(Card(user_id=c["user_id"], value=c["value"]))
             cards_models = Card.objects.bulk_create(cards_models)
-            for c, c_data in zip(cards_models, all_cards):
-                if User.objects.filter(id=c_data["user_id"]).exists():
-                    c.devices.set(c_data["devices"])
             transaction.savepoint_commit(sp_cards)
         except Exception:
             transaction.savepoint_rollback(sp_cards)
