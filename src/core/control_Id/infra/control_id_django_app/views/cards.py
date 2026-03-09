@@ -34,7 +34,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
 
             # Primeiro cria no banco para ter o ID
             serializer = self.get_serializer(data={
-                "user": request.data.get('user'),
+                "user_id": request.data.get('user_id') or request.data.get('user'),
                 "enrollment_device_id": enrollment_device_id
             })
             serializer.is_valid(raise_exception=True)
@@ -93,7 +93,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                     
                     # Adiciona a relação com a catraca
 
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
+                return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
         except Device.DoesNotExist:
             return Response({
