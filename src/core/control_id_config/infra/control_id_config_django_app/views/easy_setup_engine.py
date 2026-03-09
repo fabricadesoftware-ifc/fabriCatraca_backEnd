@@ -682,10 +682,19 @@ class _EasySetupEngine(ControlIDSyncMixin):
         users_list = []
         pins_list = []
         for u in users_qs:
-            payload = {"id": u.id, "name": u.name}
-            if u.registration:
-                payload["registration"] = u.registration
-            if u.user_type_id is not None:
+            name = (u.name or "").strip()
+            if not name:
+                continue
+
+            payload = {"id": u.id, "name": name}
+
+            registration = (u.registration or "").strip()
+            if registration:
+                payload["registration"] = registration
+
+            if u.user_type_id in {
+                choice.value for choice in User.UserType
+            }:
                 payload["user_type_id"] = u.user_type_id
             users_list.append(payload)
 
@@ -928,6 +937,16 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 f"[EASY_SETUP] create_objects({table}) falhou: "
                 f"HTTP {resp.status_code} — {body}"
             )
+            if table in _UPSERTABLE_TABLES:
+                logger.info(
+                    f"[EASY_SETUP] create_objects({table}) "
+                    "falhou em batch; tentando upsert item a item..."
+                )
+                fallback = self._upsert_entity_objects(table, values)
+                fallback["note"] = "fallback_upsert_after_batch_failure"
+                fallback["batch_detail"] = body
+                return fallback
+
             return {
                 "ok": False,
                 "count": len(values),
