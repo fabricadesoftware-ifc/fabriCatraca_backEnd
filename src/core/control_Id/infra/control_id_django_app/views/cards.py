@@ -14,6 +14,10 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer
 
+    @staticmethod
+    def _card_value_as_int(value):
+        return int(value) if value not in (None, "") else value
+
     def create(self, request, *args, **kwargs):
         """
         Cria um cartao por captura remota na catraca.
@@ -98,6 +102,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                 serializer.is_valid(raise_exception=True)
 
                 instance = serializer.save(value=str(captured_value))
+                card_value_int = self._card_value_as_int(captured_value)
 
                 devices = Device.objects.filter(is_active=True)
                 errors = []
@@ -109,7 +114,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                             {
                                 "id": instance.id,
                                 "user_id": instance.user.id,
-                                "value": instance.value,
+                                "value": card_value_int,
                             }
                         ],
                     )
@@ -155,7 +160,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                         {
                             "id": instance.id,
                             "user_id": instance.user.id,
-                            "value": instance.value,
+                            "value": self._card_value_as_int(instance.value),
                         }
                     ],
                     {"cards": {"id": instance.id}},
