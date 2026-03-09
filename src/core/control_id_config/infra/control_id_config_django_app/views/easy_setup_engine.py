@@ -48,6 +48,7 @@ _FACTORY_PASSWORD = "admin"
 # Coluna usada no WHERE de destroy_objects para cada tabela.
 # Tabelas de junção NÃO possuem coluna 'id' na Control iD.
 _TABLE_WHERE_COL = {
+    "user_roles": "user_id",
     "user_groups": "user_id",
     "user_access_rules": "user_id",
     "group_access_rules": "group_id",
@@ -58,6 +59,7 @@ _TABLE_WHERE_COL = {
 # ── Ordem de push (entidades-pai primeiro, relações depois) ─────────────────
 PUSH_ORDER = [
     "users",
+    "user_roles",
     "time_zones",
     "time_spans",
     "access_rules",
@@ -91,6 +93,16 @@ _UPSERTABLE_TABLES = frozenset(
         "areas",
         "portals",
     }
+)
+
+_DUPLICATE_ERROR_MARKERS = (
+    "unique",
+    "constraint",
+    "duplicate",
+    "already exists",
+    "already exist",
+    "ja existe",
+    "já existe",
 )
 
 
@@ -153,6 +165,10 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 f"{max_attempts * interval_s}s"
             ),
         }
+
+    def _looks_like_duplicate_error(self, body):
+        body_lower = (body or "").lower()
+        return any(marker in body_lower for marker in _DUPLICATE_ERROR_MARKERS)
 
     def _get_reference_device(self):
         return (
@@ -671,24 +687,31 @@ class _EasySetupEngine(ControlIDSyncMixin):
         """
         # O backend Django é a fonte de verdade. As catracas recebem um
         # espelho do estado global salvo no banco.
-        users_qs = User.objects.exclude(
-            is_staff=True, is_superuser=True
-        )
-        user_ids = set(users_qs.values_list("id", flat=True))
+        users_qs = User.objects.all().order_by("id")
 
         data = {}
 
         # Users
         users_list = []
+        user_roles_list = []
         pins_list = []
+        eligible_user_ids = set()
+        skipped_users = []
         for u in users_qs:
             name = (u.name or "").strip()
             if not name:
+                skipped_users.append({"user_id": u.id, "reason": "empty_name"})
                 continue
 
             payload = {"id": u.id, "name": name}
 
             registration = (u.registration or "").strip()
+            is_admin_user = bool(u.is_staff or u.is_superuser)
+            if not registration and not is_admin_user:
+                skipped_users.append(
+                    {"user_id": u.id, "reason": "missing_registration"}
+                )
+                continue
             if registration:
                 payload["registration"] = registration
 
@@ -697,12 +720,18 @@ class _EasySetupEngine(ControlIDSyncMixin):
             }:
                 payload["user_type_id"] = u.user_type_id
             users_list.append(payload)
+            eligible_user_ids.add(u.id)
+
+            if is_admin_user:
+                user_roles_list.append({"user_id": u.id, "role": 1})
 
             if u.pin:
                 pins_list.append({"user_id": u.id, "value": u.pin})
 
         data["users"] = users_list
+        data["user_roles"] = user_roles_list
         data["pins"] = pins_list
+        data["_user_push_warnings"] = skipped_users
 
         # TimeZones
         data["time_zones"] = list(TimeZone.objects.values("id", "name"))
@@ -760,11 +789,13 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # Relações (filtradas por users deste device onde aplicável)
         data["user_groups"] = list(
-            UserGroup.objects.filter(user_id__in=user_ids).values("user_id", "group_id")
+            UserGroup.objects.filter(user_id__in=eligible_user_ids).values(
+                "user_id", "group_id"
+            )
         )
 
         data["user_access_rules"] = list(
-            UserAccessRule.objects.filter(user_id__in=user_ids).values(
+            UserAccessRule.objects.filter(user_id__in=eligible_user_ids).values(
                 "user_id", "access_rule_id"
             )
         )
@@ -783,12 +814,16 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # Cards
         data["cards"] = list(
-            Card.objects.filter(user_id__in=user_ids).values("user_id", "value")
+            Card.objects.filter(user_id__in=eligible_user_ids).values(
+                "user_id", "value"
+            )
         )
 
         # Templates (biometria)
         data["templates"] = list(
-            Template.objects.filter(user_id__in=user_ids).values("user_id", "template")
+            Template.objects.filter(user_id__in=eligible_user_ids).values(
+                "user_id", "template"
+            )
         )
 
         return data
@@ -924,7 +959,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             body = resp.text[:500]
 
             # Se batch falhou por constraint, estratégia depende do tipo
-            if "UNIQUE" in body or "FOREIGN KEY" in body or "constraint" in body:
+            if self._looks_like_duplicate_error(body) or "FOREIGN KEY" in body:
                 if table in _UPSERTABLE_TABLES:
                     # Entity table → upsert (modify existing + create new)
                     return self._upsert_entity_objects(table, values)
@@ -998,7 +1033,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 )
                 if r.status_code == 200:
                     created += 1
-                elif "UNIQUE" in r.text:
+                elif self._looks_like_duplicate_error(r.text):
                     # Race condition: apareceu entre load e create → modify
                     if self._modify_objects(table, [item]):
                         modified += 1
@@ -1046,7 +1081,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 )
                 if r.status_code == 200:
                     created += 1
-                elif "UNIQUE" in r.text:
+                elif self._looks_like_duplicate_error(r.text):
                     skipped += 1
                 else:
                     errors += 1
