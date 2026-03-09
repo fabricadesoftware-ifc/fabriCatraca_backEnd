@@ -5,6 +5,7 @@ from django.contrib.auth.models import Group
 
 class UserSerializer(serializers.ModelSerializer):
     user_groups = serializers.SerializerMethodField()
+    device_admin = serializers.BooleanField(source="is_staff", required=False)
 
     class Meta:
         model = User
@@ -14,6 +15,7 @@ class UserSerializer(serializers.ModelSerializer):
             "registration",
             "user_type_id",
             "pin",
+            "device_admin",
             "user_groups",
         ]
 

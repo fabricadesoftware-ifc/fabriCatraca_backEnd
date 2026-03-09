@@ -46,7 +46,7 @@ def _list_devices(request):
     """Retorna devices ativos com informações úteis para o frontend."""
     devices = Device.objects.filter(is_active=True).order_by("name")
     device_list = []
-    global_user_count = User.objects.exclude(is_staff=True, is_superuser=True).count()
+    global_user_count = User.objects.count()
     reference_monitor = (
         MonitorConfig.objects.filter(device__is_default=True)
         .exclude(hostname="")

@@ -78,6 +78,24 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                             f"Falha ao criar PIN na catraca {device.name}: {pin_resp.data}"
                         )
 
+                if instance.is_staff:
+                    role_resp = self.create_objects(
+                        "user_roles",
+                        [{"user_id": instance.id, "role": 1}],
+                    )
+                    if role_resp.status_code != status.HTTP_201_CREATED:
+                        instance.delete()
+                        return Response(
+                            {
+                                "error": (
+                                    f"Erro ao definir usuario administrador "
+                                    f"na catraca {device.name}"
+                                ),
+                                "details": role_resp.data,
+                            },
+                            status=role_resp.status_code,
+                        )
+
                 # Adiciona a relação com a catraca
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -139,6 +157,34 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                             ],
                         )
 
+                if instance.is_staff:
+                    role_resp = self.update_objects(
+                        "user_roles",
+                        {"role": 1},
+                        {"user_roles": {"user_id": instance.id}},
+                    )
+                    if role_resp.status_code != status.HTTP_200_OK:
+                        role_resp = self.create_objects(
+                            "user_roles",
+                            [{"user_id": instance.id, "role": 1}],
+                        )
+                        if role_resp.status_code != status.HTTP_201_CREATED:
+                            return Response(
+                                {
+                                    "error": (
+                                        f"Erro ao atualizar papel administrativo "
+                                        f"na catraca {device.name}"
+                                    ),
+                                    "details": role_resp.data,
+                                },
+                                status=role_resp.status_code,
+                            )
+                else:
+                    self.destroy_objects(
+                        "user_roles",
+                        {"user_roles": {"user_id": instance.id}},
+                    )
+
                 # Atualiza a relação com a catraca
 
         return Response(serializer.data)
@@ -169,6 +215,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
             for device in devices:
                 self.set_device(device)
+                self.destroy_objects("user_roles", {"user_roles": {"user_id": instance.id}})
                 # Remove o PIN da tabela 'pins' antes de remover o usuário
                 self.destroy_objects("pins", {"pins": {"user_id": instance.id}})
                 response = self.destroy_objects("users", {"users": {"id": instance.id}})
