@@ -18,6 +18,47 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     def _card_value_as_int(value):
         return int(value) if value not in (None, "") else value
 
+    @staticmethod
+    def _user_payload(user):
+        payload = {
+            "id": user.id,
+            "name": user.name,
+            "registration": user.registration or "",
+        }
+        if user.user_type_id is not None:
+            payload["user_type_id"] = user.user_type_id
+        return payload
+
+    def _ensure_user_on_device(self, device, user):
+        self.set_device(device)
+        try:
+            create_response = self.create_objects(
+                "users",
+                [self._user_payload(user)],
+            )
+            if create_response.status_code == status.HTTP_201_CREATED:
+                return True
+        except Exception:
+            pass
+
+        try:
+            update_response = self.update_objects(
+                "users",
+                {
+                    "name": user.name,
+                    "registration": user.registration or "",
+                    **(
+                        {"user_type_id": user.user_type_id}
+                        if user.user_type_id is not None
+                        else {}
+                    ),
+                },
+                {"users": {"id": user.id}},
+            )
+            return update_response.status_code == status.HTTP_200_OK
+        except Exception:
+            return False
+
     def create(self, request, *args, **kwargs):
         """
         Cria um cartao por captura remota na catraca.
@@ -107,20 +148,28 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                 devices = Device.objects.filter(is_active=True)
                 errors = []
                 for device in devices:
-                    self.set_device(device)
-                    create_response = self.create_objects(
-                        "cards",
-                        [
-                            {
-                                "id": instance.id,
-                                "user_id": instance.user.id,
-                                "value": card_value_int,
-                            }
-                        ],
-                    )
+                    if not self._ensure_user_on_device(device, instance.user):
+                        errors.append(
+                            f"{device.name}: usuario {instance.user.id} ausente"
+                        )
+                        continue
 
-                    if create_response.status_code != status.HTTP_201_CREATED:
-                        errors.append(f"{device.name}: {create_response.data}")
+                    try:
+                        create_response = self.create_objects(
+                            "cards",
+                            [
+                                {
+                                    "id": instance.id,
+                                    "user_id": instance.user.id,
+                                    "value": card_value_int,
+                                }
+                            ],
+                        )
+
+                        if create_response.status_code != status.HTTP_201_CREATED:
+                            errors.append(f"{device.name}: {create_response.data}")
+                    except Exception as exc:
+                        errors.append(f"{device.name}: {exc}")
 
                 if errors:
                     print(f"Erros de replicacao de cartao: {errors}")
@@ -153,7 +202,16 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
             devices = Device.objects.filter(is_active=True)
 
             for device in devices:
-                self.set_device(device)
+                if not self._ensure_user_on_device(device, instance.user):
+                    return Response(
+                        {
+                            "error": (
+                                f"Usuario {instance.user.id} ausente na catraca "
+                                f"{device.name}"
+                            ),
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
                 response = self.update_objects(
                     "cards",
                     [
