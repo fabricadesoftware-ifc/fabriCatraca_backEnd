@@ -602,6 +602,7 @@ def receive_catra_event(request):
     from src.core.control_Id.infra.control_id_django_app.models import (
         AccessLogs,
         Device,
+        Portal,
     )
     from .models import MonitorConfig
 
@@ -652,6 +653,28 @@ def receive_catra_event(request):
             else datetime.now(tz=dt_timezone.utc)
         )
 
+        # ── Resolve portal ──
+        raw_portal_id = (
+            payload.get("portal_id")
+            or payload.get("door_id")
+            or event_data.get("portal_id")
+            or event_data.get("door_id")
+        )
+        portal = None
+        if raw_portal_id is not None:
+            try:
+                portal_id = int(raw_portal_id)
+                if portal_id > 0:
+                    portal = Portal.objects.filter(id=portal_id).first()
+                    if not portal:
+                        logger.warning(
+                            f"⚠️ [CATRA_EVENT] Portal id={portal_id} não existe no banco"
+                        )
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"⚠️ [CATRA_EVENT] portal_id inválido recebido: {raw_portal_id}"
+                )
+
         # ── Mapeia event_type da catraca para EventType do model ──
         # 7 = TURN_LEFT / 8 = TURN_RIGHT → registra como ACESSO_CONCEDIDO (7)
         # 9 = GIVE_UP → registra como DESISTENCIA_DE_ENTRADA (13)
@@ -670,7 +693,7 @@ def receive_catra_event(request):
             defaults={
                 "event_type": model_event_type,
                 "user": None,
-                "portal": None,
+                "portal": portal,
                 "access_rule": None,
                 "card_value": "",
                 "qr_code": "",
@@ -684,7 +707,8 @@ def receive_catra_event(request):
         action = "created" if created else "already_exists"
         logger.info(
             f"✅ [CATRA_EVENT] {action} — {event_name} (type={event_type}) "
-            f"device={device.name} uuid={event_uuid} access_event_id={access_event_id}"
+            f"device={device.name} portal={portal.name if portal else raw_portal_id} "
+            f"uuid={event_uuid} access_event_id={access_event_id}"
         )
 
         return Response(
@@ -695,6 +719,7 @@ def receive_catra_event(request):
                 "event_type": event_type,
                 "model_event_type": model_event_type,
                 "device": str(device),
+                "portal": portal.name if portal else None,
                 "time": str(timestamp),
             },
             status=status.HTTP_200_OK,
