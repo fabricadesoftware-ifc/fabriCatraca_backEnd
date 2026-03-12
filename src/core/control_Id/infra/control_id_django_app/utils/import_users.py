@@ -35,6 +35,80 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = FileUploadSerializer
 
+    def _build_user_payload(self, user):
+        payload = {
+            "id": user.id,
+            "name": user.name,
+            "registration": user.registration,
+        }
+        if getattr(user, "user_type_id", None) is not None:
+            payload["user_type_id"] = user.user_type_id
+        return payload
+
+    def _sync_user_in_device(self, user, device):
+        self.set_device(device)
+
+        create_response = self.create_objects(
+            "users",
+            [self._build_user_payload(user)],
+        )
+
+        if create_response.status_code != status.HTTP_201_CREATED:
+            update_response = self.update_objects(
+                "users",
+                {
+                    "name": user.name,
+                    "registration": user.registration or "",
+                    **(
+                        {"user_type_id": user.user_type_id}
+                        if getattr(user, "user_type_id", None) is not None
+                        else {}
+                    ),
+                },
+                {"users": {"id": user.id}},
+            )
+            if update_response.status_code != status.HTTP_200_OK:
+                return (
+                    False,
+                    f"Erro ao sincronizar usuário na catraca {device.name}: "
+                    f"{getattr(update_response, 'data', update_response.__dict__)}",
+                )
+
+        if hasattr(user, "pin") and user.pin:
+            pin_response = self.update_objects(
+                "pins",
+                {"value": user.pin},
+                {"pins": {"user_id": user.id}},
+            )
+            if pin_response.status_code != status.HTTP_200_OK:
+                pin_response = self.create_objects(
+                    "pins",
+                    [{"user_id": user.id, "value": user.pin}],
+                )
+                if pin_response.status_code != status.HTTP_201_CREATED:
+                    return (
+                        False,
+                        f"Erro ao sincronizar PIN na catraca {device.name}: "
+                        f"{getattr(pin_response, 'data', pin_response.__dict__)}",
+                    )
+
+        return True, None
+
+    def sync_user_in_catraca(self, user):
+        try:
+            devices = list(Device.objects.filter(is_active=True))
+            if not devices:
+                return False, "Nenhuma catraca ativa encontrada"
+
+            for device in devices:
+                success, error_message = self._sync_user_in_device(user, device)
+                if not success:
+                    return False, error_message
+
+            return True, "Usuário sincronizado com sucesso em todas as catracas"
+        except Exception as e:
+            return False, f"Erro ao sincronizar usuário na catraca: {str(e)}"
+
     def get(self, request, *args, **kwargs):
         """
         Retorna informações sobre como usar a API de importação.
@@ -60,45 +134,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         """
         Cria o usuário em todas as catracas ativas usando a mesma lógica do UserViewSet.
         """
-        try:
-            devices = list(Device.objects.filter(is_active=True))
-            if not devices:
-                return False, "Nenhuma catraca ativa encontrada"
-
-            # Cria em todas as catracas (mixin já itera em todas)
-            response = self.create_objects(
-                "users",
-                [
-                    {
-                        "id": user.id,
-                        "name": user.name,
-                        "registration": user.registration,
-                    }
-                ],
-            )
-
-            if response.status_code != status.HTTP_201_CREATED:
-                return (
-                    False,
-                    f"Erro ao criar usuário na catraca: {getattr(response, 'data', response.__dict__)}",
-                )
-
-            # Cria o PIN de identificação na tabela 'pins' da catraca
-            if hasattr(user, "pin") and user.pin:
-                self.create_objects(
-                    "pins",
-                    [
-                        {
-                            "user_id": user.id,
-                            "value": user.pin,
-                        }
-                    ],
-                )
-
-            return True, "Usuário criado com sucesso em todas as catracas"
-
-        except Exception as e:
-            return False, f"Erro ao criar usuário na catraca: {str(e)}"
+        return self.sync_user_in_catraca(user)
 
     def create_group_in_catraca(self, group):
         """
@@ -397,6 +433,15 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                                             "is_active",
                                         ]
                                     )
+
+                                success, err = self.sync_user_in_catraca(user)
+                                if not success:
+                                    transaction.savepoint_rollback(sp_user)
+                                    catraca_errors.append(
+                                        f"Usuário {name_user} ({registration}): {err}"
+                                    )
+                                    continue
+
                                 updated_users += 1
                         except Exception as e:
                             transaction.savepoint_rollback(sp_user)

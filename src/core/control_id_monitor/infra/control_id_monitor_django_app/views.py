@@ -530,8 +530,7 @@ def receive_auxiliary_notification(request):
     re-tentando.
     """
     logger.info(
-        f"📥 [MONITOR] Notificação auxiliar recebida: "
-        f"{request.path} — {request.data}"
+        f"📥 [MONITOR] Notificação auxiliar recebida: {request.path} — {request.data}"
     )
     return Response({"success": True})
 
@@ -627,7 +626,9 @@ def receive_catra_event(request):
             )
 
         event_type = event_data.get("type", 0)
-        event_name = event_data.get("name", _CATRA_EVENT_NAMES.get(event_type, "UNKNOWN"))
+        event_name = event_data.get(
+            "name", _CATRA_EVENT_NAMES.get(event_type, "UNKNOWN")
+        )
         event_uuid = event_data.get("uuid", "")
         access_event_id = payload.get("access_event_id")
 
@@ -638,7 +639,10 @@ def receive_catra_event(request):
             if monitor_cfg:
                 device = monitor_cfg.device
         if not device:
-            device = Device.objects.filter(is_default=True).first() or Device.objects.filter(is_active=True).first()
+            device = (
+                Device.objects.filter(is_default=True).first()
+                or Device.objects.filter(is_active=True).first()
+            )
         if not device:
             logger.error(f"❌ [CATRA_EVENT] Nenhum device para device_id={device_id}")
             return Response(
@@ -681,7 +685,7 @@ def receive_catra_event(request):
         if event_type == 9:
             model_event_type = 13  # DESISTENCIA_DE_ENTRADA
         else:
-            model_event_type = 7   # ACESSO_CONCEDIDO
+            model_event_type = 7  # ACESSO_CONCEDIDO
 
         # ── Identifier único: uuid do evento ou access_event_id ──
         identifier = event_uuid or str(access_event_id or event_time or "")

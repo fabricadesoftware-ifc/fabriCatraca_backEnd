@@ -236,7 +236,11 @@ def easy_setup_history(request):
 
     executions = []
     for tid in task_ids:
-        logs = EasySetupLog.objects.filter(task_id=tid).select_related("device")
+        logs = list(
+            EasySetupLog.objects.filter(task_id=tid)
+            .select_related("device")
+            .order_by("started_at")
+        )
         statuses = [l.status for l in logs]
 
         if all(s == EasySetupLog.Status.SUCCESS for s in statuses):
@@ -251,9 +255,14 @@ def easy_setup_history(request):
         else:
             overall = "partial"
 
+        started_at = min(l.started_at for l in logs)
+        finished_candidates = [l.finished_at for l in logs if l.finished_at]
+        finished_at = max(finished_candidates) if finished_candidates else None
+
         executions.append(
             {
                 "task_id": tid,
+                "status": overall,
                 "overall_status": overall,
                 "devices": [
                     {
@@ -263,9 +272,11 @@ def easy_setup_history(request):
                     }
                     for l in logs
                 ],
-                "started_at": min(l.started_at for l in logs),
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "device_count": len(logs),
                 "total_devices": len(logs),
             }
         )
 
-    return Response({"executions": executions})
+    return Response({"results": executions, "executions": executions})
