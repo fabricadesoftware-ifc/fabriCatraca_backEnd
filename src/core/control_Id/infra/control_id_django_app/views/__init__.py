@@ -14,6 +14,11 @@ from .group_access_rules import GroupAccessRulesViewSet
 from .sync import sync_all, sync_status, sync_device_config
 from .device import DeviceViewSet
 from .access_logs import AccessLogsViewSet
+from .device_actions import (
+    buzzer_buzz,
+    message_to_screen,
+    remote_user_authorization,
+)
 
 
 
@@ -35,5 +40,8 @@ __all__ = [
     'sync_status',
     'sync_device_config',
     'DeviceViewSet',
-    'AccessLogsViewSet'
+    'AccessLogsViewSet',
+    'message_to_screen',
+    'buzzer_buzz',
+    'remote_user_authorization',
 ] 

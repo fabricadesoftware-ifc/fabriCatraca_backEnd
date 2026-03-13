@@ -13,6 +13,11 @@ from .group import CustomGroupSerializer
 from .user_groups import UserGroupSerializer
 from .group_access_rules import GroupAccessRuleSerializer
 from .access_logs import AccessLogsSerializer
+from .device_actions import (
+    BuzzerBuzzSerializer,
+    MessageToScreenSerializer,
+    RemoteUserAuthorizationSerializer,
+)
 
 __all__ = [
     'TemplateSerializer',
@@ -30,5 +35,8 @@ __all__ = [
     'CustomGroupSerializer',
     'UserGroupSerializer',
     'GroupAccessRuleSerializer',
-    'AccessLogsSerializer'
+    'AccessLogsSerializer',
+    'MessageToScreenSerializer',
+    'BuzzerBuzzSerializer',
+    'RemoteUserAuthorizationSerializer',
 ] 

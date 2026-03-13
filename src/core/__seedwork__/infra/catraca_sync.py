@@ -88,6 +88,7 @@ class ControlIDSyncMixin:
         method: str = "POST",
         json_data: Dict = None,
         retry_on_auth_fail: bool = True,
+        request_timeout: int = 10,
     ) -> requests.Response:
         """
         Helper para fazer requests com retry automático em caso de sessão expirada.
@@ -108,7 +109,7 @@ class ControlIDSyncMixin:
                 url=url,
                 json=json_data,
                 headers={"Content-Type": "application/json"},
-                timeout=10,
+                timeout=request_timeout,
             )
 
             if response.status_code == 401 and retry_on_auth_fail:
@@ -119,7 +120,7 @@ class ControlIDSyncMixin:
                     url=url,
                     json=json_data,
                     headers={"Content-Type": "application/json"},
-                    timeout=10,
+                    timeout=request_timeout,
                 )
 
             return response
@@ -127,6 +128,133 @@ class ControlIDSyncMixin:
         except requests.RequestException as e:
             # trunk-ignore(ruff/B904)
             raise Exception(f"Erro na requisição para {endpoint}: {str(e)}")
+
+    @staticmethod
+    def _extract_response_data(response: requests.Response) -> Any:
+        if not response.text:
+            return None
+
+        try:
+            return response.json()
+        except ValueError:
+            return response.text
+
+    def execute_remote_endpoint(
+        self,
+        endpoint: str,
+        payload: Dict[str, Any] | None = None,
+        method: str = "POST",
+        request_timeout: int = 10,
+    ) -> requests.Response:
+        """
+        Executa um endpoint remoto na catraca atualmente selecionada.
+        """
+        if not self.device:
+            raise ValueError("Nenhum dispositivo selecionado")
+
+        return self._make_request(
+            endpoint=endpoint,
+            method=method,
+            json_data=payload,
+            request_timeout=request_timeout,
+        )
+
+    def execute_remote_endpoint_in_devices(
+        self,
+        endpoint: str,
+        payload: Dict[str, Any] | None,
+        device_ids: List[int],
+        method: str = "POST",
+        request_timeout: int = 10,
+    ) -> Response:
+        """
+        Executa o mesmo endpoint remoto em uma lista de catracas.
+        """
+        try:
+            from src.core.control_Id.infra.control_id_django_app.models.device import (
+                Device,
+            )
+
+            devices = list(Device.objects.filter(id__in=device_ids).order_by("id"))
+            found_ids = {device.id for device in devices}
+            missing_ids = sorted(set(device_ids) - found_ids)
+
+            if missing_ids:
+                return Response(
+                    {"error": f"Devices não encontrados: {missing_ids}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not devices:
+                return Response(
+                    {"error": "Nenhuma catraca encontrada para a operação"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            results = []
+            success_count = 0
+
+            for device in devices:
+                self.set_device(device)
+
+                try:
+                    response = self.execute_remote_endpoint(
+                        endpoint=endpoint,
+                        payload=payload,
+                        method=method,
+                        request_timeout=request_timeout,
+                    )
+                    response_data = self._extract_response_data(response)
+                    ok = 200 <= response.status_code < 300
+
+                    results.append(
+                        {
+                            "device_id": device.id,
+                            "device_name": device.name,
+                            "success": ok,
+                            "status_code": response.status_code,
+                            "response": response_data,
+                        }
+                    )
+
+                    if ok:
+                        success_count += 1
+                except Exception as exc:
+                    results.append(
+                        {
+                            "device_id": device.id,
+                            "device_name": device.name,
+                            "success": False,
+                            "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            "error": str(exc),
+                        }
+                    )
+
+            failed_count = len(results) - success_count
+            response_status = (
+                status.HTTP_200_OK
+                if failed_count == 0
+                else status.HTTP_502_BAD_GATEWAY
+            )
+
+            return Response(
+                {
+                    "success": failed_count == 0,
+                    "endpoint": endpoint,
+                    "requested_devices": device_ids,
+                    "processed_devices": len(results),
+                    "successful_devices": success_count,
+                    "failed_devices": failed_count,
+                    "results": results,
+                },
+                status=response_status,
+            )
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def load_objects(
         self, object_name: str, fields: List[str] = None, order_by: List[str] = None

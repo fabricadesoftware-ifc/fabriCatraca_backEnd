@@ -11,6 +11,7 @@ from .views import (
     AccessRuleViewSet, UserAccessRuleViewSet, AccessRuleTimeZoneViewSet,
     PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet, 
     GroupViewSet, UserGroupViewSet, GroupAccessRulesViewSet,
+    message_to_screen, buzzer_buzz, remote_user_authorization,
 )
 from .views.device import DeviceViewSet
 from .views.sync import sync_all, sync_status
@@ -59,6 +60,21 @@ def control_id_root(request, format=None):
 
 urlpatterns = [
     path('', control_id_root, name='control_id-root'),
+    path(
+        'devices/actions/message_to_screen/',
+        message_to_screen,
+        name='device-action-message-to-screen',
+    ),
+    path(
+        'devices/actions/buzzer_buzz/',
+        buzzer_buzz,
+        name='device-action-buzzer-buzz',
+    ),
+    path(
+        'devices/actions/remote_user_authorization/',
+        remote_user_authorization,
+        name='device-action-remote-user-authorization',
+    ),
     path('sync/', sync_all, name='sync-all'),
     path('sync/status/', sync_status, name='sync-status'),
     path('export_users/', ExportUsersView.as_view(), name='export-users'),
