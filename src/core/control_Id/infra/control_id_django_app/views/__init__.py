@@ -19,6 +19,7 @@ from .device_actions import (
     message_to_screen,
     remote_user_authorization,
 )
+from .temporary_user_release import TemporaryUserReleaseViewSet
 
 
 
@@ -44,4 +45,5 @@ __all__ = [
     'message_to_screen',
     'buzzer_buzz',
     'remote_user_authorization',
+    'TemporaryUserReleaseViewSet',
 ] 

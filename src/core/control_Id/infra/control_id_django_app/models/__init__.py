@@ -13,6 +13,7 @@ from .group import CustomGroup
 from .user_groups import UserGroup
 from .group_access_rules import GroupAccessRule
 from .access_logs import AccessLogs
+from .temporary_user_release import TemporaryUserRelease
 
 __all__ = [
     'Template',
@@ -29,5 +30,6 @@ __all__ = [
     'CustomGroup',
     'UserGroup',
     'GroupAccessRule',
-    'AccessLogs'
+    'AccessLogs',
+    'TemporaryUserRelease',
 ] 

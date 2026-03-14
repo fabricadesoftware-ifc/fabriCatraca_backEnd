@@ -1,8 +1,23 @@
+import logging
+
 from celery import shared_task
+from django.utils import timezone
+
 from src.core.control_Id.infra.control_id_django_app.views.sync import GlobalSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_Id.infra.control_id_django_app.models import (
+    AccessLogs,
+    Device,
+    TemporaryUserRelease,
+)
+from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
+    TemporaryUserReleaseService,
+)
 from .sync_collect import collect_all
 from .sync_persist import persist_all
+
+logger = logging.getLogger(__name__)
+GRANTED_EVENT_TYPES = [7, 11, 12, 15]
+DESISTANCE_EVENT_TYPE = 13
 
 
 @shared_task(bind=True)
@@ -72,3 +87,130 @@ def run_global_sync(self) -> dict:
     }
 
 
+@shared_task(bind=True)
+def process_temporary_user_releases(self) -> dict:
+    service = TemporaryUserReleaseService()
+    now = timezone.now()
+
+    stats = {
+        "processed": 0,
+        "activated": 0,
+        "consumed": 0,
+        "expired": 0,
+        "failed": 0,
+    }
+
+    pending_releases = list(
+        TemporaryUserRelease.objects.select_related("user", "access_rule").filter(
+            status=TemporaryUserRelease.Status.PENDING,
+            valid_from__lte=now,
+        )
+    )
+
+    active_releases = list(
+        TemporaryUserRelease.objects.select_related(
+            "user",
+            "access_rule",
+            "user_access_rule",
+        ).filter(status=TemporaryUserRelease.Status.ACTIVE)
+    )
+
+    for release in pending_releases:
+        stats["processed"] += 1
+
+        if release.valid_until <= now:
+            release.status = release.Status.EXPIRED
+            release.closed_at = now
+            release.result_message = "Liberação expirou antes de ser ativada."
+            release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+            stats["expired"] += 1
+            continue
+
+        try:
+            service.activate_release(release)
+            stats["activated"] += 1
+        except Exception as exc:
+            logger.exception("Erro ao ativar liberação temporária %s", release.id)
+            service.fail_release(
+                release,
+                result_message=f"Falha ao ativar liberação temporária: {exc}",
+            )
+            stats["failed"] += 1
+
+    refreshed_active_releases = list(
+        TemporaryUserRelease.objects.select_related(
+            "user",
+            "access_rule",
+            "user_access_rule",
+        ).filter(status=TemporaryUserRelease.Status.ACTIVE)
+    )
+
+    for release in refreshed_active_releases:
+        stats["processed"] += 1
+
+        consumed_log = (
+            AccessLogs.objects.filter(
+                user=release.user,
+                access_rule=release.access_rule,
+                time__gte=release.activated_at or release.valid_from,
+                event_type__in=GRANTED_EVENT_TYPES,
+            )
+            .order_by("time")
+            .first()
+        )
+
+        if consumed_log:
+            try:
+                service.close_release(
+                    release,
+                    final_status=release.Status.CONSUMED,
+                    result_message="Liberação utilizada com sucesso.",
+                    consumed_log=consumed_log,
+                    consumed_at=consumed_log.time,
+                )
+                stats["consumed"] += 1
+            except Exception as exc:
+                logger.exception("Erro ao finalizar liberação consumida %s", release.id)
+                service.fail_release(
+                    release,
+                    result_message=f"Falha ao encerrar liberação consumida: {exc}",
+                )
+                stats["failed"] += 1
+            continue
+
+        if release.valid_until > now:
+            continue
+
+        desistance_log = (
+            AccessLogs.objects.filter(
+                user=release.user,
+                access_rule=release.access_rule,
+                time__gte=release.activated_at or release.valid_from,
+                event_type=DESISTANCE_EVENT_TYPE,
+            )
+            .order_by("time")
+            .first()
+        )
+
+        result_message = (
+            "Usuário desistiu da entrada após a liberação temporária."
+            if desistance_log
+            else "Usuário não utilizou a liberação temporária."
+        )
+
+        try:
+            service.close_release(
+                release,
+                final_status=release.Status.EXPIRED,
+                result_message=result_message,
+            )
+            stats["expired"] += 1
+        except Exception as exc:
+            logger.exception("Erro ao expirar liberação temporária %s", release.id)
+            service.fail_release(
+                release,
+                result_message=f"Falha ao expirar liberação temporária: {exc}",
+            )
+            stats["failed"] += 1
+
+    return {"success": True, "stats": stats}

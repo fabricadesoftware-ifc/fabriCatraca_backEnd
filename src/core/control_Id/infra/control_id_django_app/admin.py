@@ -16,6 +16,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     Portal,
     Area,
     AccessLogs,
+    TemporaryUserRelease,
 )
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
@@ -120,6 +121,22 @@ class AccessLogsAdmin(admin.ModelAdmin):
     )
     list_filter = ("event_type", "device", "portal")
     search_fields = ("user__name", "device__name", "portal__name")
+
+
+@admin.register(TemporaryUserRelease)
+class TemporaryUserReleaseAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "requested_by",
+        "access_rule",
+        "status",
+        "valid_until",
+        "activated_at",
+        "closed_at",
+    )
+    list_filter = ("status", "access_rule")
+    search_fields = ("user__name", "requested_by__name", "notes", "result_message")
 
 
 # Register your models here.
