@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .views import (
+    MonitorAlertViewSet,
     MonitorConfigViewSet,
     receive_auxiliary_notification,
     receive_catra_event,
@@ -14,6 +15,7 @@ from .views import (
 # Router para as views do Monitor
 router = DefaultRouter()
 router.register(r"monitor-configs", MonitorConfigViewSet, basename="monitorconfig")
+router.register(r"alerts", MonitorAlertViewSet, basename="monitoralert")
 
 
 @api_view(["GET"])
@@ -26,6 +28,7 @@ def monitor_root(request, format=None):
             "monitor_configs": reverse(
                 "monitorconfig-list", request=request, format=format
             ),
+            "alerts": reverse("monitoralert-list", request=request, format=format),
             "dao_webhook": reverse(
                 "monitor-dao-notification", request=request, format=format
             ),

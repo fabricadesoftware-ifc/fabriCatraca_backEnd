@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -6,9 +7,10 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExampl
 from drf_spectacular.types import OpenApiTypes
 import logging
 
-from .models import MonitorConfig
+from .models import MonitorAlert, MonitorAlertRead, MonitorConfig
 from src.core.control_Id.infra.control_id_django_app.models import Device
-from .serializers import MonitorConfigSerializer
+from .monitoring import resolve_monitor_device, touch_device_heartbeat
+from .serializers import MonitorAlertSerializer, MonitorConfigSerializer
 from .mixins import MonitorConfigSyncMixin
 from .notification_handlers import monitor_handler
 
@@ -295,6 +297,77 @@ class MonitorConfigViewSet(MonitorConfigSyncMixin, viewsets.ModelViewSet):
         )
 
 
+@extend_schema(tags=["Monitor Alerts"])
+class MonitorAlertViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = (
+        MonitorAlert.objects.select_related("device", "user")
+        .prefetch_related("reads")
+        .all()
+    )
+    serializer_class = MonitorAlertSerializer
+    filterset_fields = ["type", "severity", "is_active", "device"]
+    search_fields = ["title", "message", "device__name", "user__name"]
+    ordering_fields = ["started_at", "created_at", "resolved_at"]
+    ordering = ["-is_active", "-started_at", "-created_at"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user and user.is_authenticated:
+            queryset = queryset.filter(Q(user__isnull=True) | Q(user=user))
+        return queryset
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        unread_count = queryset.exclude(reads__user=request.user).distinct().count()
+        active_count = queryset.filter(is_active=True).distinct().count()
+        total_count = queryset.distinct().count()
+        return Response(
+            {
+                "unread_count": unread_count,
+                "active_count": active_count,
+                "total_count": total_count,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="mark-read")
+    def mark_read(self, request, pk=None):
+        alert = self.get_object()
+        read, created = MonitorAlertRead.objects.get_or_create(
+            alert=alert,
+            user=request.user,
+        )
+        serializer = self.get_serializer(alert)
+        return Response(
+            {
+                "success": True,
+                "created": created,
+                "read_at": read.read_at,
+                "alert": serializer.data,
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="mark-all-read")
+    def mark_all_read(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+        alert_ids = list(queryset.values_list("id", flat=True))
+        existing_ids = set(
+            MonitorAlertRead.objects.filter(
+                user=request.user,
+                alert_id__in=alert_ids,
+            ).values_list("alert_id", flat=True)
+        )
+        MonitorAlertRead.objects.bulk_create(
+            [
+                MonitorAlertRead(alert_id=alert_id, user=request.user)
+                for alert_id in alert_ids
+                if alert_id not in existing_ids
+            ]
+        )
+        return Response({"success": True, "marked_count": len(alert_ids) - len(existing_ids)})
+
+
 # ============================================================================
 # VIEW PARA RECEBER NOTIFICAÇÕES DA CATRACA (PUSH ENDPOINT)
 # ============================================================================
@@ -496,6 +569,8 @@ def receive_dao_notification(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        touch_device_heartbeat(device_id, source="dao")
+
         # Processa notificação
         result = monitor_handler.process_notification(request.data)
 
@@ -532,6 +607,10 @@ def receive_auxiliary_notification(request):
     logger.info(
         f"📥 [MONITOR] Notificação auxiliar recebida: {request.path} — {request.data}"
     )
+    device_id = request.data.get("device_id") if isinstance(request.data, dict) else None
+    source = request.path.rstrip("/").split("/")[-1] or "auxiliary"
+    if device_id not in (None, ""):
+        touch_device_heartbeat(device_id, source=source)
     return Response({"success": True})
 
 
@@ -603,8 +682,6 @@ def receive_catra_event(request):
         Device,
         Portal,
     )
-    from .models import MonitorConfig
-
     try:
         payload = request.data
         logger.info(f"📥 [CATRA_EVENT] Payload recebido: {payload}")
@@ -632,17 +709,8 @@ def receive_catra_event(request):
         event_uuid = event_data.get("uuid", "")
         access_event_id = payload.get("access_event_id")
 
-        # ── Resolve device ──
-        device = Device.objects.filter(id=device_id).first()
-        if not device:
-            monitor_cfg = MonitorConfig.objects.select_related("device").first()
-            if monitor_cfg:
-                device = monitor_cfg.device
-        if not device:
-            device = (
-                Device.objects.filter(is_default=True).first()
-                or Device.objects.filter(is_active=True).first()
-            )
+        monitor_cfg = touch_device_heartbeat(device_id, source="catra_event")
+        device = monitor_cfg.device if monitor_cfg else resolve_monitor_device(device_id)
         if not device:
             logger.error(f"❌ [CATRA_EVENT] Nenhum device para device_id={device_id}")
             return Response(
