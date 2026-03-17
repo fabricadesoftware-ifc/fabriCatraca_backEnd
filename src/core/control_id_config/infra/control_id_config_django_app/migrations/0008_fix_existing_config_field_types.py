@@ -1,6 +1,84 @@
 from django.db import migrations, models
 
 
+def _convert_security_log_type_to_boolean(apps, schema_editor):
+    table_name = "control_id_config_django_app_securityconfig"
+
+    with schema_editor.connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = %s::regclass
+              AND contype = 'c'
+              AND pg_get_constraintdef(oid) ILIKE %s
+            """,
+            [table_name, "%log_type%"],
+        )
+        constraint_names = [row[0] for row in cursor.fetchall()]
+
+        for constraint_name in constraint_names:
+            schema_editor.execute(
+                f'ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS "{constraint_name}"'
+            )
+
+        cursor.execute(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name = %s
+              AND column_name = 'log_type'
+            """,
+            [table_name],
+        )
+        row = cursor.fetchone()
+
+    if not row or row[0] == "boolean":
+        return
+
+    schema_editor.execute(
+        f"""
+        ALTER TABLE {table_name}
+        ALTER COLUMN log_type TYPE boolean
+        USING CASE
+            WHEN log_type IS NULL THEN FALSE
+            WHEN log_type::integer = 0 THEN FALSE
+            ELSE TRUE
+        END
+        """
+    )
+
+
+def _convert_security_log_type_to_smallint(apps, schema_editor):
+    table_name = "control_id_config_django_app_securityconfig"
+
+    with schema_editor.connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_name = %s
+              AND column_name = 'log_type'
+            """,
+            [table_name],
+        )
+        row = cursor.fetchone()
+
+    if not row or row[0] == "smallint":
+        return
+
+    schema_editor.execute(
+        f"""
+        ALTER TABLE {table_name}
+        ALTER COLUMN log_type TYPE smallint
+        USING CASE
+            WHEN log_type IS TRUE THEN 1
+            ELSE 0
+        END
+        """
+    )
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -52,24 +130,9 @@ class Migration(migrations.Migration):
         ),
         migrations.SeparateDatabaseAndState(
             database_operations=[
-                migrations.RunSQL(
-                    sql="""
-                        ALTER TABLE control_id_config_django_app_securityconfig
-                        ALTER COLUMN log_type TYPE boolean
-                        USING CASE
-                            WHEN log_type IS NULL THEN FALSE
-                            WHEN log_type = 0 THEN FALSE
-                            ELSE TRUE
-                        END
-                    """,
-                    reverse_sql="""
-                        ALTER TABLE control_id_config_django_app_securityconfig
-                        ALTER COLUMN log_type TYPE smallint
-                        USING CASE
-                            WHEN log_type IS TRUE THEN 1
-                            ELSE 0
-                        END
-                    """,
+                migrations.RunPython(
+                    _convert_security_log_type_to_boolean,
+                    _convert_security_log_type_to_smallint,
                 ),
             ],
             state_operations=[
