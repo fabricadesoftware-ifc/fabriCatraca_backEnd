@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      - 'docs/**'
+      - '.vscode/**'
+      - '.github/**'
+      - '**/*.svg'
+      - '**/*.png'
 
 jobs:
   deploy:
@@ -12,7 +20,7 @@ jobs:
       - name: Cloning repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Push to dokku
         uses: dokku/github-action@master
