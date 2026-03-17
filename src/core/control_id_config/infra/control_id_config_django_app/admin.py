@@ -53,11 +53,11 @@ class HardwareConfigAdmin(admin.ModelAdmin):
 class SecurityConfigAdmin(admin.ModelAdmin):
     list_display = (
         "device",
-        "password_only",
-        "hide_password_only",
-        "hide_name_on_identification",
+        "verbose_logging_enabled",
+        "log_type",
+        "multi_factor_authentication_enabled",
     )
-    list_filter = ("password_only", "hide_password_only", "hide_name_on_identification")
+    list_filter = ("verbose_logging_enabled", "log_type", "multi_factor_authentication_enabled")
     search_fields = ("device__name",)
     ordering = ("device__name",)
 

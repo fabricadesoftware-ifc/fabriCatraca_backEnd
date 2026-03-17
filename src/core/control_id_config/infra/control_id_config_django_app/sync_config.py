@@ -28,6 +28,7 @@ def collect_config_data(devices) -> Dict[int, Dict[str, Any]]:
             
             # Coleta configurações usando get_configuration.fcgi
             general = {}
+            identifier = {}
             monitor = {}
             try:
                 # Usa get_configuration.fcgi especificando os campos necessários
@@ -38,6 +39,7 @@ def collect_config_data(devices) -> Dict[int, Dict[str, Any]]:
                 # Array vazio retorna TODOS os campos disponíveis
                 payload = {
                     "general": [],
+                    "identifier": [],
                     "monitor": []
                 }
                 
@@ -48,6 +50,7 @@ def collect_config_data(devices) -> Dict[int, Dict[str, Any]]:
                 if response.status_code == 200:
                     cfg_payload = response.json() or {}
                     general = cfg_payload.get('general', {})
+                    identifier = cfg_payload.get('identifier', {})
                     monitor = cfg_payload.get('monitor', {})
                     print(f"[CONFIG_SYNC] Configurações obtidas com sucesso do dispositivo {device.name}")
                     print(f"[CONFIG_SYNC] 🔍 DEBUG - Response JSON COMPLETO:")
@@ -122,7 +125,10 @@ def collect_config_data(devices) -> Dict[int, Dict[str, Any]]:
                 'hide_name_on_identification': to_bool(general.get('hide_name_on_identification'), False),
                 'denied_transaction_code': general.get('denied_transaction_code', 0),
                 'send_code_when_not_identified': to_bool(general.get('send_code_when_not_identified'), False),
-                'send_code_when_not_authorized': to_bool(general.get('send_code_when_not_authorized'), False)
+                'send_code_when_not_authorized': to_bool(general.get('send_code_when_not_authorized'), False),
+                'verbose_logging_enabled': to_bool(identifier.get('verbose_logging'), True),
+                'log_type': int(str(identifier.get('log_type', 1)) or 1),
+                'multi_factor_authentication_enabled': to_bool(identifier.get('multi_factor_authentication'), False),
             }
             
             # Configurações de UI

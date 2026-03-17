@@ -350,6 +350,7 @@ class _DebugSetupEngine(_EasySetupEngine):
                 identifier_cfg["verbose_logging"] = bool_to_str(
                     getattr(sec_cfg, "verbose_logging_enabled", True)
                 )
+                identifier_cfg["log_type"] = str(getattr(sec_cfg, "log_type", 1))
             identifier_cfg.setdefault("card_identification_enabled", "1")
             identifier_cfg.setdefault("pin_identification_enabled", "1")
             payload["identifier"] = identifier_cfg

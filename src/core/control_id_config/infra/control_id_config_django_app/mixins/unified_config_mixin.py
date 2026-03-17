@@ -226,40 +226,45 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
 
     # Métodos de configuração de segurança
     def update_security_config_in_catraca(self, instance):
-        """Atualiza configurações de segurança na catraca"""
-        response = self.update_objects(
-            "general",
-            {
-                "password_only": instance.password_only,
-                "hide_password_only": instance.hide_password_only,
-                "password_only_tip": instance.password_only_tip,
-                "hide_name_on_identification": instance.hide_name_on_identification,
-                "denied_transaction_code": instance.denied_transaction_code,
-                "send_code_when_not_identified": instance.send_code_when_not_identified,
-                "send_code_when_not_authorized": instance.send_code_when_not_authorized,
-            },
-        )
-        return response
+        """Atualiza configuracoes de seguranca no bloco identifier da catraca."""
+        payload = {
+            "identifier": {
+                "multi_factor_authentication": "1"
+                if getattr(instance, "multi_factor_authentication_enabled", False)
+                else "0",
+                "verbose_logging": "1"
+                if getattr(instance, "verbose_logging_enabled", True)
+                else "0",
+                "log_type": str(getattr(instance, "log_type", 1)),
+            }
+        }
+        return self.set_configuration(payload)
 
     def sync_security_config_from_catraca(self):
-        """Sincroniza configurações de segurança da catraca"""
+        """Sincroniza configuracoes de seguranca a partir do bloco identifier."""
         try:
             from ..models import SecurityConfig
             import requests
 
-            # Usa get_configuration.fcgi em vez de load_objects
             sess = self.login()
             response = requests.post(
-                self.get_url(f"get_configuration.fcgi?session={sess}"), json={}
+                self.get_url(f"get_configuration.fcgi?session={sess}"),
+                json={
+                    "identifier": [
+                        "verbose_logging",
+                        "log_type",
+                        "multi_factor_authentication",
+                    ]
+                },
             )
 
             if response.status_code == 200:
-                config_data = response.json().get("general", {})
+                config_data = response.json().get("identifier", {})
             else:
                 return Response(
                     {
                         "success": False,
-                        "message": f"Erro ao obter configurações: {response.status_code}",
+                        "message": f"Erro ao obter configuracoes: {response.status_code}",
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
@@ -268,24 +273,12 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                 config, created = SecurityConfig.objects.update_or_create(
                     device=self.device,
                     defaults={
-                        "password_only": to_bool(
-                            config_data.get("password_only"), False
+                        "verbose_logging_enabled": to_bool(
+                            config_data.get("verbose_logging"), True
                         ),
-                        "hide_password_only": to_bool(
-                            config_data.get("hide_password_only"), False
-                        ),
-                        "password_only_tip": config_data.get("password_only_tip", ""),
-                        "hide_name_on_identification": to_bool(
-                            config_data.get("hide_name_on_identification"), False
-                        ),
-                        "denied_transaction_code": config_data.get(
-                            "denied_transaction_code", ""
-                        ),
-                        "send_code_when_not_identified": to_bool(
-                            config_data.get("send_code_when_not_identified"), False
-                        ),
-                        "send_code_when_not_authorized": to_bool(
-                            config_data.get("send_code_when_not_authorized"), False
+                        "log_type": int(str(config_data.get("log_type", 1)) or 1),
+                        "multi_factor_authentication_enabled": to_bool(
+                            config_data.get("multi_factor_authentication"), False
                         ),
                     },
                 )
@@ -293,7 +286,7 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                 return Response(
                     {
                         "success": True,
-                        "message": f"Configuração de segurança {'criada' if created else 'atualizada'} com sucesso",
+                        "message": f"Configuracao de seguranca {'criada' if created else 'atualizada'} com sucesso",
                         "config_id": config.id,
                     }
                 )
@@ -301,7 +294,7 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                 return Response(
                     {
                         "success": False,
-                        "message": "Nenhuma configuração encontrada na catraca",
+                        "message": "Nenhuma configuracao encontrada na catraca",
                     },
                     status=status.HTTP_404_NOT_FOUND,
                 )

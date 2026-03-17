@@ -492,6 +492,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             identifier_cfg["verbose_logging"] = bool_to_str(
                 getattr(sec_cfg, "verbose_logging_enabled", True)
             )
+            identifier_cfg["log_type"] = str(getattr(sec_cfg, "log_type", 1))
             result["sections"]["security"] = {"source_device_id": sec_cfg.device_id}
 
         # Métodos de identificação habilitados.

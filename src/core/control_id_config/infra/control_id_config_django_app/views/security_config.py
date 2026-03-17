@@ -12,7 +12,7 @@ from ..mixins import SecurityConfigSyncMixin
 class SecurityConfigViewSet(SecurityConfigSyncMixin, viewsets.ModelViewSet):
     queryset = SecurityConfig.objects.all()
     serializer_class = SecurityConfigSerializer
-    filterset_fields = ['device', 'password_only', 'hide_password_only']
+    filterset_fields = ['device', 'verbose_logging_enabled', 'multi_factor_authentication_enabled', 'log_type']
     search_fields = ['device__name']
     ordering_fields = ['device__name']
     ordering = ['device__name']
@@ -56,6 +56,6 @@ class SecurityConfigViewSet(SecurityConfigSyncMixin, viewsets.ModelViewSet):
         """Sincroniza configurações de segurança da catraca"""
         instance = self.get_object()
         self.set_device(instance.device)
-        return self.sync_security_config_from_catraca(instance.device)
+        return self.sync_security_config_from_catraca()
 
 
