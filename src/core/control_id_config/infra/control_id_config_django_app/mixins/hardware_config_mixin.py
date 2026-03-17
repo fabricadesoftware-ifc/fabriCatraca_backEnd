@@ -5,6 +5,24 @@ from rest_framework import status
 
 class HardwareConfigSyncMixin(ControlIDSyncMixin):
     """Mixin para sincronização de configurações de hardware"""
+
+    @staticmethod
+    def _bool_to_device_flag(value):
+        return 1 if value else 0
+
+    def _update_network_interlock_in_catraca(self, instance):
+        payload = {
+            "interlock_enabled": self._bool_to_device_flag(
+                getattr(instance, "network_interlock_enabled", False)
+            ),
+            "api_bypass_enabled": self._bool_to_device_flag(
+                getattr(instance, "network_interlock_api_bypass_enabled", False)
+            ),
+            "rex_bypass_enabled": self._bool_to_device_flag(
+                getattr(instance, "network_interlock_rex_bypass_enabled", False)
+            ),
+        }
+        return self._make_request("set_network_interlock.fcgi", json_data=payload)
     
     def update_hardware_config_in_catraca(self, instance):
         """Atualiza configurações de hardware na catraca"""
@@ -25,15 +43,24 @@ class HardwareConfigSyncMixin(ControlIDSyncMixin):
             
             # Usa o helper com retry automático de sessão
             response = self._make_request("set_configuration.fcgi", json_data=payload)
-            
-            if response.status_code == 200:
-                return Response(response.json(), status=status.HTTP_200_OK)
-            else:
+
+            if response.status_code != 200:
                 return Response({
                     "success": False,
                     "error": f"Erro ao atualizar configuração: {response.status_code}",
                     "details": response.text
                 }, status=response.status_code)
+
+            network_interlock_response = self._update_network_interlock_in_catraca(instance)
+            
+            if network_interlock_response.status_code == 200:
+                return Response(response.json(), status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "success": False,
+                    "error": f"Erro ao atualizar network interlock: {network_interlock_response.status_code}",
+                    "details": network_interlock_response.text
+                }, status=network_interlock_response.status_code)
                 
         except Exception as e:
             return Response({
@@ -47,6 +74,7 @@ class HardwareConfigSyncMixin(ControlIDSyncMixin):
             from ..models import HardwareConfig
             import logging
             logger = logging.getLogger(__name__)
+            existing_config = HardwareConfig.objects.filter(device=self.device).first()
             
             # Payload CORRETO para IDBLOCK
             # general: beep_enabled, bell_enabled, bell_relay, exception_mode
@@ -111,6 +139,15 @@ class HardwareConfigSyncMixin(ControlIDSyncMixin):
                     'bell_enabled': to_bool(config_data.get('bell_enabled'), False),
                     'bell_relay': int(config_data.get('bell_relay', 2) or 2),
                     'exception_mode': exception_mode_value,
+                    'network_interlock_enabled': (
+                        existing_config.network_interlock_enabled if existing_config else False
+                    ),
+                    'network_interlock_api_bypass_enabled': (
+                        existing_config.network_interlock_api_bypass_enabled if existing_config else False
+                    ),
+                    'network_interlock_rex_bypass_enabled': (
+                        existing_config.network_interlock_rex_bypass_enabled if existing_config else False
+                    ),
                     # Campos NÃO DISPONÍVEIS na IDBLOCK (valores fixos padrão)
                     'ssh_enabled': False,           # Não existe na IDBLOCK
                     'relayN_enabled': False,        # Não existe na IDBLOCK

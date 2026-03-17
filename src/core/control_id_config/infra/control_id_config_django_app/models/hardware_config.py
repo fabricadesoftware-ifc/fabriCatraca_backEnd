@@ -24,6 +24,18 @@ class HardwareConfig(models.Model):
     door_sensorN_enabled = models.BooleanField(default=False, help_text="Habilitar sensor de porta N")
     door_sensorN_idle = models.IntegerField(default=10, help_text="Tempo de inatividade do sensor em segundos")
     doorN_interlock = models.BooleanField(default=False, help_text="Intertravamento da porta N")
+    network_interlock_enabled = models.BooleanField(
+        default=False,
+        help_text="Habilitar intertravamento via rede",
+    )
+    network_interlock_api_bypass_enabled = models.BooleanField(
+        default=False,
+        help_text="Ignorar intertravamento via rede ao abrir pela API",
+    )
+    network_interlock_rex_bypass_enabled = models.BooleanField(
+        default=False,
+        help_text="Ignorar intertravamento via rede ao abrir via botoeira",
+    )
 
     # Configura??es de exce??o
     EXCEPTION_MODE_CHOICES = [

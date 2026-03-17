@@ -36,12 +36,14 @@ class HardwareConfigAdmin(admin.ModelAdmin):
         "beep_enabled",
         "ssh_enabled",
         "bell_enabled",
+        "network_interlock_enabled",
         "exception_mode",
     )
     list_filter = (
         "beep_enabled",
         "ssh_enabled",
         "bell_enabled",
+        "network_interlock_enabled",
         "exception_mode",
         "relayN_enabled",
     )

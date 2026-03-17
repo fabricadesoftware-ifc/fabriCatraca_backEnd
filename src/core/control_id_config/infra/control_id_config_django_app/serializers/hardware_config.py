@@ -15,6 +15,9 @@ class HardwareConfigSerializer(serializers.ModelSerializer):
     door_sensorN_enabled = serializers.BooleanField(required=False, default=False)
     doorN_interlock = serializers.BooleanField(required=False, default=False)
     bell_enabled = serializers.BooleanField(required=False, default=False)
+    network_interlock_enabled = serializers.BooleanField(required=False, default=False)
+    network_interlock_api_bypass_enabled = serializers.BooleanField(required=False, default=False)
+    network_interlock_rex_bypass_enabled = serializers.BooleanField(required=False, default=False)
     exception_mode = serializers.ChoiceField(
         choices=['none', 'emergency', 'lock_down'],
         required=False,
@@ -29,6 +32,9 @@ class HardwareConfigSerializer(serializers.ModelSerializer):
             'beep_enabled', 'ssh_enabled', 'relayN_enabled', 'relayN_timeout',
             'relayN_auto_close', 'door_sensorN_enabled', 'door_sensorN_idle',
             'doorN_interlock', 'bell_enabled', 'bell_relay',
+            'network_interlock_enabled',
+            'network_interlock_api_bypass_enabled',
+            'network_interlock_rex_bypass_enabled',
             'exception_mode', 'doorN_exception_mode'
         ]
         read_only_fields = ['id']
@@ -96,6 +102,9 @@ class HardwareConfigSerializer(serializers.ModelSerializer):
             'door_sensorN_enabled': False,
             'doorN_interlock': False,
             'bell_enabled': False,
+            'network_interlock_enabled': False,
+            'network_interlock_api_bypass_enabled': False,
+            'network_interlock_rex_bypass_enabled': False,
             'doorN_exception_mode': False
         }
         

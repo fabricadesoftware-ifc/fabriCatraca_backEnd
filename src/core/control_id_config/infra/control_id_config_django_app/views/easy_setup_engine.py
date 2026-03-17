@@ -278,6 +278,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
                             "door_sensorN_enabled",
                             "door_sensorN_idle",
                             "doorN_interlock",
+                            "network_interlock_enabled",
+                            "network_interlock_api_bypass_enabled",
+                            "network_interlock_rex_bypass_enabled",
                             "exception_mode",
                             "doorN_exception_mode",
                         ],
@@ -532,6 +535,27 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 "ok": resp.status_code == 200,
                 "full_url": monitor.full_url,
                 "source_device_id": monitor.device_id,
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def configure_network_interlock(self):
+        """Configura o intertravamento via rede na catraca."""
+        try:
+            hw_cfg = self._get_device_scoped_config(HardwareConfig)
+            if not hw_cfg:
+                return {"ok": True, "skipped": True, "message": "Nenhuma HardwareConfig encontrada"}
+
+            payload = {
+                "interlock_enabled": 1 if getattr(hw_cfg, "network_interlock_enabled", False) else 0,
+                "api_bypass_enabled": 1 if getattr(hw_cfg, "network_interlock_api_bypass_enabled", False) else 0,
+                "rex_bypass_enabled": 1 if getattr(hw_cfg, "network_interlock_rex_bypass_enabled", False) else 0,
+            }
+            resp = self._make_request("set_network_interlock.fcgi", json_data=payload)
+            return {
+                "ok": resp.status_code == 200,
+                "payload": payload,
+                "source_device_id": hw_cfg.device_id,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -1403,9 +1427,19 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # Envia todas as configs (identifier, catra, general, push_server).
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
         report["steps"]["device_settings"] = self.configure_device_settings()
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Configurando intertravamento via rede..."
+        )
+        report["steps"]["network_interlock"] = self.configure_network_interlock()
+
         report["steps"]["persist_applied_configs"] = self._persist_applied_configs_to_database(
             persist_monitor=report["steps"]["monitor"].get("ok", False),
-            persist_device_settings=report["steps"]["device_settings"].get("ok", False),
+            persist_device_settings=(
+                report["steps"]["device_settings"].get("ok", False)
+                and report["steps"]["network_interlock"].get("ok", False)
+            ),
         )
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
@@ -1552,9 +1586,19 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configuracoes...")
         report["steps"]["device_settings"] = self.configure_device_settings()
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Configurando intertravamento via rede..."
+        )
+        report["steps"]["network_interlock"] = self.configure_network_interlock()
+
         report["steps"]["persist_applied_configs"] = self._persist_applied_configs_to_database(
             persist_monitor=report["steps"]["monitor"].get("ok", False),
-            persist_device_settings=report["steps"]["device_settings"].get("ok", False),
+            persist_device_settings=(
+                report["steps"]["device_settings"].get("ok", False)
+                and report["steps"]["network_interlock"].get("ok", False)
+            ),
         )
 
         logger.info(
