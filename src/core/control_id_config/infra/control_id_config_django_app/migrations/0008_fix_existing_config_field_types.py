@@ -50,13 +50,38 @@ class Migration(migrations.Migration):
                 max_length=20,
             ),
         ),
-        migrations.AlterField(
-            model_name="securityconfig",
-            name="log_type",
-            field=models.BooleanField(
-                default=False,
-                help_text="Habilita tipos de batida customizados no iDFlex ponto",
-            ),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunSQL(
+                    sql="""
+                        ALTER TABLE control_id_config_django_app_securityconfig
+                        ALTER COLUMN log_type TYPE boolean
+                        USING CASE
+                            WHEN log_type IS NULL THEN FALSE
+                            WHEN log_type = 0 THEN FALSE
+                            ELSE TRUE
+                        END
+                    """,
+                    reverse_sql="""
+                        ALTER TABLE control_id_config_django_app_securityconfig
+                        ALTER COLUMN log_type TYPE smallint
+                        USING CASE
+                            WHEN log_type IS TRUE THEN 1
+                            ELSE 0
+                        END
+                    """,
+                ),
+            ],
+            state_operations=[
+                migrations.AlterField(
+                    model_name="securityconfig",
+                    name="log_type",
+                    field=models.BooleanField(
+                        default=False,
+                        help_text="Habilita tipos de batida customizados no iDFlex ponto",
+                    ),
+                ),
+            ],
         ),
         migrations.AlterField(
             model_name="systemconfig",
