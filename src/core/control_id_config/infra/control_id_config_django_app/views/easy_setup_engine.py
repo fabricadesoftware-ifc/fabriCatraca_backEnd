@@ -28,6 +28,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     UserAccessRule,
     UserGroup,
 )
+from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from src.core.control_id_config.infra.control_id_config_django_app.models import (
     CatraConfig,
     HardwareConfig,
@@ -535,6 +536,47 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def sync_network_devices(self):
+        """Faz a catraca conhecer os devices ativos do backend."""
+        try:
+            desired_values = [
+                {"id": device.id, "name": device.name, "ip": device.ip}
+                for device in Device.objects.filter(is_active=True).order_by("id")
+            ]
+
+            if not desired_values:
+                return {"ok": True, "count": 0, "skipped": True}
+
+            existing_ids = self._load_existing_ids("devices")
+            desired_ids = {int(item["id"]) for item in desired_values}
+
+            to_create = [item for item in desired_values if int(item["id"]) not in existing_ids]
+            to_update = [item for item in desired_values if int(item["id"]) in existing_ids]
+            to_delete = [device_id for device_id in existing_ids if int(device_id) not in desired_ids]
+
+            create_ok = True
+            update_ok = True
+            delete_ok = True
+
+            if to_create:
+                create_ok = self._create_objects_safe("devices", to_create).get("ok", False)
+
+            if to_update:
+                update_ok = self._modify_objects("devices", to_update)
+
+            for device_id in to_delete:
+                delete_ok = self._destroy_table("devices", {"devices": {"id": int(device_id)}}) and delete_ok
+
+            return {
+                "ok": create_ok and update_ok and delete_ok,
+                "count": len(desired_values),
+                "created": len(to_create),
+                "updated": len(to_update),
+                "deleted": len(to_delete),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── 5. Enviar configurações do device ───────────────────────────────────
     def configure_device_settings(self):
         """
@@ -957,10 +999,11 @@ class _EasySetupEngine(ControlIDSyncMixin):
         return data
 
     # ── 7. Enviar dados para catraca ────────────────────────────────────────
-    def _destroy_table(self, table):
+    def _destroy_table(self, table, where=None):
         """Limpa uma tabela da catraca antes de inserir novos dados."""
-        col = _TABLE_WHERE_COL.get(table, "id")
-        where = {table: {col: {">=": 0}}}
+        if where is None:
+            col = _TABLE_WHERE_COL.get(table, "id")
+            where = {table: {col: {">=": 0}}}
         try:
             sess = self.login()
             resp = requests.post(
@@ -1350,6 +1393,12 @@ class _EasySetupEngine(ControlIDSyncMixin):
         )
         report["steps"]["push"] = self.push_data(db_data)
 
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Sincronizando tabela devices para intertravamento/rede..."
+        )
+        report["steps"]["network_devices"] = self.sync_network_devices()
+
         # Etapa 7 — Configurações do device
         # Envia todas as configs (identifier, catra, general, push_server).
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
@@ -1488,6 +1537,12 @@ class _EasySetupEngine(ControlIDSyncMixin):
             "Enviando dados (create por cima, sem destroy)..."
         )
         report["steps"]["push"] = self.push_data(db_data)
+
+        logger.info(
+            f"[EASY_SETUP] [{self.device.name}] "
+            "Sincronizando tabela devices para intertravamento/rede..."
+        )
+        report["steps"]["network_devices"] = self.sync_network_devices()
 
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] "

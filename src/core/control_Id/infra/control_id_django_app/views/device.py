@@ -3,6 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 
+from src.core.control_Id.infra.control_id_django_app.device_registry_sync import (
+    DeviceRegistrySyncService,
+)
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from src.core.control_Id.infra.control_id_django_app.serializers.device import DeviceSerializer
 from drf_spectacular.utils import extend_schema
@@ -24,7 +27,26 @@ class DeviceViewSet(viewsets.ModelViewSet):
             Device.objects.filter(is_default=True).update(is_default=False)
             
         instance = serializer.save()
+        DeviceRegistrySyncService().sync_all_active_devices()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        if serializer.validated_data.get('is_default'):
+            Device.objects.filter(is_default=True).exclude(id=instance.id).update(is_default=False)
+
+        instance = serializer.save()
+        DeviceRegistrySyncService().sync_all_active_devices()
+        return Response(self.get_serializer(instance).data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.delete()
+        DeviceRegistrySyncService().sync_all_active_devices()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['get'])
     def test_connection(self, request, pk=None):
@@ -50,3 +72,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 "success": False,
                 "error": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def sync_registry(self, request):
+        """Sincroniza a tabela devices em todas as catracas ativas."""
+        result = DeviceRegistrySyncService().sync_all_active_devices()
+        return Response(result, status=status.HTTP_200_OK if result.get("success") else status.HTTP_207_MULTI_STATUS)
