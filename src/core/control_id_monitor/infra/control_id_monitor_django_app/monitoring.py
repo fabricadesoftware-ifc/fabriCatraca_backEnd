@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.utils.timezone import localtime
@@ -99,5 +100,63 @@ def mark_monitor_config_offline(config, detected_at=None):
             "offline_since": detected_at.isoformat(),
         },
         started_at=detected_at,
+        is_active=True,
+    )
+
+
+@transaction.atomic
+def create_temporary_release_delay_alert(release, consumed_log, consumed_at=None):
+    consumed_at = consumed_at or getattr(consumed_log, "time", None)
+    activated_at = getattr(release, "activated_at", None) or getattr(release, "valid_from", None)
+    if not consumed_at or not activated_at:
+        return None
+
+    delay_seconds = int((consumed_at - activated_at).total_seconds())
+    threshold_seconds = int(
+        getattr(settings, "TEMPORARY_RELEASE_DELAY_ALERT_SECONDS", 300) or 300
+    )
+    if delay_seconds <= threshold_seconds:
+        return None
+
+    dedupe_key = f"temporary-release-delay:{release.id}"
+    existing = MonitorAlert.objects.filter(dedupe_key=dedupe_key).first()
+    if existing:
+        return existing
+
+    delay_minutes = round(delay_seconds / 60, 1)
+    started_label = localtime(activated_at).strftime("%d/%m/%Y %H:%M")
+    consumed_label = localtime(consumed_at).strftime("%d/%m/%Y %H:%M")
+    portal_name = getattr(getattr(consumed_log, "portal", None), "name", None)
+    device = getattr(consumed_log, "device", None)
+    device_name = getattr(device, "name", "") if device else ""
+    user_name = getattr(getattr(release, "user", None), "name", "Usuário")
+
+    message = (
+        f"{user_name} foi liberado às {started_label} e só passou às {consumed_label} "
+        f"({delay_minutes} min depois)."
+    )
+    if portal_name:
+        message += f" Portal: {portal_name}."
+    if device_name:
+        message += f" Catraca: {device_name}."
+
+    return MonitorAlert.objects.create(
+        type=MonitorAlert.AlertType.AUTHORIZED_EXIT_DELAY,
+        severity=MonitorAlert.Severity.WARNING,
+        title=f"{user_name} passou bem depois da liberação",
+        message=message,
+        device=device,
+        user=getattr(release, "user", None),
+        dedupe_key=dedupe_key,
+        metadata={
+            "temporary_release_id": release.id,
+            "delay_seconds": delay_seconds,
+            "delay_minutes": delay_minutes,
+            "consumed_at": consumed_at.isoformat(),
+            "activated_at": activated_at.isoformat(),
+            "portal_name": portal_name,
+            "device_name": device_name,
+        },
+        started_at=consumed_at,
         is_active=True,
     )

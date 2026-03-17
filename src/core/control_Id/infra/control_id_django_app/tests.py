@@ -17,6 +17,9 @@ from src.core.control_Id.infra.control_id_django_app.models import (
 from src.core.control_Id.infra.control_id_django_app.tasks import (
     process_temporary_user_releases,
 )
+from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import (
+    MonitorAlert,
+)
 from src.core.user.infra.user_django_app.models import User
 
 
@@ -151,3 +154,69 @@ class TemporaryUserReleaseTests(APITestCase):
         self.assertEqual(release.status, TemporaryUserRelease.Status.EXPIRED)
         self.assertIn("não utilizou", release.result_message.lower())
         self.assertEqual(UserAccessRule.objects.count(), 0)
+
+    def test_task_creates_delay_alert_when_release_is_consumed_too_late(self):
+        release = self._create_active_release()
+        delayed_time = (release.activated_at or timezone.now()) + timedelta(minutes=8)
+
+        AccessLogs.objects.create(
+            time=delayed_time,
+            event_type=7,
+            device=self.device,
+            identifier_id="delayed-123",
+            user=self.target_user,
+            portal=None,
+            access_rule=self.access_rule,
+            qr_code="",
+            uhf_value="",
+            pin_value="",
+            card_value="",
+            confidence=0,
+            mask="",
+        )
+
+        with self.settings(TEMPORARY_RELEASE_DELAY_ALERT_SECONDS=300), patch(
+            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
+            "TemporaryUserReleaseService.delete_in_catraca",
+            return_value=Response({"success": True}, status=status.HTTP_204_NO_CONTENT),
+        ):
+            process_temporary_user_releases.run()
+
+        alert = MonitorAlert.objects.get(type=MonitorAlert.AlertType.AUTHORIZED_EXIT_DELAY)
+        self.assertEqual(alert.user, self.target_user)
+        self.assertEqual(alert.device, self.device)
+        self.assertTrue(alert.is_active)
+        self.assertIn("passou bem depois da liberação", alert.title.lower())
+
+    def test_task_does_not_create_delay_alert_when_release_is_consumed_quickly(self):
+        release = self._create_active_release()
+        quick_time = (release.activated_at or timezone.now()) + timedelta(minutes=2)
+
+        AccessLogs.objects.create(
+            time=quick_time,
+            event_type=7,
+            device=self.device,
+            identifier_id="quick-123",
+            user=self.target_user,
+            portal=None,
+            access_rule=self.access_rule,
+            qr_code="",
+            uhf_value="",
+            pin_value="",
+            card_value="",
+            confidence=0,
+            mask="",
+        )
+
+        with self.settings(TEMPORARY_RELEASE_DELAY_ALERT_SECONDS=300), patch(
+            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
+            "TemporaryUserReleaseService.delete_in_catraca",
+            return_value=Response({"success": True}, status=status.HTTP_204_NO_CONTENT),
+        ):
+            process_temporary_user_releases.run()
+
+        self.assertFalse(
+            MonitorAlert.objects.filter(
+                type=MonitorAlert.AlertType.AUTHORIZED_EXIT_DELAY
+            ).exists()
+        )

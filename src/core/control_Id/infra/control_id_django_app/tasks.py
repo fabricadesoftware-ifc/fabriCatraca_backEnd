@@ -3,6 +3,9 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
+from src.core.control_id_monitor.infra.control_id_monitor_django_app.monitoring import (
+    create_temporary_release_delay_alert,
+)
 from src.core.control_Id.infra.control_id_django_app.views.sync import GlobalSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models import (
     AccessLogs,
@@ -165,6 +168,11 @@ def process_temporary_user_releases(self) -> dict:
                     release,
                     final_status=release.Status.CONSUMED,
                     result_message="Liberação utilizada com sucesso.",
+                    consumed_log=consumed_log,
+                    consumed_at=consumed_log.time,
+                )
+                create_temporary_release_delay_alert(
+                    release,
                     consumed_log=consumed_log,
                     consumed_at=consumed_log.time,
                 )
