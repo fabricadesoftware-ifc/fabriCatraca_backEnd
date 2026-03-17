@@ -20,7 +20,7 @@ jobs:
       - name: Cloning repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Push to dokku
         uses: dokku/github-action@master
@@ -28,4 +28,3 @@ jobs:
           git_remote_url: 'ssh://dokku@app1.fabricadesoftware.ifc.edu.br:1022/catraca-api'
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
           branch: master
-          git_push_flags: '--force'
