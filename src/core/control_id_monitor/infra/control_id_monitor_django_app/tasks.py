@@ -23,6 +23,12 @@ def check_monitor_heartbeats(self):
     )
 
     for config in queryset:
+        if (
+            config.offline_detection_paused_until
+            and config.offline_detection_paused_until > now
+        ):
+            continue
+
         checked += 1
         reference_time = config.last_seen_at or config.updated_at
         timeout_seconds = max(int(config.heartbeat_timeout_seconds or 300), 30)

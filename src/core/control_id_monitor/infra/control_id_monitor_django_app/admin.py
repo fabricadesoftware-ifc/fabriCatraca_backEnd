@@ -28,6 +28,7 @@ class MonitorConfigAdmin(admin.ModelAdmin):
         "last_payload_at",
         "last_signal_source",
         "offline_since",
+        "offline_detection_paused_until",
         "is_offline",
     ]
     fieldsets = (

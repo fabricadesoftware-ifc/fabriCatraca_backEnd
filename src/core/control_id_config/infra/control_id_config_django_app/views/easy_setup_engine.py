@@ -7,6 +7,7 @@ constantes auxiliares usadas pelo setup completo.
 
 import logging
 import time as _time
+from datetime import timedelta
 
 import requests
 from django.utils import timezone
@@ -208,6 +209,132 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 return candidate
 
         return None
+
+    def _pause_monitor_offline_detection(self, seconds=900):
+        paused_until = timezone.now() + timedelta(seconds=seconds)
+        monitor, _ = MonitorConfig.objects.update_or_create(
+            device=self.device,
+            defaults={
+                "offline_detection_paused_until": paused_until,
+                "is_offline": False,
+                "offline_since": None,
+            },
+        )
+        return {
+            "ok": True,
+            "paused_until": paused_until.isoformat(),
+            "config_id": monitor.id,
+        }
+
+    def _persist_applied_configs_to_database(
+        self,
+        *,
+        persist_monitor=False,
+        persist_device_settings=False,
+    ):
+        persisted = {}
+
+        config_specs = []
+        if persist_monitor:
+            config_specs.append(
+                (
+                    MonitorConfig,
+                    ["request_timeout", "hostname", "port", "path", "heartbeat_timeout_seconds"],
+                    lambda cfg: cfg.is_configured,
+                )
+            )
+        if persist_device_settings:
+            config_specs.extend(
+                [
+                    (
+                        SystemConfig,
+                        [
+                            "auto_reboot_hour",
+                            "auto_reboot_minute",
+                            "clear_expired_users",
+                            "keep_user_image",
+                            "url_reboot_enabled",
+                            "web_server_enabled",
+                            "online",
+                            "local_identification",
+                            "language",
+                            "daylight_savings_time_start",
+                            "daylight_savings_time_end",
+                            "catra_timeout",
+                        ],
+                        None,
+                    ),
+                    (
+                        HardwareConfig,
+                        [
+                            "beep_enabled",
+                            "bell_enabled",
+                            "bell_relay",
+                            "ssh_enabled",
+                            "relayN_enabled",
+                            "relayN_timeout",
+                            "relayN_auto_close",
+                            "door_sensorN_enabled",
+                            "door_sensorN_idle",
+                            "doorN_interlock",
+                            "exception_mode",
+                            "doorN_exception_mode",
+                        ],
+                        None,
+                    ),
+                    (
+                        SecurityConfig,
+                        [
+                            "password_only",
+                            "hide_password_only",
+                            "password_only_tip",
+                            "hide_name_on_identification",
+                            "denied_transaction_code",
+                            "send_code_when_not_identified",
+                            "send_code_when_not_authorized",
+                            "verbose_logging_enabled",
+                            "log_type",
+                            "multi_factor_authentication_enabled",
+                        ],
+                        None,
+                    ),
+                    (
+                        CatraConfig,
+                        ["anti_passback", "daily_reset", "gateway", "operation_mode"],
+                        None,
+                    ),
+                    (
+                        PushServerConfig,
+                        ["push_request_timeout", "push_request_period", "push_remote_address"],
+                        None,
+                    ),
+                ]
+            )
+
+        for model, field_names, predicate in config_specs:
+            source = self._get_device_scoped_config(model, predicate=predicate)
+            if not source:
+                continue
+
+            defaults = {field_name: getattr(source, field_name) for field_name in field_names}
+            if model is MonitorConfig:
+                defaults.update(
+                    {
+                        "offline_detection_paused_until": source.offline_detection_paused_until,
+                    }
+                )
+
+            _, created = model.objects.update_or_create(
+                device=self.device,
+                defaults=defaults,
+            )
+            persisted[model.__name__] = {
+                "ok": True,
+                "created": created,
+                "source_device_id": source.device_id,
+            }
+
+        return persisted
 
     # ── 1. Factory reset ────────────────────────────────────────────────────
     def factory_reset(self):
@@ -1166,6 +1293,8 @@ class _EasySetupEngine(ControlIDSyncMixin):
         report = {"device": self.device.name, "steps": {}}
         t0 = _time.monotonic()
 
+        report["steps"]["pause_offline_detection"] = self._pause_monitor_offline_detection()
+
         # Etapa 1 — Login
         try:
             self.login(force_new=True)
@@ -1225,6 +1354,10 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # Envia todas as configs (identifier, catra, general, push_server).
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configurações...")
         report["steps"]["device_settings"] = self.configure_device_settings()
+        report["steps"]["persist_applied_configs"] = self._persist_applied_configs_to_database(
+            persist_monitor=report["steps"]["monitor"].get("ok", False),
+            persist_device_settings=report["steps"]["device_settings"].get("ok", False),
+        )
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
 
@@ -1320,6 +1453,8 @@ class _EasySetupEngine(ControlIDSyncMixin):
         report = {"device": self.device.name, "steps": {}}
         t0 = _time.monotonic()
 
+        report["steps"]["pause_offline_detection"] = self._pause_monitor_offline_detection()
+
         try:
             self.login(force_new=True)
             report["steps"]["login"] = {"ok": True}
@@ -1362,6 +1497,10 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         logger.info(f"[EASY_SETUP] [{self.device.name}] Enviando configuracoes...")
         report["steps"]["device_settings"] = self.configure_device_settings()
+        report["steps"]["persist_applied_configs"] = self._persist_applied_configs_to_database(
+            persist_monitor=report["steps"]["monitor"].get("ok", False),
+            persist_device_settings=report["steps"]["device_settings"].get("ok", False),
+        )
 
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] "
