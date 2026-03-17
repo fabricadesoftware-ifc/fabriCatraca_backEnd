@@ -1,0 +1,656 @@
+Lista de Objetos
+Veja abaixo a descrição de todos os objetos da linha de acesso, a lista identifica alguns dos diferentes tipos de recursos que você pode utilizar usando a API e também suporta métodos para inserir, atualizar, buscar e excluir muitos deles.
+
+users
+Representa um usuário.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único de um usuário (obrigatório).
+registration	string	Texto representando a matrícula de um usuário (obrigatório).
+name	string	Texto contendo o nome de um usuário (obrigatório).
+password	string	String que representa a senha do usuário após o processo de Hash (para definir esse parâmetro não se deve usar o texto simples digitado pelo usuário deve-se gerar seu Hash através do comando user_hash_password. Da mesma forma, a aquisição desse parâmetro através do comando load_objects retorna a senha após o Hash).
+salt	string	String representando o Salt usado para calcular o Hash da senha do usuário.
+user_type_id	int	Inteiro que representa o tipo de usuário cadastrado. Para um usuário do tipo Visitante, este campo é definido como 1; para o tipo Usuário, o campo não possui valor definido (nulo).
+begin_time	int	Inteiro representando a partir de que data e hora (Unix timestamp) o usuário é válido. Se este campo for definido com valor igual a 0 a verificação não é feita. Já para um valor maior que 0, qualquer que seja o tipo de usuário, após a data informada será um usuário válido.
+end_time	int	Inteiro representando até que data e hora (Unix timestamp) o usuário é válido. Se este campo for definido com valor igual a 0 a verificação não é feita. Já para um valor maior que 0, qualquer que seja o tipo de usuário, após a sua expiração ocorrerá a exclusão das credenciais como explicado em Suporte a visitantes.
+image_timestamp	int	Inteiro representando a data e hora (Unix timestamp) em que a imagem do usuário foi cadastrada. Se o valor do campo for 0, o usuário não possui imagens cadastradas.
+last_access	int	Inteiro representando a data e hora (Unix timestamp) do último acesso feito pelo usuário. Se o valor deste campo for 0 o usuário ainda não fez seu primeiro acesso.
+change_logs
+Registro das operações (inserção, atualização e remoção) realizadas nos objetos: users, templates, face_templates e cards.
+Esse registro é importante pois a partir dele podemos mapear alterações feitas no equipamento. Ou seja, através dele pode-se obter:
+
+Registro de inserções, atualizações e remoções de usuários.
+Registro de inserções, atualizações e remoções de templates de identificação de usuário.
+Registro de inserções, atualizações e remoções de templates faciais de usuário.
+Registro de inserções, atualizações e remoções de cartões de usuário.
+Observações:
+1. Este registro possui limite de armazenamento de 10 mil operações. Quando ele é atingido, ocorre a rotação e somente os últimos 10 mil registros estarão disponíveis.
+2. No momento essa funcionalidade só está disponível para o iDFace.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único do registro (obrigatório).
+operation_type	string	Texto representando a operação que foi realizada (obrigatório).
+table_name	string	Texto contendo o nome do objeto alterado (obrigatório).
+table_id	int	Inteiro representando o identificador de qual atributo do objeto foi modificado (obrigatório).
+timestamp	int	Inteiro representando o horário em foi feita a operação, em formato UNIX timestamp (obrigatório).
+templates
+Dados biométricos das impressões digitais dos usuários (referidas a seguir como biometrias).
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único de uma biometria (obrigatório).
+finger_position	int	Campo reservado.
+finger_type	int	Tipo de biometria dedo comum valor 0 ou dedo de pânico valor 1 (obrigatório).
+template	string base 64	String em base 64 representando um template biométrico.
+user_id	int 64	Identificador único do usuário a quem essa biometria pertence (obrigatório).
+cards
+Representa os cartões de identificação por proximidade.
+
+Observações do campo value: Este campo indica a numeração do cartão para cartões de proximidade (ASK, FSK, PSK), também chamados de Wiegand. O Wiegand é um padrão de comunicação utilizado para a leitura de cartões de proximidade.
+
+Como fazer a conversão do valor do cartão para ser enviado na API: O valor a ser enviado é: [parte antes da vírgula] * 2^32 + [parte depois da vírgula]. Exemplo: Para o cartão 123,45678 deve-se enviar o valor 123 * 2^32 + 45678, ou seja, 528281023086.
+
+Como fazer a conversão do valor da API para o valor do cartão: O código de área, parte antes da vírgula, será a parte inteira, ou seja, a parte antes da vírgula do valor da divisão entre o valor da API e 2^32. O número do cartão, parte após a vírgula, será o resultado de: [valor da API] - [código de área] * 2^32. Exemplo: Para o valor da API 528281023086: [código de área]: 528281023086 / 2^32 = 123,0000106. Então, [código de área] = 123. [número do cartão]: 528281023086 - 123 * 2^32 = 45678. Portanto, o valor do cartão é 123,45678.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único de uma cartão de identificação (obrigatório).
+value	unsigned int 64	Este campo indica a numeração do cartão. Leia atentamente como realizar a conversão para o valor a ser enviado na API (obrigatório e único, não podem existir dois cartões com mesmo value no banco de dados).
+user_id	int 64	Identificador único do usuário ao qual pertence o cartão de identificação (obrigatório).
+qrcodes
+Representa os QR Codes utilizados para identificação. O QR Code possui dois modos de operação configuráveis. O QR Code só será armazenado como um objeto qrcodes caso o Modo Alfanumérico esteja ativo, caso contrário, o mesmo será tratado como um cartão, sendo armazenado como um objeto cards.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único de um QR Code de identificação (obrigatório).
+value	string	Este campo indica o conteúdo representado no QR Code. Este também é o valor a ser recebido da API (obrigatório e único, não podem existir dois QR Codes com mesmo value no banco de dados).
+user_id	int 64	Identificador único do usuário ao qual pertence o QR Code de identificação (obrigatório).
+uhf_tags
+Representa as tags UHF utilizadas para identificação. As tags UHF possuem dois modos de operação configuráveis: extended e standard". As tags UHF só serão armazenadas como um objeto uhf_tags caso o modo extended esteja ativo, nesse caso as tag podem ser registradas com até 96 bits em representação nvchar e armazenadas em hexadecimal, uma tag "0xCAFEDAD0" será armazenada como "CAFEDAD0". No caso contrário, com o modo standard" ativado, o mesmo será tratado como um cartão, sendo armazenado como um objeto cards.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único de uma tag UHF de identificação (obrigatório).
+value	string	Este campo indica o Valor lido pela tag UHF Este também é o valor a ser recebido da API (obrigatório e único, não podem existir duas tags UHF com mesmo value no banco de dados).
+user_id	int 64	Identificador único do usuário ao qual pertence a tag UHF de identificação (obrigatório).
+pins
+Representa os PINs utilizados para identificação.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único de um PIN de identificação (obrigatório).
+value	string	Este campo indica o valor do PIN. Este também é o valor a ser recebido da API (obrigatório e único, não podem existir dois PINs com mesmo value no banco de dados).
+user_id	int 64	Identificador único do usuário ao qual pertence o PIN de identificação (obrigatório e único, não podem existir dois PINs com mesmo user_id no banco de dados).
+alarm_zones
+Dados referentes às zonas de alarmes.
+
+Campo	Tipo	Descrição
+zone	int	Identificador único de uma zona de alarme (obrigatório).
+enabled	int	Indica se a entrada de alarme referente à zona está habilitada (valor 1) ou não (valor 0) (obrigatório).
+active_level	int	Indica se a entrada de alarme referente à zona esta configurada como 'ativo alto' (1) ou 'ativo baixo' (0) (obrigatório).
+alarm_delay	int	Tempo de atraso no disparo do alarme uma vez que um sinal de alarme tenha sido detectado nesta zona (obrigatório).
+user_roles
+Relaciona usuários a níveis de privilégio. Contém apenas usuários que tenham algum nível de privilégio diferente do padrão.
+
+Campo	Tipo	Descrição
+user_id	int 64	Identificador único do usuário (obrigatório).
+role	int	Se este campo estiver definido como 1, o usuário é um administrador (obrigatório).
+groups
+Representa os grupos de acesso. Nas interfaces nativa do equipamento e na interface web, esse tipo de objeto é referido por departamento.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único do grupo de acesso (obrigatório).
+name	int	Nome do grupo de acesso (obrigatório).
+user_groups
+Relaciona os usuários as grupos de acesso.
+
+Campo	Tipo	Descrição
+user_id	int 64	Identificador do usuário (obrigatório).
+group_id	int	Identificador do grupo de acesso (obrigatório).
+scheduled_unlocks
+Representa as liberações agendadas de acesso.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único da liberação agendada (obrigatório).
+name	string	Nome da liberação agendada (obrigatório).
+message	string	Mensagem a ser exibida durante a liberação.
+actions
+Objeto que representa os scripts de ação.
+
+Campo	Tipo	Descrição
+group_id	int 64	Identificador único do script de ação no banco de dados (obrigatório).
+name	string	Nome descritivo da ação (obrigatório).
+action	string	Nome do arquivo do script de ação (obrigatório).
+parameters	string	Parâmetros do script de ação (obrigatório).
+run_at	int	Pode assumir 3 valores. Caso seja 0, o script é executado no equipamento que o usuário utilizou para a identificação. Caso seja 1, o script é executado em todos os equipamentos conectados. Caso seja 2, o script é executado no servidor de identificação (obrigatório).
+areas
+Representa as áreas cujo acesso se deseja controlar.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único da área (obrigatório).
+name	string	Nome descritivo da área (obrigatório).
+portals
+Representa os portais. Um portal liga duas áreas e tem uma única direção.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único do portal (obrigatório).
+name	string	Nome descritivo do portal (obrigatório).
+area_from_id	int 64	Identificador da área de origem (obrigatório).
+area_to_id	int 64	Identificador da área de destino (obrigatório).
+portal_actions
+Relaciona portais e ações.
+
+Campo	Tipo	Descrição
+portal_id	int 64	Identificador do portal (obrigatório).
+action_id	int 64	Identificador do ação (obrigatório).
+access_rules
+Representa as regras de acesso. A avaliação das regras de acesso acontece na seguinte ordem:
+
+Dada uma tentativa de acesso, todas as regras de bloqueio são avaliadas antes das regras de liberação. Caso uma ou mais regras de bloqueio tenham seus critérios atendidos, suas ações serão executadas. Apenas caso nenhuma das regras de bloqueio tenham seus critérios atendidos, as regras de liberação são avaliadas e suas ações são executadas caso seus critérios sejam atendidos.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador da regra de acesso (obrigatório).
+name	string	Nome descritivo da regra de acesso (obrigatório).
+type	int	Tipo da regra de acesso: caso valha 0, é uma regra de bloqueio, e caso valha 1, é uma regra de permissão (obrigatório).
+priority	int	Campo reservado (obrigatório).
+portal_access_rules
+Relaciona portais e regras de acesso.
+
+Campo	Tipo	Descrição
+portal_id	int 64	Identificador do portal (obrigatório).
+access_rule_id	int 64	Identificador da regra de acesso (obrigatório).
+group_access_rules
+Relaciona grupos e regras de acesso.
+
+Campo	Tipo	Descrição
+group_id	int 64	Identificador do grupo (obrigatório).
+access_rule_id	int 64	Identificador da regra de acesso (obrigatório).
+scheduled_unlock_access_rules
+Relaciona liberações agendadas e regras de acesso.
+
+Campo	Tipo	Descrição
+scheduled_unlock_id	int 64	Identificador da liberação agendada (obrigatório).
+access_rule_id	int 64	Identificador da regra de acesso (obrigatório).
+time_zones
+Conjunto de intervalos que representa o critério de horário de uma regra de acesso.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador do horário (obrigatório).
+name	string	Nome descritivo do horário (obrigatório).
+time_spans
+Um dos intervalos de um horário, o qual representa o critério de horário de uma regra de acesso.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador do intervalo (obrigatório).
+time_zone_id	int 64	Horário ao qual esse intervalo pertence (obrigatório).
+start	int	Horário de início do intervalo. É armazenado em segundos desde às 0 horas do dia. Exemplo: Uma hora da manhã será 3600, já que 16060 = 3600. Duas horas da manhã será 7200, já que 26060 = 7200 (obrigatório).
+end	int	Horário de término do intervalo. É armazenado em segundos desde às 0 horas do dia (obrigatório).
+sun	int	Indica se o intervalo está ativo para os domingos (obrigatório).
+mon	int	Indica se o intervalo está ativo para as segundas-feiras (obrigatório).
+tue	int	Indica se o intervalo está ativo para as terças-feiras (obrigatório).
+wed	int	Indica se o intervalo está ativo para as quartas-feiras (obrigatório).
+thu	int	Indica se o intervalo está ativo para as quintas-feiras (obrigatório).
+fri	int	Indica se o intervalo está ativo para as sextas-feiras (obrigatório).
+sat	int	Indica se o intervalo está ativo para os sábados (obrigatório).
+hol1	int	Indica se o intervalo está ativo para os feriados do tipo 1 (obrigatório).
+hol2	int	Indica se o intervalo está ativo para os feriados do tipo 2 (obrigatório).
+hol3	int	Indica se o intervalo está ativo para os feriados do tipo 3 (obrigatório).
+contingency_cards
+Cadastra uma lista de cartões que estará disponível em modo contingência para acesso aos equipamentos.
+
+Campo	Tipo	Descrição
+id	int	Identificador único do cartão, auto-incremental (obrigatório).
+value	int 64	Número do cartão liberado no modo de contingência (obrigatório).
+contingency_card_access_rules
+Vincula a regra de acesso que será válida para os cartões que estiverem cadastrados em contingency_cards.
+
+Campo	Tipo	Descrição
+access_rule_id	int 64	Corresponde ao id da regra de acesso que será utilizada em modo de contingência, por padrão é: 1 (Regra de acesso sempre liberado). (obrigatório).
+holidays
+Essa tabela contém os feriados, assim como indica a qual tipo eles pertencem.
+
+Campo	Tipo	Descrição
+id	int	Identificador do feriado (obrigatório).
+name	string	Nome descritivo do feriado (obrigatório).
+start	int	A data e hora que o feriado começa em formato UNIX timestamp (obrigatório).
+end	int	A data e hora que o feriado termina em formato UNIX timestamp (obrigatório).
+hol1	int	Se o feriado pertence ao grupo 1. O valor é 0 ou 1 (obrigatório).
+hol2	int	Se o feriado pertence ao grupo 2. O valor é 0 ou 1 (obrigatório).
+hol3	int	Se o feriado pertence ao grupo 3. O valor é 0 ou 1 (obrigatório).
+repeats	int	Se o feriado deve repetir anualmente. O valor é 0 ou 1 (obrigatório).
+alarm_zone_time_zones
+Relaciona zonas de alarme e horários.
+
+Campo	Tipo	Descrição
+alarm_zone_id	int 64	Identificador da zona de alarme (obrigatório).
+time_zone_id	int 64	Identificador do horário (obrigatório).
+access_rule_time_zones
+Relaciona regras de acesso e horários.
+
+Campo	Tipo	Descrição
+access_rule_id	int 64	Identificador da regra de acesso (obrigatório).
+time_zone_id	int 64	Identificador do horário (obrigatório).
+access_logs
+Contém os logs de acesso do equipamento.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador do log de acesso (obrigatório).
+time	int	Horário da ocorrência em Unix Timestamp.
+event	int	Tipo do evento, pode ser:
+Equipamento inválido
+Parâmetros de identificação inválidos
+Não identificado
+Identificação pendente
+Tempo de identificação esgotado
+Acesso negado
+Acesso concedido
+Acesso pendente (usado quando o acesso depende de mais de uma pessoa)
+Usuário não é administrador (usado quando um usuário tenta acessar o menu mas não é administrador)
+Acesso não identificado (quando o portal é aberto através da API e o motivo não é informado)
+Acesso por botoeira
+Acesso pela interface web
+Desistência de entrada (exclusivo para iDBlock)
+Sem resposta (nenhuma ação é tomada)
+Acesso pela interfonia (exclusivo para iDFace)
+device_id	int 64	Identificador do equipamento onde o evento de acesso ocorreu.
+identifier_id	int	Identificador do módulo de identificação que registrou o evento no equipamento.
+user_id	int	Identificador do usuário envolvido na ocorrência.
+portal_id	int	Identificador do portal envolvido na ocorrência.
+identification_rule_id	int	Identificador da regra de identificação envolvida na ocorrência.
+qrcode_value	string	Valor alfanumérico do QR Code utilizado durante a identificação.
+uhf_tag	string	Valor lido pela tag UHF
+pin_value	string	Valor do PIN utilizado durante a identificação.
+card_value	int 64	Número do cartão utilizado durante a identificação.
+confidence	int 64	Indica o grau de confiança do rosto reconhecido. O valor varia de 0 (mínimo) a 1800 (máximo)
+mask	int 64	Indica se o usuário está usando máscara ou não. O valor 1 indica a presença de máscara e o valor 0 indica que o usuário não está usando máscara.
+log_type_id	int 64	Identificador único do tipo de log, aplicável somente para o iDFlex Attendance (solução para marcação de ponto disponível apenas para exportação).
+access_log_access_rules
+Regras de acesso de um log de acesso. O par access_log_id e access_rule_id é único, ou seja, não pode haver nessa mais de um elemento com o mesmo par dessas propriedades.
+
+Campo	Tipo	Descrição
+access_log_id	int 64	Identificador do log de acesso (obrigatório).
+access_rule_id	int 64	Identificador da regra de acesso (obrigatório).
+alarm_logs
+Contém os logs de alarmes do equipamento.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador do log de alarme (obrigatório).
+event	int	Tipo do evento, pode ser:
+Alarme ativado
+Alarme desativado
+cause	int	Causa do evento, pode ser:
+Zona de alarme 1
+Zona de alarme 2
+Zona de alarme 3
+Zona de alarme 4
+Zona de alarme 5
+Porta aberta
+Arrombamento de porta
+Dedo de pânico
+Violação do equipamento
+Cartão de pânico
+user_id	int 64	Identificador do usuário envolvido na ocorrência.
+time	int	Horário da ocorrência em Unix Timestamp.
+access_log_id	int	Identificador do registro de log de acesso envolvido na ocorrência.
+door_id	int	Identificador da porta envolvida na ocorrência.
+devices
+Representa os equipamentos cadastrados e reconhecidos pelo dispositivo, incluindo o próprio. É utilizado na comunicação via rede entre equipamentos.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador do equipamento (obrigatório).
+name	string	Nome descritivo do equipamento (obrigatório).
+ip	string	Endereço do equipamento. Exemplo: 192.168.0.129 ou exemplo.controlid.com.br (obrigatório).
+user_access_rules
+Vincula um usuário a uma regra de acesso.
+
+O par user_id e access_rule_id é único, ou seja, não pode haver mais de um objeto nesta tabela com mesmos valores nesses campos ao mesmo tempo.
+
+Campo	Tipo	Descrição
+user_id	int	Identificador único do usuário (obrigatório).
+access_rule_id	int	Identificador único da regra de acesso (obrigatório).
+area_access_rules
+Vincula uma área a uma regra de acesso.
+
+O par area_id e access_rule_id é único, ou seja, não pode haver mais de um objeto nesta tabela com mesmos valores nesses campos ao mesmo tempo.
+
+Campo	Tipo	Descrição
+area_id	int	Identificador único da área (obrigatório).
+access_rule_id	int	Identificador único da regra de acesso (obrigatório).
+catra_infos
+Permite consultar informações da catraca (aplicável apenas para catracas iDBlock).
+
+Campo	Tipo	Descrição
+id	int	Identificador da catraca.
+left_turns	int 64	Corresponde ao número de revoluções a esquerda.
+right_turns	int 64	Corresponde ao número de revoluções a direita.
+entrance_turns	int 64	Corresponde ao número de revoluções de entrada.
+exit_turns	int 64	Corresponde ao número de revoluções de saída.
+log_types
+Permite consultar os tipo de log.
+
+Campo	Tipo	Descrição
+id	int	Identificador do tipo de log (obrigatório).
+name	string	Nome do tipo de log (obrigatório).
+sec_boxs
+Configura o módulo de acionamento externo (MAE/Security Box) usado no iDFlex, iDAccess Pro e iDAccess Nano.
+
+Campo	Tipo	Descrição
+id	int 64	id da SecBox. Esse valor sempre será 65793.
+version	int	Corresponde a versão da SecBox.
+name	string	Corresponde ao nome da SecBox.
+enabled	bool	Indica se a SecBox está habilitada ou não.
+relay_timeout	int	Esse campo representa o tempo de abertura do relê da SecBox em (ms).
+door_sensor_enabled	bool	Esse campo representa se o sensor de porta está habilitado ou não.
+door_sensor_idle	bool	Esse campo representa se o sensor de porta está NO = 1 ou NC = 0.
+auto_close_enabled	int	Inteiro (0 ou 1) indicando se o relê deverá fechar quando o sensor de porta abrir.
+contacts
+Permite manipular os contatos que podem ser utilizados em ligações de interfonia SIP.
+
+Campo	Tipo	Descrição
+id	int	Identificador do contato.
+name	string	Nome do contato.
+number	string	Número (ramal) do contato.
+timed_alarms
+Permite manipular horários fixos de sirene para determinados dias da semana.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador do alarme (obrigatório).
+name	string	Nome de identificação do alarme (obrigatório).
+time	int	Horário de acionamento da sirene. É armazenado em segundos desde às 0 horas do dia. Exemplo: Uma hora da manhã será 3600, já que 16060 = 3600. Duas horas da manhã será 7200, já que 26060 = 7200 (obrigatório).
+sun	int	Indica se o alarme está ativo para os domingos (obrigatório).
+mon	int	Indica se o alarme está ativo para as segundas-feiras (obrigatório).
+tue	int	Indica se o alarme está ativo para as terças-feiras (obrigatório).
+wed	int	Indica se o alarme está ativo para as quartas-feiras (obrigatório).
+thu	int	Indica se o alarme está ativo para as quintas-feiras (obrigatório).
+fri	int	Indica se o alarme está ativo para as sextas-feiras (obrigatório).
+sat	int	Indica se o alarme está ativo para os sábados (obrigatório).
+access_events
+Registra eventos de acesso como abertura de portas e ações da catraca.
+
+Observação:
+
+Este registro possui limite de armazenamento de 10 mil eventos. Quando ele é atingido, ocorre a rotação e somente os últimos 10 mil registros estarão disponíveis.
+Campo	Tipo	Descrição
+id	int 64	Identificador do evento de acesso (obrigatório).
+event	string	Indica a categoria de evento, possíveis valores:
+catra
+secbox
+door
+(obrigatório).
+type	string	Indica o tipo de evento em sua categoria. Para event igual a catra, são válidos os valores:
+TURN_LEFT
+TURN_RIGHT
+GIVE_UP
+Já para event com valor door ou secbox, são válidos:
+OPEN
+CLOSE
+(obrigatório).
+identification	string	Caso event seja secbox ou door, indica o id em texto da SecBox ou porta correspondente, caso event seja catra, indica a uuid do evento (obrigatório).
+device_id	int 64	Id associado ao equipamento que reportou o evento (obrigatório).
+timestamp	int	Horário da ocorrência em Unix Timestamp (obrigatório).
+custom_thresholds
+Permite manipular a rigidez da identificação facial no iDFace para poder diferenciar faces semelhantes.
+
+Campo	Tipo	Descrição
+id	int	Identificador do threshold customizado.
+user_id	int	Identificador único do usuário a quem o valor do threshold pertence (obrigatório).
+threshold	int	Número do threshold customizado do usuário (obrigatório).
+network_interlocking_rules
+Representa as regras de intertravamento remoto. O funcionamento do intertravamento remoto é o seguinte: - Nesse dispositivo (chamaremos de dispositivo A), cadastramos as informações do dispositivo remoto (chamaremos de dispositivo B). - Após o cadastro das informações, o dispositivo A irá se conectar ao dispositivo B para verificar o estado de sua porta. - Caso a porta do dispositivo B esteja aberta, o dispositivo A não irá permitir a abertura de sua porta.
+
+O objetivo do intertravamento remoto é impedir a abertura simultânea das portas de dois ou mais dispositivos.
+
+Campo	Tipo	Descrição
+id	int	Identificador da regra de intertravamento.
+ip	string	IP do dispositivo remoto (dispositivo B) (obrigatório).
+login	string	Login do dispositivo remoto (dispositivo B). É o mesmo login utilizado para acessar a interface Web (obrigatório).
+password	string	Senha do dispositivo remoto (dispositivo B). É a mesma senha utilizada para acessar a interface Web (obrigatório).
+portal_name	string	Nome da regra de intertravamento (obrigatório).
+enabled	int	Habilita ou desabilita esta regra de intertravamento. 1 = Habilitado, 0 = Desabilitado (obrigatório).
+
+
+
+Parâmetros Configuração
+Descrição dos parâmetros de configuração dos equipamentos:
+
+general
+Configurações gerais do equipamento.
+
+Campo	Tipo	Descrição
+auto_reboot_hour	string	Hora em que o equipamento reinicia automaticamente. Valores entre "0" e "23". É necessário reiniciar o equipamento para que alterações nesse parâmetro entrem em vigor.
+auto_reboot_minute	string	Minuto em que o equipamento realiza o reinício automático. Valores entre "0" e "59". É necessário reiniciar o equipamento para que alterações nesse parâmetro entrem em vigor.
+clear_expired_users	string	Parâmetro que configura o grupo de pessoas expiradas a ter seus dados limpos após o reinício diário do equipamento. Valores: "all" (usuários e visitantes), "visitors" (somente visitantes) ou "disable" (desabilitado). É necessário reiniciar o equipamento para que alterações nesse parâmetro entrem em vigor.
+url_reboot_enabled	string	Habilita a possibilidade de reinício imediato do dispositivo a partir do endpoint "/reboot". Para desabilitar "0", e para habilitar "1".
+keep_user_image	int	Parâmetro responsável por manter ou não a foto do usuário após o seu cadastro. Valores: "1", padrão, a foto do usuário é mantida; ou "0", a foto do usuário é removida imediatamente após o cadastro.
+beep_enabled	string	Ativa o som de beep do equipamento. Valores: "0" ou "1".
+ssh_enabled	string	Ativa a conexão com o dispositivo via SSH, indicando que pode ser acessado remotamente para diagnósticos de engenharia. Para desabilitar "0" e para habilitar "1".
+relayN_enabled	string	Habilita o uso do relé N, onde N vai de 1 à 4 indicando o relé (o número máximo de relés depende do produto). Para desabilitar "0" e para habilitar "1".
+relayN_timeout	string	Tempo de ativação do relé em milissegundos, onde N vai de 1 à 4 indicando o relé (o número máximo de relés depende do produto). Exemplo: "3000".
+relayN_auto_close	int	A configuração do relay permite que seja configurado de duas formas neste caso N é o número da porta em questão (No caso do iDAccess pode ser 0 ou 1, no caso da catraca é sempre 0 enquanto a iDBox vai de 0 a 3) e a sua configuração pode ser "0" (Funcionamento normal) e "1" (Quando sensor de porta abrir, o relê fechará) - Evita que a porta fique aberta mais tempo do que o necessário.
+door_sensorN_enabled	string	Habilita o uso do sensor de porta N, onde N vai de 1 à 4 indicando a porta (o número máximo depende do produto). Para desabilitar "0" e para habilitar "1".
+door_sensorN_idle	string	Indica qual o nível lógico do sensor da porta N quando ela estiver fechada, onde N vai de 1 à 4 indicando a porta (o número máximo depende do produto). Valores: "0" ou "1".
+doorN_interlock	string	Numero das portas que estão intertravadas separados por vírgula (ex: "1,3"), onde N vai de 1 à 4 indicando a porta (o número máximo depende do produto).
+bell_enabled	string	Habilita ou desabilita a campainha.
+bell_relay	string	Relê no qual a campainha está conectada, o padrão é "2".
+catra_timeout	string	Tempo que a catraca fica liberada para um giro em ms. timeout igual a zero significa tempo infinito, ou seja, liberada até o próximo giro, Exemplo: "3000". Atenção: método aplicável somente quando o dispositivo for catraca.
+online	string	Esse parâmetro determina se o equipamento deve operar online (Modo Pro ou Modo Enterprise), ou seja, com liberação de acesso processada em servidor externo. Os valores possíveis são "0" ou "1".
+local_identification	string	Quando o equipamento opera online, esse parâmetro define se o ele está no Modo Pro, em que a identificação é feita no próprio equipamento, ou no Modo Enterprise, em que a identificação é feita no servidor externo. Os valores possíveis são "0" ou "1".
+exception_mode	string	Esse parâmetro deve ser setado quando o equipamento precisa permanecer com a entrada sempre liberada ou sempre bloqueada, as opções são emergency e lock_down. Para sair destes modos, basta setar esta configuração para qualquer outro valor, o padrão é none. Quando emergency está habilitado, o equipamento permanece com a entrada sempre liberada e a tela e as identificações permanecem travadas. Quando lock_down está habilitado, o equipamento permanece com a entrada sempre bloqueada e a tela e as identificações permanecem travadas.
+doorN_exception_mode	string	Esse parâmetro - exclusivo para a linha de acesso V3 - configura o comportamento da porta N, onde N varia de 1 à 4, caso o exception_mode não seja emergency e nem lock_down. As opções possíveis são as mesmas do exception_mode (emergency e lock_down) - ambas travam as identificações, mas não travam a tela - sendo que o valor padrão também é none. Caso o valor o seja emergency, a porta permanece liberada. Quando lock_down está habilitado, a porta permanece sempre bloqueada. Por fim, para qualquer outro valor, a porta volta a operar normalmente.
+language	string	Usado para alterar o idioma do equipamento, os valores possíveis são: pt_BR (Português), spa_SPA (Espanhol) e en_US (Inglês). Após a alteração do idioma do equipamento é necessário reinicia-lo.
+daylight_savings_time_start	int	A data de inicio do horário de verão (Unix timestamp).
+daylight_savings_time_end	int	A data de fim do horário de verão (Unix timestamp).
+password_only	string	Quando habilitado e no modo online, o equipamento pedirá somente a senha ao invés de pedir o ID e senha para identificação do usuário através da interface gráfica do dispositivo. O request new_user_id_and_password enviado pelo dispositivo não muda, o user_id irá zerado. Utilize os valores "1" ou "0" para habilitar ou desabilitar respectivamente.
+hide_password_only	string	Quando é atribuindo o valor "0" para este parâmetro e password_only (descrito acima) esta habilitado, o equipamento não esconderá a senha que é digitada. O padrão é "1".
+password_only_tip	string	Esta configuração muda o texto da dica que é mostrada quando password_only está habilitado. Quando vazio, mostra a mensagem padrão. O valor padrão é vazio.
+hide_name_on_identification	string	Ocultar nome no acesso. Uma vez ativado, o nome do usuário não será exibido na badge de identificação, tanto para acesso autorizado quanto não autorizado. Para desabilitar "0", e para habilitar "1".
+denied_transaction_code	int	Código de transação negada. Define o código que será enviado pela Wiegand caso send_code_when_not_identified e/ou send_code_when_not_authorized estejam habilitados. Se o parâmetro out_mode da sec_box tiver o valor "RELAY_CARD", o código de transação negada é ignorado.
+send_code_when_not_identified	int	Habilita o envio de código de transação negada quando um evento de usuário não identificado ocorre.
+send_code_when_not_identified	int	Habilita o envio de código de transação negada quando um evento de usuário não autorizado ocorre.
+screen_always_on	int	No iDFace, mantém a tela sempre ligada quando "1" e desliga a tela quando o equipamento está ocioso quando o seu valor é "0".
+web_server_enabled	string	Habilita a interface Web. A API continua completamente funcional, apenas a interface Web é alterada. Para desabilitar "0" e para habilitar "1".
+catra
+Configurações específicas da catraca.
+
+Campo	Tipo	Descrição
+anti_passback	string	Habilita ou desabilita o controle de anti-dupla entrada.
+daily_reset	string	"0" ou "1". Habilita o reset de logs para o controle de anti-dupla entrada. Os acessos serão apagados todos os dias a meia-noite.
+gateway	string	Sentido da entrada. Deve ser "clockwise" ou "anticlockwise" (horário ou anti-horário respectivamente).
+operation_mode	string	Modo de operação da catraca. Controla quais sentidos da catraca serão controlados ou liberados. Deve ser "blocked", "entrance_open", "exit_open", "both_open" (Ambas controladas, entrada liberada, saída liberada e ambas liberadas respectivamente).
+opening_times
+Essa configuração permite definir qual o tempo de abertura da porta em milissegundos.
+
+Campo	Tipo	Descrição
+id	int 64	Identificador único da regra de tempo de abertura especial.
+user_id	int 64	Inteiro indicando o usuário (referência a tabela users).
+door_id	int 64	Inteiro indicando a porta (valor inicial 1).
+time	int	Tempo diferenciado de abertura em milissegundos.
+Parâmetros de Energia
+Esse parâmetros permitem ajustar configurações de energia. Disponíveis no iDFace Max
+
+Campo	Tipo	Descrição
+energy_mode	int	Determina o modo de energia. Valores: 0 (Padrão), 1 (fonte 2A), 2 (fechadura + POE) e 3 (Personalizado).
+energy_display_custom	double	Determina o valor máximo do display ao usar o modo personalizado
+energy_sound_custom	double	Determina o valor máximo do alto-falante ao usar o modo personalizado
+energy_ir_custom	double	Determina o valor máximo do LED infravermelho ao usar o modo personalizado
+energy_led_custom	double	Determina o valor máximo do LED branco ao usar o modo personalizado
+RS485
+Parâmetros de configuração da interface de comunicação RS485.
+
+Campo	Tipo	Descrição
+enabled	int	Habilita ou desabilita a transmissão de sinal via protocolo RS485. Os valores de entrada possíveis são: "0" (desabilitado) ou "1" (habilitado). Por padrão, o valor de entrada é "0", ou seja, a comunicação padrão não ocorrerá via RS485 e será somente via módulo de acionamento externo (MAE/Security Box)
+legacy_mode	int	Define o modo de comunicação da interface RS485. Os valores de entrada possíveis são: "0", "1" ou "2". Para a entrada "0", a comunicação se comportará de acordo com o manual de comunicação serial RS485 disponível em Manual de Comunicação Serial RS485. Para a entrada "1", ocorrerá o envio do ID, nome e matrícula do usuário autorizado no seguinte formato em hexadecimal: "01 02 < ID até 4 char > 00 00 < nome até 16 char > 00 00 < Matrícula até 6 char > 03 0D". Por fim, se for inserida a entrada "2", a transmissão será do ID do usuário em formato ASCII com 20 dígitos, sem quebra de linha. Por padrão, o valor de entrada de fábrica é "0". *Este parâmetro só está disponível para os equipamentos: iDFlex, iDAccess Pro, iDAccess Nano e iDFace.
+receive_timeout	int	Timeout das transmissões de dados (em milissegundos). O valor padrão deste parâmetro é 1000 ms.
+mifare
+A configuração do módulo MIFARE permite que a quantidade de bits que a leitora do device vai ler seja configurável, podendo ser 24 ou 32 bits.
+
+Campo	Tipo	Descrição
+byte_order	string	O byte_order possui dois possíveis valores "W_26" (MIFARE c/ 24 bits de informação) usado para manter compatibilidade com plantas antigas e "LSB" (Least Significant Byte) onde lê 32 bits de dados e inverte a ordem dos bytes, qualquer configuração diferente de "W_26" irá operar no modo "LSB".
+read_sector	string	Indica qual setor do cartão MIFARE será automaticamente lido quando aproximado do leitor. Quando vazio, nenhum setor será lido. O padrão é vazio.
+read_block	string	Indica qual bloco do cartão MIFARE será automaticamente lido quando aproximado do leitor. Quando vazio, nenhum bloco será lido. O padrão é vazio.
+authentication_type	string	Tipo de chave que será usado para autenticação do bloco indicado por read_block. Pode ser "A" ou "B". Valor padrão: "A".
+authentication_key	string	Valor em base64 de chave usada para autenticar o bloco indicado por read_block. Valor padrão: "////////" (ou "ffffffffffff" em hexadecimal).
+RFID
+A configuração do módulo RFID permite que, para cartões ASK, a quantidade de bits que a leitora do device vai ler seja configurável, podendo ser 0 ou 8 bits para tamanho de código de area, e 16, 24, 32 ou 40 bits para o tamanho do código de usuário.
+
+Campo	Tipo	Descrição
+ask_site_code_size	string	Tamanho do código de área, possui dois possíveis valores "0" bits e "8" bits. O valor de "0" bits possibilita que o tamanho do código de usuário, indicado por ask_user_code_size, seja de "40" bits. Padrão é "0" bits.
+ask_user_code_size	string	Tamanho do código de usuário, possui quatro possíveis valores "16" bits, "24" bits, "32" bits e "40" bits. O valor de "40" bits só é válido se o tamanho do código de área, indicado por ask_site_code_size, for "0" bits. Padrão é "16" bits.
+HID
+Configuração do módulo de leitura HID. Possibilita operação do leitor com diferentes formatos de cartões. Durante a operação, apenas um formato deve estar ativo ("1"), enquanto os demais permanecem desativados ("0").
+
+Campo	Tipo	Descrição
+format_w37	string	Configura operação do leitor HID com formato W37. Valores: "0" ou "1".
+w37_cardid_size	string	Define número de bits de identificação do formato W37, desconsiderando bits de paridade. Valores: "19", "25" ou "35".
+format_w26	string	Configura operação do leitor HID com formato W26. Valores: "0" ou "1".
+format_mifare	string	Configura operação do leitor HID com formato Mifare. Valores: "0" ou "1".
+format_indala_b1	string	Configura operação do leitor HID com formato Indala-B1. Valores: "0" ou "1".
+format_ask	string	Configura operação do leitor HID com formato ASK. Valores: "0" ou "1".
+ignore_facility	string	Possibilita ignorar bits referentes ao facility code do cartão ASK. Se ativo "1", os bits são ignorados, se não "0", os bits são considerados. Valores: "0" ou "1".
+OSDP
+Parâmetros de configuração relacionados às definições de saída via protocolo OSDP.
+
+Campo	Tipo	Descrição
+enabled	bool	Habilita o protocolo OSDP no dispositivo. Ela pode ter dois valores, "0" para protocolo desabilitado e "1" para protocolo habilitado.
+pd_address	string	Define o endereço do módulo. Pode receber números inteiros de até 2 dígitos.
+baud_rate	int	Configura a taxa de transmissão dos dados em bit/s. Ela pode receber os valores: 9600, 19200, 38400, 57600, 115200 e 230400.
+card_read_report_format	string	Configura o formato dos dados transmitidos. Ela pode receber três valores: "raw" para binário (padrão), "wiegand" para Wiegand ou "ascii" para ASCII.
+wiegand_size	int	Define o número de bits de saída do Wiegand. Pode ter os valores: 26 (padrão), 32, 34 e 66.
+enforce_secure_channel	bool	Habilita o canal seguro obrigatório. Ela pode ter dois valores, "0" para canal desabilitado e "1" para canal habilitado.
+out_mode	int	Configura o tipo de saída de dados. Pode ter os valores: 0 para transmissão de ID (Padrão), 1 para transmissão de cartões autorizados, 2 para transmissão de qualquer cartão e 3 para transmissão do cartão do usuário.
+Para habilitar o Modo de Instalação do OSDP, após configurar o parâmetro a seguir, é necessário reiniciar o equipamento para validação da alteração.
+
+Campo	Tipo	Descrição
+enable	string	Habilita o Modo de Instalação do protocolo OSDP no dispositivo. Ela pode ter dois valores, "true" para modo habilitado e "false" para modo desabilitado. O modo de instalação permanecerá habilitado até que as chaves criptografadas entre os dispositivos que estão se comunicando sejam trocadas, com isso o canal de comunicação se torna seguro. No caso de um reinício o modo de instalação também será desabilitado.
+card_readerN
+Configuração da entrada wiegand, em que o N em card_readerN representa o número da wiegand in. Por exemplo, no iDAccess é sempre zero, ou seja, card_reader0, enquanto que na iDBlock tem-se as opções 0 para a wiegand principal e 1 para wiegand da urna, e na iDBox, 4 opções (de 0 a 3), correspondendo à quantidade de leitoras wiegand.
+
+Campo	Tipo	Descrição
+mode	string	A configuração mode pode ter dois valores, "WIN" para wiegand e "MAG" para cartão magnético (ABA Track II, disponível nos modelos iDBlock H2, iDFit H2 e iDAccess H2). É importante sempre reiniciar o equipamento após a mudança de mode.
+type	int	A configuração type pode ter dois estados, LSB (Least Significant Byte). Quando a leitura for wiegand 34, é invertida a ordem dos bytes; para qualquer outro valor ("") a inversão não será realizada.
+alarm
+Parâmetros de configuração de alarme do equipamento.
+
+Campo	Tipo	Descrição
+door_sensor_enabled	string	Habilita ou desabilita o sensor de porta. Os valores possíveis são "0" ou "1" para desabilitar e habilitar respectivamente.
+door_sensor_delay	string	Define o tempo em segundos em que a porta deverá permanecer aberta antes que o alarme de porta aberta seja gerado. O valore padrão é "5".
+forced_access_enabled	string	Habilita ou desabilita a detecção de arrombamento de porta. Os valores possíveis são "0" ou "1" para desabilitar e habilitar respectivamente.
+siren_enabled	string	Habilita ou desabilita a sirene (aplicável apenas para o iDAccess e iDFit). Para que a sirene seja acionada por um relê é necessário especificar o número através do parâmetro siren_relay. Os valores possíveis são "0" ou "1" para desabilitar e habilitar respectivamente.
+siren_relay	string	Relê no qual a sirene está conectada, o padrão é "2" (aplicável apenas para o iDAccess e iDFit).
+timed_alarm_timeout	int	Indica o tempo em segundos que o dispositivo deixará a sirene acionada.
+identifier
+Configurações do identificador.
+
+Campo	Tipo	Descrição
+card_identification_enabled	int	Disponível para dispositivos iDFace a partir da versão 6.5.1. Determina se a identificação por cartão está habilitada. Valores: "0" para desativada ou "1" para ativada.
+face_identification_enabled	int	Disponível para dispositivos iDFace a partir da versão 6.5.1. Determina se a identificação facial está habilitada. Valores: "0" para desativada ou "1" para ativada.
+qrcode_identification_enabled	int	Disponível para dispositivos iDFace a partir da versão 6.5.1. Determina se a identificação por QR Code está habilitada. Valores: "0" para desativada ou "1" para ativada.
+pin_identification_enabled	int	No momento só está disponível para o iDFace a partir da versão 6.9.0. Em breve estará disponível para os equipamentos da linha V5. Determina se a identificação habilitada é o modo de ID + Senha ou o modo PIN. Valores: "0" para ativar apenas o modo de ID + Senha e "1" para habilitar apenas o modo PIN.
+log_type	bool	Esta configuração só é válida para o iDFlex ponto. (Apesar dela existir para os outros dispositivos) e determina se as batidas customizadas estão habilitadas. (Tipos de batidas)
+multi_factor_authentication	int	
+Esta configuração determina se a autenticação múltipla deve ser utilizada.
+
+Para a linha de acesso V5:
+0 = Desabilitado
+1 = Cartão + Biometria
+
+Para dispositivos iDFace:
+0 = Desabilitado
+1 = identificação qualquer: {Cartão, Senha, QR Code ou PIN} + Face.
+
+verbose_logging	string	Se ativado, registra todos os tipos de acesso, inclusive não identificados. Utiliza mais memória. Se desativado, registra apenas acessos autorizados e não-autorizados. Valores: "0" ou "1".
+antipassback_enabled	string	Habilita ou desabilita a configuração de anti-passback, que bloqueia o acesso de uma mesma pessoa. Valores: "0" ou "1".
+antipassback_mode	string	Modo de operação do anti-passback, por padrão possui o valor "timed". Valores: "daily_catra" para acesso diário de catraca, "timed_catra" para bloqueio por tempo para catracas e "timed" para bloqueio por tempo em outros dispositivos.
+antipassback_timeout	int	Tempo de bloqueio do anti passback quando os modos "timed" ou "timed_catra" estão em uso. Valor especificado em minutos.
+face_module
+Configurações sobre uso dos LEDs durante a identificação
+
+Campo	Tipo	Descrição
+led_ir_brightness	int	Determina o brilho do led infravermelho Valores: "0" até "100"
+light_threshold_led_activation	int	Determina o limite de luminosidade para ativar o LED branco durante a identificação. Valores: "0" (Brilho Baixo), "1" (Brilho médio), "2" (Brilho alto), "3" (Ligado em qualquer luminosidade do ambiente)
+bio_id
+Configurações da biometria do equipamento.
+
+Campo	Tipo	Descrição
+similarity_threshold_1ton	string	Quanto maior o numero setado, mais rigorosa será a identificação. Aumentar este número irá diminuir a taxa de falsas aceitações e aumentar a taxa de falsas rejeições, diminuí-la terá o efeito inverso. Valor padrão: "12300".
+online_client
+Configurações do client (equipamento) quando em modo enterprise.
+
+Campo	Tipo	Descrição
+server_id	int 64	Id do servidor de acesso na tabela devices, que indica para quem será enviado os eventos de identificação.
+extract_template	string	Configura se, em caso de identificação por biometria, o equipamento irá extrair o template da digital e enviá-lo ou se irá enviar a imagem da digital. Valores: "0" ou "1".
+contingency_enabled	int	Indica se o terminal deve ou não entrar em contingência quando houver falha na comunicação com o servidor de acesso. Valores: 0 ou 1. Valor 0 indica modo de contingência desativado, o valor 1 indica modo de contingência ativado.
+max_request_attempts	int	Quantidade de tentativas que o equipamento faz para se comunicar com o servidor antes de entrar no modo de contingência.
+request_timeout	int	Indica o tempo de timeout em milissegundo que o dispositivo irá aguardar pela resposta das requisições. O tempo máximo permitido é de 5000 ms.
+alive_interval	int	Indica o intervalo de tempo em milissegundo em que dispositivo irá tentar voltar para o modo online quando em contingência (device_is_alive).
+monitor
+Parâmetros de configuração do Monitor.
+
+Campo	Tipo	Descrição
+request_timeout	int	O tempo em ms para o request dar timeout.
+hostname	string	O endereço para onde a request será enviado, por exemplo, o IP do servidor.
+port	string	A porta para onde a request será enviado.
+path	string	Este parâmetro define o caminho que compõe o endpoint onde os eventos do monitor são notificados. A valor padrão deste parâmetro é "api/notifications".
+inform_access_event_id	int	Determina se o id da entrada na tabela access_events deve ser reportado nos endpoints catra_event, door e secbox
+alive_interval	int	Intervalo de tempo em ms entre as requisições de device_is_alive enviadas pelo dispositivo quando o modo standalone está habilitado.
+push_server
+Parâmetros de configuração do Push.
+
+Campo	Tipo	Descrição
+push_request_timeout	int	Timeout das requisições do equipamento para o servidor em milissegundos.
+push_request_period	int	Período entre as requisições de push em segundos.
+push_remote_address	string	Endereço ip e porta em que o servidor está rodando separados por ':'. Exemplo: 192.168.120.94:80
+uhf
+Parâmetros de configuração específicas da antena iDUHF.
+
+Campo	Tipo	Descrição
+identification_bits	int	Indica quantos bits serão usados na identificação da tag UHF, este valor varia dependendo do modo de operação: "Standard" e "Extended". Se for selecionado o modo "Standard" a valor será igual ao valor da saída Wiegand em bits, podendo ser 26, 32, 34 ou 66 bit. Se for selecionado o modo "Extended", será utilizado 96 bits. Valor padrão: 26 bits no modo "Standard"
+reader_type	string	Define a ordem dos bytes, podendo ter os seguintes valores: "lsb" ou "default". Valor padrão: "default".
+read_interval	int	Define o intervalo mínimo, em milissegundos, para que duas leituras consecutivas da MESMA tag sejam consideradas leituras distintas, evitando leitura duplicada acidental. Valor mínimo: 100. Valor máximo: 30000. Valor padrão: 5000.
+read_interval_diff_tags	int	Define o intervalo mínimo, em milissegundos, para que duas leituras consecutivas de tags DIFERENTES sejam consideradas leituras distintas, evitando leitura duplicada acidental. Valor mínimo: 250. Valor máximo: 30000. Valor padrão: 100.
+transmit_power	int	Define a potência de transmissão da antena. Este valor é dividido por 100 para obter o valor em dBm. Valor mínimo: 1500. Valor máximo: 2400. Valor padrão: 2400.
+work_channel	string	Define os canais de operação da antena que serão usados. Exemplo: permitir canais 1, 2, 3, 4, 5, 7, 8, 9 e 10: "1-5;7-10"
+operation_mode	string	Define o modo de operação, "continuous" para modo contínuo, "trigger" para modo trigger e "inhibit" para modo inibição. No modo contínuo, o dispositivo realizará a leitura de tags independentemente do estado do pino de trigger. No modo trigger, o dispositivo realizará a leitura durante o período de timeout sempre que houver uma borda de descida (pulso) no pino de trigger. Já no modo inibição, o dispositivo não realizará a leitura enquanto o pino de trigger estiver ativado. Quando o pino for desativado, após o período de timeout, o dispositivo voltará a realizar a leitura das tags. Valor padrão: "continuous".
+trigger_timeout	int	Define o timeout do trigger, em milissegundos. Usado somente quando operation_mode for configurado para modo trigger. Valor mínimo: 250. Valor máximo: 60000. Valor padrão: desativado.
+trig_idle	int	Indica qual o nível lógico do trigger quando ele estiver ocioso. Valores: "0" ou "1". Valor padrão: 1.
+tag_detector_enabled	int	Indica o modo de funcionamento do relé interno da iDUHF. Caso seja "0", o dispositivo assume o comportamento padrão em relação à abertura do relé interno. Caso seja "1", sempre que uma tag estiver visível, o relé estará ativo. Logo, enquanto uma ou mais tags estiverem na frente da antena, o relé ficará ativo. Se estiver habilitada, o relé interno da iDUHF fica reservado a essa funcionalidade. Valor padrão: 0.
+sec_boxs
+A maioria das configurações do módulo de acionamento externo (MAE/Security Box) usado no iDFlex, iDAccess Pro, iDAccess Nano e iDFace, por estarem armazenadas em banco de dados, necessitam ser alteradas através do objeto sec_boxs, e manipuladas através das funções de manipulação de objetos. As demais configurações, internas ao módulo, encontram-se descritas a seguir.
+
+Campo	Tipo	Descrição
+mode	string	Indica a posição do bit mais significativo do protocolo Wiegand. Assume o valor ("LSB") se o bit mais significativo está à direita e ("") caso esteja à esquerda (MSB, Padrão).
+wiegand_out_size	string	Define o número de bits de saída do protocolo Wiegand. Valores: "26", "32", "34", "35", "37", "40", "42", "66".
+out_mode	string	Define o tipo de dado de saída via protocolo Wiegand, ("") para transmissão de ID (Padrão), "CARD" para transmissão de cartões autorizados e "RELAY_CARD" para transmissão de qualquer cartão.
+w_out0
+Parâmetros de configuração referentes a saída wiegand dos equipamentos sem módulo de acionamento externo (MAE/Security Box). Através desse módulo, é possível realizar a configuração do modo de saída e tamanho do seu protocolo.
+
+Campo	Tipo	Descrição
+size	string	Define o número de bits de saída do protocolo Wiegand. Valores: "26", "32", "34", "35", "37", "40", "42", "66".
+data	string	Define o tipo de dado de saída via protocolo Wiegand, ("") para transmissão de ID (Padrão), "CARD" para transmissão de cartões autorizados e "RELAY_CARD" para transmissão de qualquer cartão.
+gpio
+Parâmetros de configuração referentes aos GPIOs dos equipamentos. Através desse módulo, é possível realizar a configuração dos relés das catracas da Control iD.
+
+Campo	Tipo	Descrição
+catra_relay_1_enabled	int	Indica se o relé 1 da catraca está habilitado. Valores: "0" para desabilitado e "1" para habilitado.
+catra_relay_1_enable_direction	string	Indica a direção da liberação de rotação do braço da catraca que causará a ativação do relé 1, caso o parâmetro catra_relay_1_enabled esteja habilitado. Valores: "left" para rotação em sentido anti-horário e "right" para rotação em sentido horário.
+catra_relay_2_enabled	int	Indica se o relé 2 da catraca está habilitado. Valores: "0" para desabilitado e "1" para habilitado.
+catra_relay_2_enable_direction	string	Indica a direção da liberação de rotação do braço da catraca que causará a ativação do relé 2, caso o parâmetro catra_relay_2_enabled esteja habilitado. Valores: "left" para rotação em sentido anti-horário e "right" para rotação em sentido horário.
+onvif
+Parâmetros de configuração referentes a Streaming iDFace. Através desse módulo, é possível realizar a configuração dos modos de operação, resolução desejada e orientação da imagem que será mostrada.
+
+Campo	Tipo	Descrição
+rtsp_enabled	int	Indica se streaming RTSP está habilitado. Valores: "0" para desabilitado e "1" para habilitado.
+rtsp_rgb	int	Altera a câmera que está sendo utilizada para o streaming. Valores: "0" para IR e "1" para RGB.
+rtsp_username	string	Altera a credencial de usuário para que a transmissão só seja habilitada a partir do preenchimento do usuário e senhas corretos
+rtsp_password	string	Altera a credencial de senha para que a transmissão só seja habilitada a partir do preenchimento do usuário e senhas corretos
+rtsp_port	int	Altera a porta utilizada para a transmissão.
+rtsp_codec	string	Altera o codec de vídeo utilizado na transmissão. Valores: "mjpeg" para codec MJPEG e "h264" para codec H.264
+rtsp_flipped	int	Habilita o espelhamento do vídeo. Valores: "0" para desabilitado e "1" para habilitado.
+rtsp_watermark	int	Habilita marca d'água na transmissão de vídeo. Valores: "0" para desabilitado e "1" para habilitado.
+rtsp_watermark_logo_enabled	int	Habilita logo na transmissão de vídeo. Valores: "0" para desabilitado e "1" para habilitado.
+rtsp_watermark_custom_logo_enabled	int	Habilita utilização de logo customizado na transmissão de vídeo. Valores: "0" para desabilitado e "1" para habilitado.
+onvif_enabled	int	Habilita a transmissão seguindo padrão ONVIF. Valores: "0" para desabilitado e "1" para habilitado.
+onvif_port	int	Altera a porta utilizada para a transmissão seguindo o padrão ONVIF.
+onvif_username	string	Altera a credencial de usuário requerido para acesso à transmissão ONVIF; a conexão só será estabelecida se o usuário fornecido for válido.
+onvif_password	string	Define a senha requerida para acesso à transmissão ONVIF; a conexão só será estabelecida se a senha fornecida corresponder ao usuário.
+ntp
+Parâmetros de configuração do módulo NTP. Através desse módulo, é possível realizar a configuração da time-zone e do horário de verão (para os países adotantes da medida).
+
+Campo	Tipo	Descrição
+enabled	int	Indica se o protocolo NTP está habilitado. Valores: "0" para desabilitado e "1" para habilitado.
+timezone	string	Define o horário local em relação ao Tempo Universal Coordenado (UTC). Faixa de valores: "UTC-12" a "UTC+12".

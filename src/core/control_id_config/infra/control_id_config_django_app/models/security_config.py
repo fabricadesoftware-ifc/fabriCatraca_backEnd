@@ -25,9 +25,9 @@ class SecurityConfig(models.Model):
         default=True,
         help_text="Habilita logs detalhados do identificador na catraca",
     )
-    log_type = models.PositiveSmallIntegerField(
-        default=1,
-        help_text="Nivel de log retornado pelo bloco identifier da catraca",
+    log_type = models.BooleanField(
+        default=False,
+        help_text="Habilita tipos de batida customizados no iDFlex ponto",
     )
     multi_factor_authentication_enabled = models.BooleanField(
         default=False,

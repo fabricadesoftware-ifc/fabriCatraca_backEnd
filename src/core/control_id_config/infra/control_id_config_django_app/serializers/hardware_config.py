@@ -15,7 +15,11 @@ class HardwareConfigSerializer(serializers.ModelSerializer):
     door_sensorN_enabled = serializers.BooleanField(required=False, default=False)
     doorN_interlock = serializers.BooleanField(required=False, default=False)
     bell_enabled = serializers.BooleanField(required=False, default=False)
-    exception_mode = serializers.BooleanField(required=False, default=False)
+    exception_mode = serializers.ChoiceField(
+        choices=['none', 'emergency', 'lock_down'],
+        required=False,
+        default='none',
+    )
     doorN_exception_mode = serializers.BooleanField(required=False, default=False)
     
     class Meta:
@@ -92,7 +96,6 @@ class HardwareConfigSerializer(serializers.ModelSerializer):
             'door_sensorN_enabled': False,
             'doorN_interlock': False,
             'bell_enabled': False,
-            'exception_mode': False,
             'doorN_exception_mode': False
         }
         

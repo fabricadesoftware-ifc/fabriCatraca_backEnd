@@ -142,7 +142,7 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                 "doorN_interlock": instance.doorN_interlock,
                 "bell_enabled": instance.bell_enabled,
                 "bell_relay": instance.bell_relay,
-                "exception_mode": instance.exception_mode,
+                "exception_mode": str(instance.exception_mode or 'none'),
                 "doorN_exception_mode": instance.doorN_exception_mode,
             },
         )
@@ -192,9 +192,11 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                             config_data.get("doorN_interlock"), False
                         ),
                         "bell_enabled": to_bool(config_data.get("bell_enabled"), False),
-                        "bell_relay": config_data.get("bell_relay", 1),
-                        "exception_mode": to_bool(
-                            config_data.get("exception_mode"), False
+                        "bell_relay": config_data.get("bell_relay", 2),
+                        "exception_mode": (
+                            config_data.get("exception_mode")
+                            if config_data.get("exception_mode") in {"none", "emergency", "lock_down"}
+                            else "none"
                         ),
                         "doorN_exception_mode": to_bool(
                             config_data.get("doorN_exception_mode"), False
@@ -235,7 +237,7 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                 "verbose_logging": "1"
                 if getattr(instance, "verbose_logging_enabled", True)
                 else "0",
-                "log_type": str(getattr(instance, "log_type", 1)),
+                "log_type": "1" if getattr(instance, "log_type", False) else "0",
             }
         }
         return self.set_configuration(payload)
@@ -276,7 +278,7 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
                         "verbose_logging_enabled": to_bool(
                             config_data.get("verbose_logging"), True
                         ),
-                        "log_type": int(str(config_data.get("log_type", 1)) or 1),
+                        "log_type": to_bool(config_data.get("log_type"), False),
                         "multi_factor_authentication_enabled": to_bool(
                             config_data.get("multi_factor_authentication"), False
                         ),

@@ -13,16 +13,13 @@ class HardwareConfigSyncMixin(ControlIDSyncMixin):
             def bool_to_str(value):
                 return "1" if value else "0"
             
-            def exception_mode_to_str(value):
-                return "emergency" if value else "none"
-            
             payload = {
                 "general": {
                     "beep_enabled": bool_to_str(instance.beep_enabled),
                     "ssh_enabled": bool_to_str(instance.ssh_enabled),
                     "bell_enabled": bool_to_str(instance.bell_enabled),
                     "bell_relay": str(instance.bell_relay),
-                    "exception_mode": exception_mode_to_str(instance.exception_mode),
+                    "exception_mode": str(instance.exception_mode or 'none'),
                 }
             }
             
@@ -102,9 +99,9 @@ class HardwareConfigSyncMixin(ControlIDSyncMixin):
                     return v != 0
                 return bool(v)
             
-            # exception_mode: "none" = desabilitado, "emergency"/"lock_down" = habilitado
-            exception_mode_value = config_data.get('exception_mode', 'none')
-            exception_mode_enabled = exception_mode_value not in ['', 'none', '0', 0, False]
+            exception_mode_value = str(config_data.get('exception_mode', 'none') or 'none')
+            if exception_mode_value not in {'none', 'emergency', 'lock_down'}:
+                exception_mode_value = 'none'
             
             config, created = HardwareConfig.objects.update_or_create(
                 device=self.device,
@@ -112,8 +109,8 @@ class HardwareConfigSyncMixin(ControlIDSyncMixin):
                     # Campos DISPONÍVEIS na IDBLOCK
                     'beep_enabled': to_bool(config_data.get('beep_enabled'), True),
                     'bell_enabled': to_bool(config_data.get('bell_enabled'), False),
-                    'bell_relay': int(config_data.get('bell_relay', 1) or 1),
-                    'exception_mode': exception_mode_enabled,
+                    'bell_relay': int(config_data.get('bell_relay', 2) or 2),
+                    'exception_mode': exception_mode_value,
                     # Campos NÃO DISPONÍVEIS na IDBLOCK (valores fixos padrão)
                     'ssh_enabled': False,           # Não existe na IDBLOCK
                     'relayN_enabled': False,        # Não existe na IDBLOCK

@@ -21,12 +21,12 @@ class SystemConfig(models.Model):
     local_identification = models.BooleanField(default=True, help_text="Identificação local")
     
     # Configurações de idioma e horário
-    language = models.CharField(max_length=10, default='pt', help_text="Idioma do sistema")
+    language = models.CharField(max_length=10, default='pt_BR', help_text="Idioma do sistema")
     daylight_savings_time_start = models.DateTimeField(null=True, blank=True, help_text="Início do horário de verão")
     daylight_savings_time_end = models.DateTimeField(null=True, blank=True, help_text="Fim do horário de verão")
     
     # Configurações de timeout
-    catra_timeout = models.IntegerField(default=30, help_text="Timeout da catraca em segundos")
+    catra_timeout = models.IntegerField(default=30000, help_text="Timeout da catraca em milissegundos")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -317,9 +317,7 @@ class _DebugSetupEngine(_EasySetupEngine):
                 general["ssh_enabled"] = bool_to_str(hw_cfg.ssh_enabled)
                 general["bell_enabled"] = bool_to_str(hw_cfg.bell_enabled)
                 general["bell_relay"] = str(hw_cfg.bell_relay)
-                general["exception_mode"] = (
-                    "emergency" if hw_cfg.exception_mode else "none"
-                )
+                general["exception_mode"] = str(hw_cfg.exception_mode or "none")
 
             payload["general"] = general
 
@@ -350,7 +348,7 @@ class _DebugSetupEngine(_EasySetupEngine):
                 identifier_cfg["verbose_logging"] = bool_to_str(
                     getattr(sec_cfg, "verbose_logging_enabled", True)
                 )
-                identifier_cfg["log_type"] = str(getattr(sec_cfg, "log_type", 1))
+                identifier_cfg["log_type"] = bool_to_str(getattr(sec_cfg, "log_type", False))
             identifier_cfg.setdefault("card_identification_enabled", "1")
             identifier_cfg.setdefault("pin_identification_enabled", "1")
             payload["identifier"] = identifier_cfg

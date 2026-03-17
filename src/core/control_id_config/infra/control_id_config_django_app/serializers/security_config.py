@@ -19,7 +19,7 @@ class SecurityConfigSerializer(serializers.ModelSerializer):
         required=False,
         default=True,
     )
-    log_type = serializers.IntegerField(required=False, default=1, min_value=0, max_value=2)
+    log_type = serializers.BooleanField(required=False, default=False)
     multi_factor_authentication = serializers.BooleanField(
         source="multi_factor_authentication_enabled",
         required=False,
@@ -78,6 +78,7 @@ class SecurityConfigSerializer(serializers.ModelSerializer):
             "send_code_when_not_identified": False,
             "send_code_when_not_authorized": False,
             "verbose_logging": True,
+            "log_type": False,
             "multi_factor_authentication": False,
         }
 

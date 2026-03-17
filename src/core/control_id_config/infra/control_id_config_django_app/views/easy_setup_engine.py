@@ -453,7 +453,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             general["ssh_enabled"] = bool_to_str(hw_cfg.ssh_enabled)
             general["bell_enabled"] = bool_to_str(hw_cfg.bell_enabled)
             general["bell_relay"] = str(hw_cfg.bell_relay)
-            general["exception_mode"] = "emergency" if hw_cfg.exception_mode else "none"
+            general["exception_mode"] = str(hw_cfg.exception_mode or "none")
             result["sections"]["hardware"] = {"source_device_id": hw_cfg.device_id}
 
         # NOTA: screen_always_on não é suportado pelo firmware IDBLOCK
@@ -492,7 +492,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             identifier_cfg["verbose_logging"] = bool_to_str(
                 getattr(sec_cfg, "verbose_logging_enabled", True)
             )
-            identifier_cfg["log_type"] = str(getattr(sec_cfg, "log_type", 1))
+            identifier_cfg["log_type"] = bool_to_str(getattr(sec_cfg, "log_type", False))
             result["sections"]["security"] = {"source_device_id": sec_cfg.device_id}
 
         # Métodos de identificação habilitados.

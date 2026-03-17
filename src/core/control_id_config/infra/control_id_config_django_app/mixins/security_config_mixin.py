@@ -30,7 +30,7 @@ class SecurityConfigSyncMixin(ControlIDSyncMixin):
                     "verbose_logging": "1"
                     if getattr(instance, "verbose_logging_enabled", True)
                     else "0",
-                    "log_type": str(getattr(instance, "log_type", 1)),
+                    "log_type": "1" if getattr(instance, "log_type", False) else "0",
                 }
             }
 
@@ -98,7 +98,7 @@ class SecurityConfigSyncMixin(ControlIDSyncMixin):
                     "verbose_logging_enabled": self._to_bool(
                         config_data.get("verbose_logging"), True
                     ),
-                    "log_type": int(str(config_data.get("log_type", 1)) or 1),
+                    "log_type": self._to_bool(config_data.get("log_type"), False),
                     "multi_factor_authentication_enabled": self._to_bool(
                         config_data.get("multi_factor_authentication"), False
                     ),

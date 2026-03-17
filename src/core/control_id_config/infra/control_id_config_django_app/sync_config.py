@@ -112,8 +112,8 @@ def collect_config_data(devices) -> Dict[int, Dict[str, Any]]:
                 'door_sensorN_idle': general.get('door_sensorN_idle', 10),
                 'doorN_interlock': to_bool(general.get('doorN_interlock'), False),
                 'bell_enabled': to_bool(general.get('bell_enabled'), False),
-                'bell_relay': general.get('bell_relay', 1),
-                'exception_mode': to_bool(general.get('exception_mode'), False),
+                'bell_relay': general.get('bell_relay', 2),
+                'exception_mode': general.get('exception_mode', 'none') if general.get('exception_mode', 'none') in ['none', 'emergency', 'lock_down'] else 'none',
                 'doorN_exception_mode': to_bool(general.get('doorN_exception_mode'), False)
             }
             
@@ -127,7 +127,7 @@ def collect_config_data(devices) -> Dict[int, Dict[str, Any]]:
                 'send_code_when_not_identified': to_bool(general.get('send_code_when_not_identified'), False),
                 'send_code_when_not_authorized': to_bool(general.get('send_code_when_not_authorized'), False),
                 'verbose_logging_enabled': to_bool(identifier.get('verbose_logging'), True),
-                'log_type': int(str(identifier.get('log_type', 1)) or 1),
+                'log_type': to_bool(identifier.get('log_type', 0), False),
                 'multi_factor_authentication_enabled': to_bool(identifier.get('multi_factor_authentication'), False),
             }
             
