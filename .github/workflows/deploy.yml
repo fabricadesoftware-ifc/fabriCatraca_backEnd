@@ -9,7 +9,6 @@ on:
       - '.gitignore'
       - 'docs/**'
       - '.vscode/**'
-      - '.github/**'
       - '**/*.svg'
       - '**/*.png'
 
