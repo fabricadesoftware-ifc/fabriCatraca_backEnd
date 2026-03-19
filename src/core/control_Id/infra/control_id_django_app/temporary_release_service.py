@@ -4,6 +4,9 @@ from rest_framework import status
 
 from src.core.__seedwork__.infra.mixins import UserAccessRuleSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models import UserAccessRule
+from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+    ReleaseAuditService,
+)
 
 
 class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
@@ -47,6 +50,7 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
                     "updated_at",
                 ]
             )
+            ReleaseAuditService.sync_from_temporary_release(release)
 
         return release
 
@@ -87,6 +91,7 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
                     "updated_at",
                 ]
             )
+            ReleaseAuditService.sync_from_temporary_release(release)
 
         return release
 
@@ -95,4 +100,5 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
         release.closed_at = timezone.now()
         release.result_message = result_message
         release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+        ReleaseAuditService.sync_from_temporary_release(release)
         return release

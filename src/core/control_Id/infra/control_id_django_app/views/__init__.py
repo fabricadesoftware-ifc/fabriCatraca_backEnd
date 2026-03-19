@@ -20,6 +20,7 @@ from .device_actions import (
     remote_user_authorization,
 )
 from .temporary_user_release import TemporaryUserReleaseViewSet
+from .release_audit import ReleaseAuditViewSet
 
 
 
@@ -46,4 +47,5 @@ __all__ = [
     'buzzer_buzz',
     'remote_user_authorization',
     'TemporaryUserReleaseViewSet',
+    'ReleaseAuditViewSet',
 ] 

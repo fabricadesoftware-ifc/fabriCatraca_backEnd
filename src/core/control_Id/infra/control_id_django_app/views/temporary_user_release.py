@@ -10,6 +10,7 @@ from src.core.control_Id.infra.control_id_django_app.serializers import (
 from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
     TemporaryUserReleaseService,
 )
+from src.core.user.infra.user_django_app.permissions import IsAdminOrSisaeRole
 
 
 @extend_schema(tags=["Temporary User Releases"])
@@ -27,7 +28,8 @@ class TemporaryUserReleaseViewSet(
         "consumed_log__portal",
     ).all()
     serializer_class = TemporaryUserReleaseSerializer
-    filterset_fields = ["user", "status"]
+    permission_classes = [IsAdminOrSisaeRole]
+    filterset_fields = ["user", "status", "requested_by"]
     search_fields = ["user__name", "requested_by__name", "notes", "result_message"]
     ordering_fields = [
         "created_at",

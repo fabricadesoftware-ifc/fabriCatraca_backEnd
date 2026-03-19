@@ -13,6 +13,7 @@ from .group import CustomGroup
 from .user_groups import UserGroup
 from .group_access_rules import GroupAccessRule
 from .access_logs import AccessLogs
+from .release_audit import ReleaseAudit
 from .temporary_user_release import TemporaryUserRelease
 
 __all__ = [
@@ -31,5 +32,6 @@ __all__ = [
     'UserGroup',
     'GroupAccessRule',
     'AccessLogs',
+    'ReleaseAudit',
     'TemporaryUserRelease',
 ] 

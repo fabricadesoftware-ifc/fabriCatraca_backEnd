@@ -10,6 +10,9 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     TemporaryUserRelease,
     UserAccessRule,
 )
+from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+    ReleaseAuditService,
+)
 from src.core.user.infra.user_django_app.models import User
 
 
@@ -51,6 +54,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         write_only=True,
         required=True,
     )
+    valid_from = serializers.DateTimeField(required=False)
 
     class Meta:
         model = TemporaryUserRelease
@@ -78,7 +82,6 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             "requested_by",
             "access_rule",
             "status",
-            "valid_from",
             "valid_until",
             "activated_at",
             "consumed_at",
@@ -144,10 +147,12 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         duration_minutes = validated_data.pop("duration_minutes")
         access_rule = validated_data.pop("resolved_access_rule")
         request = self.context["request"]
-        valid_from = timezone.now()
+        valid_from = validated_data.pop("valid_from", timezone.now())
+        if valid_from < timezone.now():
+            valid_from = timezone.now()
         valid_until = valid_from + timedelta(minutes=duration_minutes)
 
-        return TemporaryUserRelease.objects.create(
+        release = TemporaryUserRelease.objects.create(
             user=user,
             requested_by=request.user,
             access_rule=access_rule,
@@ -155,3 +160,5 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             valid_until=valid_until,
             **validated_data,
         )
+        ReleaseAuditService.sync_from_temporary_release(release)
+        return release

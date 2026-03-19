@@ -16,6 +16,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     Portal,
     Area,
     AccessLogs,
+    ReleaseAudit,
     TemporaryUserRelease,
 )
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
@@ -137,6 +138,31 @@ class TemporaryUserReleaseAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "access_rule")
     search_fields = ("user__name", "requested_by__name", "notes", "result_message")
+
+
+@admin.register(ReleaseAudit)
+class ReleaseAuditAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "release_type",
+        "status",
+        "requested_by_name",
+        "target_user_name",
+        "device",
+        "portal",
+        "requested_at",
+        "scheduled_for",
+    )
+    list_filter = ("release_type", "status", "requested_by_role")
+    search_fields = (
+        "requested_by_name",
+        "requested_by_email",
+        "target_user_name",
+        "target_user_registration",
+        "notes",
+        "error_message",
+    )
+    readonly_fields = ("created_at", "updated_at", "request_payload", "response_payload")
 
 
 # Register your models here.

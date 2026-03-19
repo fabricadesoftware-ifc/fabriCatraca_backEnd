@@ -34,4 +34,10 @@ class RemoteUserAuthorizationSerializer(DeviceActionBaseSerializer):
     )
     user_image = serializers.BooleanField(required=False, default=False)
     portal_id = serializers.IntegerField(min_value=1)
+    release_mode = serializers.ChoiceField(
+        choices=["device_event", "single_turn"],
+        required=False,
+        default="single_turn",
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
     actions = RemoteActionItemSerializer(many=True, allow_empty=False)

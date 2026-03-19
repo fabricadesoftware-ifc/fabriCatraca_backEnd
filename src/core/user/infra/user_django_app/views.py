@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
+import logging
 from .models import User
 from .serializers import UserSerializer
 from src.core.__seedwork__.infra import ControlIDSyncMixin
@@ -9,183 +10,189 @@ from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 
+from .permissions import IsAdminRole, IsAdminOrSisaeRole
+
+logger = logging.getLogger(__name__)
+
 
 @extend_schema(tags=["Users"])
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("id").prefetch_related("usergroup_set")
     serializer_class = UserSerializer
-    filterset_fields = ["id", "name", "registration", "user_type_id"]
-    search_fields = ["name"]
-    ordering_fields = ["id", "name", "registration", "user_type_id"]
+    filterset_fields = [
+        "id",
+        "name",
+        "registration",
+        "user_type_id",
+        "app_role",
+        "panel_access_only",
+    ]
+    search_fields = ["name", "email", "registration"]
+    ordering_fields = ["id", "name", "registration", "user_type_id", "app_role"]
     ordering = ["id"]
     depth = 1
+
+    def get_permissions(self):
+        if self.action == "me":
+            return [IsAuthenticated()]
+        if self.action in ("list", "retrieve"):
+            return [IsAdminOrSisaeRole()]
+        return [IsAdminRole()]
+
+    def _normalize_user_type(self, instance):
+        if instance.user_type_id in (0, "0"):
+            instance.user_type_id = None
+            instance.save(update_fields=["user_type_id"])
+
+    def _build_user_payload(self, instance):
+        payload = {
+            "id": instance.id,
+            "name": instance.name,
+            "registration": instance.registration or "",
+        }
+        if instance.user_type_id is not None:
+            payload["user_type_id"] = instance.user_type_id
+        return payload
+
+    def _create_user_in_device(self, device, instance):
+        self.set_device(device)
+        response = self.create_objects("users", [self._build_user_payload(instance)])
+        if response.status_code != status.HTTP_201_CREATED:
+            raise RuntimeError(
+                f"Erro ao criar usuário na catraca {device.name}: {response.data}"
+            )
+
+        if instance.pin:
+            pin_resp = self.create_objects(
+                "pins",
+                [{"user_id": instance.id, "value": instance.pin}],
+            )
+            if pin_resp.status_code != status.HTTP_201_CREATED:
+                logger.warning(
+                    "Falha ao criar PIN na catraca %s: %s",
+                    device.name,
+                    pin_resp.data,
+                )
+
+        if instance.is_staff:
+            role_resp = self.create_objects(
+                "user_roles",
+                [{"user_id": instance.id, "role": 1}],
+            )
+            if role_resp.status_code != status.HTTP_201_CREATED:
+                raise RuntimeError(
+                    f"Erro ao definir usuario administrador na catraca {device.name}: {role_resp.data}"
+                )
+
+    def _update_user_in_device(self, device, instance):
+        self.set_device(device)
+        response = self.update_objects(
+            "users",
+            {
+                "name": instance.name,
+                "registration": instance.registration or "",
+                **(
+                    {"user_type_id": instance.user_type_id}
+                    if instance.user_type_id is not None
+                    else {}
+                ),
+            },
+            {"users": {"id": instance.id}},
+        )
+        if response.status_code != status.HTTP_200_OK:
+            raise RuntimeError(
+                f"Erro ao atualizar usuário na catraca {device.name}: {response.data}"
+            )
+
+        if instance.pin:
+            pin_resp = self.update_objects(
+                "pins",
+                {"value": instance.pin},
+                {"pins": {"user_id": instance.id}},
+            )
+            if pin_resp.status_code != status.HTTP_200_OK:
+                self.create_objects(
+                    "pins",
+                    [{"user_id": instance.id, "value": instance.pin}],
+                )
+
+        if instance.is_staff:
+            role_resp = self.update_objects(
+                "user_roles",
+                {"role": 1},
+                {"user_roles": {"user_id": instance.id}},
+            )
+            if role_resp.status_code != status.HTTP_200_OK:
+                role_resp = self.create_objects(
+                    "user_roles",
+                    [{"user_id": instance.id, "role": 1}],
+                )
+                if role_resp.status_code != status.HTTP_201_CREATED:
+                    raise RuntimeError(
+                        f"Erro ao atualizar papel administrativo na catraca {device.name}: {role_resp.data}"
+                    )
+        else:
+            self.destroy_objects("user_roles", {"user_roles": {"user_id": instance.id}})
+
+    def _delete_user_from_device(self, device, instance):
+        self.set_device(device)
+        self.destroy_objects("user_roles", {"user_roles": {"user_id": instance.id}})
+        self.destroy_objects("pins", {"pins": {"user_id": instance.id}})
+        response = self.destroy_objects("users", {"users": {"id": instance.id}})
+        if response.status_code != status.HTTP_204_NO_CONTENT:
+            raise RuntimeError(
+                f"Erro ao deletar usuário da catraca {device.name}: {response.data}"
+            )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            # Primeiro salvamos o usuário no banco
             instance = serializer.save()
-            # Normaliza valor 0 persistido
-            if instance.user_type_id in (0, "0"):
-                instance.user_type_id = None
-                instance.save(update_fields=["user_type_id"])
+            self._normalize_user_type(instance)
 
-            # Pega todas as catracas ativas
-            devices = Device.objects.filter(is_active=True)
-
-            # Para cada catraca ativa
-            for device in devices:
-                self.set_device(device)
-
-                # Criar na catraca
-                create_payload = {
-                    "id": instance.id,
-                    "name": instance.name,
-                    "registration": instance.registration,
-                }
-                if instance.user_type_id is not None:
-                    create_payload["user_type_id"] = instance.user_type_id
-                response = self.create_objects("users", [create_payload])
-
-                if response.status_code != status.HTTP_201_CREATED:
-                    # Se falhar em alguma catraca, reverte tudo
+            if not instance.panel_access_only:
+                devices = Device.objects.filter(is_active=True)
+                try:
+                    for device in devices:
+                        self._create_user_in_device(device, instance)
+                except Exception as exc:
                     instance.delete()
                     return Response(
-                        {
-                            "error": f"Erro ao criar usuário na catraca {device.name}",
-                            "details": response.data,
-                        },
-                        status=response.status_code,
+                        {"error": str(exc)},
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
-
-                # Cria o PIN de identificação na tabela 'pins' da catraca
-                if instance.pin:
-                    pin_resp = self.create_objects(
-                        "pins",
-                        [
-                            {
-                                "user_id": instance.id,
-                                "value": instance.pin,
-                            }
-                        ],
-                    )
-                    if pin_resp.status_code != status.HTTP_201_CREATED:
-                        import logging
-
-                        logging.getLogger(__name__).warning(
-                            f"Falha ao criar PIN na catraca {device.name}: {pin_resp.data}"
-                        )
-
-                if instance.is_staff:
-                    role_resp = self.create_objects(
-                        "user_roles",
-                        [{"user_id": instance.id, "role": 1}],
-                    )
-                    if role_resp.status_code != status.HTTP_201_CREATED:
-                        instance.delete()
-                        return Response(
-                            {
-                                "error": (
-                                    f"Erro ao definir usuario administrador "
-                                    f"na catraca {device.name}"
-                                ),
-                                "details": role_resp.data,
-                            },
-                            status=role_resp.status_code,
-                        )
-
-                # Adiciona a relação com a catraca
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
+        previous_panel_access_only = instance.panel_access_only
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            # Atualiza o usuário no banco
             instance = serializer.save()
+            self._normalize_user_type(instance)
 
-            # Atualiza em todas as catracas ativas
             devices = Device.objects.filter(is_active=True)
-
-            for device in devices:
-                self.set_device(device)
-                # Normaliza valor 0 antes de enviar
-                if instance.user_type_id in (0, "0"):
-                    instance.user_type_id = None
-                    instance.save(update_fields=["user_type_id"])
-
-                update_values = {
-                    "name": instance.name,
-                    "registration": instance.registration or "",
-                }
-                if instance.user_type_id is not None:
-                    update_values["user_type_id"] = instance.user_type_id
-                response = self.update_objects(
-                    "users", update_values, {"users": {"id": instance.id}}
+            try:
+                for device in devices:
+                    if previous_panel_access_only and instance.panel_access_only:
+                        continue
+                    if previous_panel_access_only and not instance.panel_access_only:
+                        self._create_user_in_device(device, instance)
+                        continue
+                    if not previous_panel_access_only and instance.panel_access_only:
+                        self._delete_user_from_device(device, instance)
+                        continue
+                    self._update_user_in_device(device, instance)
+            except Exception as exc:
+                return Response(
+                    {"error": str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-                if response.status_code != status.HTTP_200_OK:
-                    return Response(
-                        {
-                            "error": f"Erro ao atualizar usuário na catraca {device.name}",
-                            "details": response.data,
-                        },
-                        status=response.status_code,
-                    )
-
-                # Atualiza o PIN na tabela 'pins' da catraca
-                if instance.pin:
-                    # Tenta atualizar; se não existir, cria
-                    pin_resp = self.update_objects(
-                        "pins",
-                        {"value": instance.pin},
-                        {"pins": {"user_id": instance.id}},
-                    )
-                    if pin_resp.status_code != status.HTTP_200_OK:
-                        # PIN pode não existir ainda, tenta criar
-                        self.create_objects(
-                            "pins",
-                            [
-                                {
-                                    "user_id": instance.id,
-                                    "value": instance.pin,
-                                }
-                            ],
-                        )
-
-                if instance.is_staff:
-                    role_resp = self.update_objects(
-                        "user_roles",
-                        {"role": 1},
-                        {"user_roles": {"user_id": instance.id}},
-                    )
-                    if role_resp.status_code != status.HTTP_200_OK:
-                        role_resp = self.create_objects(
-                            "user_roles",
-                            [{"user_id": instance.id, "role": 1}],
-                        )
-                        if role_resp.status_code != status.HTTP_201_CREATED:
-                            return Response(
-                                {
-                                    "error": (
-                                        f"Erro ao atualizar papel administrativo "
-                                        f"na catraca {device.name}"
-                                    ),
-                                    "details": role_resp.data,
-                                },
-                                status=role_resp.status_code,
-                            )
-                else:
-                    self.destroy_objects(
-                        "user_roles",
-                        {"user_roles": {"user_id": instance.id}},
-                    )
-
-                # Atualiza a relação com a catraca
 
         return Response(serializer.data)
 
@@ -210,23 +217,17 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
             AccessLogs.objects.filter(user=instance).update(user=None)
 
-            # Remove o usuário de todas as catracas ativas
-            devices = Device.objects.filter(is_active=True)
+            if not instance.panel_access_only:
+                devices = Device.objects.filter(is_active=True)
 
-            for device in devices:
-                self.set_device(device)
-                self.destroy_objects("user_roles", {"user_roles": {"user_id": instance.id}})
-                # Remove o PIN da tabela 'pins' antes de remover o usuário
-                self.destroy_objects("pins", {"pins": {"user_id": instance.id}})
-                response = self.destroy_objects("users", {"users": {"id": instance.id}})
-                if response.status_code != status.HTTP_204_NO_CONTENT:
-                    return Response(
-                        {
-                            "error": f"Erro ao deletar usuário da catraca {device.name}",
-                            "details": response.data,
-                        },
-                        status=response.status_code,
-                    )
+                for device in devices:
+                    try:
+                        self._delete_user_from_device(device, instance)
+                    except Exception as exc:
+                        return Response(
+                            {"error": str(exc)},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
 
             # Se removeu de todas as catracas, remove do banco
             instance.delete()

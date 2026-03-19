@@ -19,6 +19,7 @@ from .device_actions import (
     RemoteUserAuthorizationSerializer,
 )
 from .temporary_user_release import TemporaryUserReleaseSerializer
+from .release_audit import ReleaseAuditSerializer
 
 __all__ = [
     'TemplateSerializer',
@@ -41,4 +42,5 @@ __all__ = [
     'BuzzerBuzzSerializer',
     'RemoteUserAuthorizationSerializer',
     'TemporaryUserReleaseSerializer',
+    'ReleaseAuditSerializer',
 ] 

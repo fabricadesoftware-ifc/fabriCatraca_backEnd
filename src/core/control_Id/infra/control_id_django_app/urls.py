@@ -12,7 +12,7 @@ from .views import (
     PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet, 
     GroupViewSet, UserGroupViewSet, GroupAccessRulesViewSet,
     message_to_screen, buzzer_buzz, remote_user_authorization,
-    TemporaryUserReleaseViewSet,
+    ReleaseAuditViewSet, TemporaryUserReleaseViewSet,
 )
 from .views.device import DeviceViewSet
 from .views.sync import sync_all, sync_status
@@ -35,6 +35,7 @@ router.register(r'user_groups', UserGroupViewSet)
 router.register(r'group_access_rules', GroupAccessRulesViewSet)
 router.register(r'access_logs', AccessLogsViewSet)
 router.register(r'temporary_user_releases', TemporaryUserReleaseViewSet)
+router.register(r'release_audits', ReleaseAuditViewSet, basename='releaseaudit')
 
 @api_view(['GET'])
 def control_id_root(request, format=None):
@@ -59,6 +60,7 @@ def control_id_root(request, format=None):
         'temporary_user_releases': reverse(
             'temporaryuserrelease-list', request=request, format=format
         ),
+        'release_audits': reverse('releaseaudit-list', request=request, format=format),
         'export_users': reverse('export-users', request=request, format=format),
         'import_users': reverse('import-users', request=request, format=format),
     })

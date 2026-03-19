@@ -15,6 +15,9 @@ from src.core.control_Id.infra.control_id_django_app.models import (
 from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
     TemporaryUserReleaseService,
 )
+from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+    ReleaseAuditService,
+)
 from .sync_collect import collect_all
 from .sync_persist import persist_all
 
@@ -126,6 +129,7 @@ def process_temporary_user_releases(self) -> dict:
             release.closed_at = now
             release.result_message = "Liberação expirou antes de ser ativada."
             release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+            ReleaseAuditService.sync_from_temporary_release(release)
             stats["expired"] += 1
             continue
 

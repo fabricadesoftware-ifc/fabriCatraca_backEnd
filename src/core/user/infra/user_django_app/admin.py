@@ -5,10 +5,20 @@ from src.core.user.infra.user_django_app.models import User
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "email", "registration", "user_type_id", "is_active", "is_staff")
+    list_display = (
+        "id",
+        "name",
+        "email",
+        "app_role",
+        "panel_access_only",
+        "registration",
+        "user_type_id",
+        "is_active",
+        "is_staff",
+    )
     list_display_links = ("id", "name")
     search_fields = ("name", "email", "registration")
-    list_filter = ("is_active", "is_staff", "user_type_id")
+    list_filter = ("is_active", "is_staff", "user_type_id", "app_role", "panel_access_only")
     ordering = ("id",)
     readonly_fields = ("last_login", "date_joined")
     save_on_top = True
@@ -20,7 +30,7 @@ class UserAdmin(admin.ModelAdmin):
         }),
         (_("Acesso"), {
             "classes": ("module",),
-            "fields": ("user_type_id",),
+            "fields": ("user_type_id", "app_role", "panel_access_only", "pin"),
         }),
         (_("Permissões"), {
             "classes": ("collapse", "module"),
