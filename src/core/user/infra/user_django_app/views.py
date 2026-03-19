@@ -84,7 +84,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     f"Erro ao definir usuario administrador na catraca {device.name}: {role_resp.data}"
                 )
 
-    def _update_user_in_device(self, device, instance):
+    def _update_user_in_device(self, device, instance, previous_is_staff=False):
         self.set_device(device)
         response = self.update_objects(
             "users",
@@ -131,8 +131,15 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     raise RuntimeError(
                         f"Erro ao atualizar papel administrativo na catraca {device.name}: {role_resp.data}"
                     )
-        else:
-            self.destroy_objects("user_roles", {"user_roles": {"user_id": instance.id}})
+        elif previous_is_staff:
+            role_resp = self.destroy_objects(
+                "user_roles",
+                {"user_roles": {"user_id": instance.id}},
+            )
+            if role_resp.status_code != status.HTTP_204_NO_CONTENT:
+                raise RuntimeError(
+                    f"Erro ao remover papel administrativo na catraca {device.name}: {role_resp.data}"
+                )
 
     def _delete_user_from_device(self, device, instance):
         self.set_device(device)
@@ -169,6 +176,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         previous_panel_access_only = instance.panel_access_only
+        previous_is_staff = instance.is_staff
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -187,7 +195,11 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     if not previous_panel_access_only and instance.panel_access_only:
                         self._delete_user_from_device(device, instance)
                         continue
-                    self._update_user_in_device(device, instance)
+                    self._update_user_in_device(
+                        device,
+                        instance,
+                        previous_is_staff=previous_is_staff,
+                    )
             except Exception as exc:
                 return Response(
                     {"error": str(exc)},

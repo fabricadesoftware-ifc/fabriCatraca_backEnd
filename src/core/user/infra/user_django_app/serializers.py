@@ -77,6 +77,16 @@ class UserSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def validate_email(self, value):
+        if value in ("", None):
+            return None
+        return value.strip().lower()
+
+    def validate_registration(self, value):
+        if value in ("", None):
+            return None
+        return value.strip()
+
     def validate_user_type_id(self, value):
         """Normaliza valores inválidos para None.
 
