@@ -2,6 +2,14 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from rest_framework.response import Response
 from rest_framework import status
 
+# Códigos curtos / variantes retornados pela catraca → valor canônico salvo no banco / enviado de volta.
+LANGUAGE_MAP = {
+    "pt": "pt_BR",
+    "en": "en_US",
+    "es": "spa_SPA",
+    "es_ES": "spa_SPA",
+}
+
 
 class SystemConfigSyncMixin(ControlIDSyncMixin):
     """Mixin para sincronização de configurações do sistema"""
@@ -15,19 +23,15 @@ class SystemConfigSyncMixin(ControlIDSyncMixin):
             def bool_to_str(value):
                 return "1" if value else "0"
             
-            language_map = {
-                'pt': 'pt_BR',
-                'en': 'en_US',
-                'es': 'spa_SPA',
-                'es_ES': 'spa_SPA',
-            }
-
             payload = {
                 "general": {
                     "catra_timeout": str(instance.catra_timeout or 30000),
                     "online": bool_to_str(instance.online),
                     "local_identification": bool_to_str(instance.local_identification),
-                    "language": language_map.get(str(instance.language or 'pt_BR'), str(instance.language or 'pt_BR'))
+                    "language": LANGUAGE_MAP.get(
+                        str(instance.language or "pt_BR"),
+                        str(instance.language or "pt_BR"),
+                    ),
                 }
             }
             
@@ -114,7 +118,10 @@ class SystemConfigSyncMixin(ControlIDSyncMixin):
                     'online': to_bool(config_data.get('online'), True),
                     'catra_timeout': int(str(config_data.get('catra_timeout', 30000)) or 30000),
                     'local_identification': to_bool(config_data.get('local_identification'), True),
-                    'language': language_map.get(str(config_data.get('language', 'pt_BR')), str(config_data.get('language', 'pt_BR'))),
+                    'language': LANGUAGE_MAP.get(
+                        str(config_data.get("language", "pt_BR") or "pt_BR"),
+                        str(config_data.get("language", "pt_BR") or "pt_BR"),
+                    ),
                     'daylight_savings_time_start': config_data.get('daylight_savings_time_start') or None,
                     'daylight_savings_time_end': config_data.get('daylight_savings_time_end') or None,
                     # Campos NÃO DISPONÍVEIS na IDBLOCK (valores fixos padrão)
