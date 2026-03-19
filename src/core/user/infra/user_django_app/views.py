@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 import logging
+import requests
 from .models import User
 from .serializers import UserSerializer
 from src.core.__seedwork__.infra import ControlIDSyncMixin
@@ -54,6 +55,46 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             payload["user_type_id"] = instance.user_type_id
         return payload
 
+    @staticmethod
+    def _is_device_admin_user(user: User) -> bool:
+        """Admin no equipamento (user_roles.role=1): alinhado ao easy_setup e objetos.txt."""
+        return bool(user.is_staff or user.is_superuser)
+
+    def _set_user_admin_on_device(self, device, user_id: int):
+        """
+        Garante user_roles na catraca (user_id + role=1).
+        create_objects quando a linha não existe; modify_objects quando já existe
+        (evita modify só com {role:1}, que não bate com a API em vários firmwares).
+        """
+        self.set_device(device)
+        sess = self.login()
+        base_url = self.get_url
+        payload_row = {"user_id": user_id, "role": 1}
+
+        r_create = requests.post(
+            base_url(f"create_objects.fcgi?session={sess}"),
+            json={"object": "user_roles", "values": [payload_row]},
+            timeout=30,
+        )
+        if r_create.status_code == 200:
+            return
+
+        r_mod = requests.post(
+            base_url(f"modify_objects.fcgi?session={sess}"),
+            json={
+                "object": "user_roles",
+                "values": payload_row,
+                "where": {"user_roles": {"user_id": user_id}},
+            },
+            timeout=30,
+        )
+        if r_mod.status_code != 200:
+            raise RuntimeError(
+                f"Erro ao definir administrador na catraca {device.name}: "
+                f"create HTTP {r_create.status_code} {r_create.text[:300]!r} | "
+                f"modify HTTP {r_mod.status_code} {r_mod.text[:300]!r}"
+            )
+
     def _create_user_in_device(self, device, instance):
         self.set_device(device)
         response = self.create_objects("users", [self._build_user_payload(instance)])
@@ -74,17 +115,10 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     pin_resp.data,
                 )
 
-        if instance.is_staff:
-            role_resp = self.create_objects(
-                "user_roles",
-                [{"user_id": instance.id, "role": 1}],
-            )
-            if role_resp.status_code != status.HTTP_201_CREATED:
-                raise RuntimeError(
-                    f"Erro ao definir usuario administrador na catraca {device.name}: {role_resp.data}"
-                )
+        if self._is_device_admin_user(instance):
+            self._set_user_admin_on_device(device, instance.id)
 
-    def _update_user_in_device(self, device, instance, previous_is_staff=False):
+    def _update_user_in_device(self, device, instance, previous_device_admin=False):
         self.set_device(device)
         response = self.update_objects(
             "users",
@@ -116,27 +150,18 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     [{"user_id": instance.id, "value": instance.pin}],
                 )
 
-        if instance.is_staff:
-            role_resp = self.update_objects(
-                "user_roles",
-                {"role": 1},
-                {"user_roles": {"user_id": instance.id}},
-            )
-            if role_resp.status_code != status.HTTP_200_OK:
-                role_resp = self.create_objects(
-                    "user_roles",
-                    [{"user_id": instance.id, "role": 1}],
-                )
-                if role_resp.status_code != status.HTTP_201_CREATED:
-                    raise RuntimeError(
-                        f"Erro ao atualizar papel administrativo na catraca {device.name}: {role_resp.data}"
-                    )
-        elif previous_is_staff:
+        current_admin = self._is_device_admin_user(instance)
+        if current_admin:
+            self._set_user_admin_on_device(device, instance.id)
+        elif previous_device_admin:
             role_resp = self.destroy_objects(
                 "user_roles",
                 {"user_roles": {"user_id": instance.id}},
             )
-            if role_resp.status_code != status.HTTP_204_NO_CONTENT:
+            if role_resp.status_code not in (
+                status.HTTP_204_NO_CONTENT,
+                status.HTTP_200_OK,
+            ):
                 raise RuntimeError(
                     f"Erro ao remover papel administrativo na catraca {device.name}: {role_resp.data}"
                 )
@@ -176,7 +201,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         previous_panel_access_only = instance.panel_access_only
-        previous_is_staff = instance.is_staff
+        previous_device_admin = self._is_device_admin_user(instance)
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -198,7 +223,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     self._update_user_in_device(
                         device,
                         instance,
-                        previous_is_staff=previous_is_staff,
+                        previous_device_admin=previous_device_admin,
                     )
             except Exception as exc:
                 return Response(

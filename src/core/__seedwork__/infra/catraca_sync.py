@@ -471,9 +471,9 @@ class ControlIDSyncMixin:
                         json={"object": object_name, "where": where},
                         timeout=30,
                     )
-                    if response.status_code != 200:
-                        raise Exception(response.json())
-                    response.raise_for_status()
+                    # Alguns firmwares retornam 200 com JSON; outros 204 sem corpo.
+                    if response.status_code not in (200, 204):
+                        raise Exception(response.json() if response.content else response.text)
 
                 return Response({"success": True}, status=status.HTTP_204_NO_CONTENT)
 
