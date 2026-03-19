@@ -2,6 +2,8 @@ from rest_framework import serializers
 from src.core.control_Id.infra.control_id_django_app.models import Device
 
 class DeviceSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
     class Meta:
         model = Device
         fields = ['id', 'name', 'ip', 'username', 'password', 'is_active', 'is_default']
