@@ -1,44 +1,59 @@
-from src.core.user.infra.user_django_app.models import User
+import logging
+import os
+import re
+import tempfile
+
+import pandas as pd
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.db import transaction
+from rest_framework import serializers, status
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models import CustomGroup as Group
 from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework import serializers
-from src.core.__seedwork__.infra import ControlIDSyncMixin
-from django.db import transaction
-import pandas as pd
-import re
-import tempfile
-from django.core.files.uploadedfile import InMemoryUploadedFile
-import os
-import logging
+from src.core.user.infra.user_django_app.models import User
 
 logger = logging.getLogger(__name__)
 
 
-class FileUploadSerializer(serializers.Serializer):
-    """Serializer para upload de arquivo Excel"""
+SHEET_NAME_PATTERN = re.compile(r"(\d+)([A-Za-z]+)(\d+)\s*\((\d+)\)")
+REQUIRED_COLUMNS = ["ORDEM", "Matrícula", "Nome"]
+EXCEL_EXTENSION_PATTERN = re.compile(r".*\.xlsx$")
 
+
+
+class FileUploadSerializer(serializers.Serializer):
     file = serializers.FileField(
-        help_text="Arquivo Excel (.xlsx) com usuários para importar. Formato: abas como '1INFO1(2025)', '1AGRO1(2025)', ou '1QUIMI (2025)' com colunas ORDEM, MATRICULA, NOME_COMPLETO"
+        help_text=(
+            "Arquivo Excel (.xlsx) com usuários para importar. "
+            "Abas no formato '1INFO1(2025)', colunas: ORDEM, Matrícula, Nome"
+        )
     )
+
 
 
 class ImportUsersView(ControlIDSyncMixin, APIView):
     """
-    View to import users (students) from an Excel file with multiple sheets (grupos).
-    Each sheet represents a grupo (e.g., '1INFO1(2025)', '1AGRO1(2025)', '1QUIMI (2025)'), and creates/updates users
-    associated with the parsed grupo via M2M relation (UserGroup).
-    Also creates users in all active catracas automatically via batch upsert.
+    Importa alunos de um arquivo Excel com múltiplas abas.
+
+    Cada aba representa uma turma (ex: '1INFO1(2025)') e gera:
+      - Um Group no Django e em todas as catracas ativas
+      - Users vinculados à turma via UserGroup
+
+    Usa batch upsert nativo da catraca (create_or_modify_objects.fcgi)
+    para criar e atualizar em um único request por device.
     """
 
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = FileUploadSerializer
 
-    def _build_user_payload(self, user):
+    # ── Helpers ─────────────────────────────────────────────────────────────
+
+    def _build_user_payload(self, user: User) -> dict:
         payload = {
             "id": user.id,
             "name": user.name,
@@ -48,27 +63,25 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             payload["user_type_id"] = user.user_type_id
         return payload
 
-    def get(self, request, *args, **kwargs):
-        return Response(
-            {
-                "message": "Upload de arquivo Excel para importação de usuários",
-                "instructions": {
-                    "method": "POST",
-                    "content_type": "multipart/form-data",
-                    "field_name": "file",
-                    "file_format": ".xlsx",
-                    "sheet_format": "1INFO1(2025), 1AGRO1(2025), 1QUIMI (2025), etc.",
-                    "required_columns": ["ORDEM", "Matrícula", "Nome"],
-                },
-                "example": {
-                    "curl": "curl -X POST -F 'file=@usuarios.xlsx' http://localhost:8000/api/control_id/import-users/"
-                },
-            }
-        )
-
-    def create_group_in_catraca(self, group):
+    def _parse_sheet_name(self, sheet_name: str) -> str | None:
         """
-        Cria ou atualiza o grupo em todas as catracas ativas via upsert.
+        Extrai o nome do grupo a partir do nome da aba.
+        Ex: '1INFO1(2025)' → '1INFO1', '3quimi2(2025)' → '3QUIMI2'
+        Retorna None se o formato não for reconhecido.
+        """
+        match = SHEET_NAME_PATTERN.match(sheet_name)
+        if not match:
+            return None
+        nivel = match.group(1)
+        curso = match.group(2).upper()
+        secao = match.group(3)
+        return f"{nivel}{curso}{secao}"
+
+
+    def _sync_group(self, group: Group) -> tuple[bool, str | None]:
+        """
+        Upsert do grupo em todas as catracas ativas.
+        Garante que o grupo existe em todos os devices antes de criar relações.
         """
         try:
             devices = list(Device.objects.filter(is_active=True))
@@ -76,7 +89,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 return False, "Nenhuma catraca ativa encontrada"
 
             self._device = None
-            logger.info(f"[GRUPO] Sincronizando grupo id={group.id} name='{group.name}' em {len(devices)} catraca(s)")
+            logger.info(f"[GRUPO] Sincronizando id={group.id} name='{group.name}' → {len(devices)} device(s)")
 
             response = self.create_or_update_objects_in_all_devices(
                 "groups", [{"id": group.id, "name": group.name}]
@@ -84,51 +97,140 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
 
             if response.status_code != status.HTTP_200_OK:
                 error_detail = getattr(response, "data", str(response))
-                logger.error(f"[GRUPO] Falha ao sincronizar grupo id={group.id} name='{group.name}': {error_detail}")
+                logger.error(f"[GRUPO] Falha id={group.id} name='{group.name}': {error_detail}")
                 return False, f"Erro ao sincronizar grupo na catraca: {error_detail}"
 
-            logger.info(f"[GRUPO] Grupo id={group.id} name='{group.name}' sincronizado com sucesso")
+            logger.info(f"[GRUPO] OK id={group.id} name='{group.name}'")
             return True, None
 
         except Exception as e:
-            logger.exception(f"[GRUPO] Exceção ao sincronizar grupo id={group.id} name='{group.name}': {str(e)}")
-            return False, f"Erro ao sincronizar grupo na catraca: {str(e)}"
+            logger.exception(f"[GRUPO] Exceção id={group.id} name='{group.name}': {e}")
+            return False, str(e)
 
-    def create_group_local_then_remote(self, group_name: str):
+    def _ensure_group(self, nome_grupo: str) -> tuple[Group | None, str | None]:
         """
-        Cria primeiro o grupo no Django e replica para as catracas usando o ID local.
-        Retorna (instance, error_message)
+        Garante que o grupo existe no Django e em todas as catracas.
+        Cria localmente se não existir, depois faz upsert na catraca.
+        Retorna (grupo, erro).
         """
-        try:
+        self._device = None
+        grupo = Group.objects.filter(name=nome_grupo).first()
+
+        if not grupo:
+            logger.info(f"[GRUPO] '{nome_grupo}' não existe — criando localmente")
             sp = transaction.savepoint()
             try:
-                instance = Group.objects.create(name=group_name)
-                logger.info(f"[GRUPO] Grupo '{group_name}' criado localmente com id={instance.id}")
-                success, error_message = self.create_group_in_catraca(instance)
-                if not success:
-                    transaction.savepoint_rollback(sp)
-                    logger.error(f"[GRUPO] Rollback do grupo '{group_name}' após falha na catraca: {error_message}")
-                    return None, error_message
-                transaction.savepoint_commit(sp)
-                return instance, None
+                grupo = Group.objects.create(name=nome_grupo)
+                logger.info(f"[GRUPO] Criado localmente: id={grupo.id}")
             except Exception as e:
                 transaction.savepoint_rollback(sp)
-                logger.exception(f"[GRUPO] Exceção ao criar grupo '{group_name}' localmente: {str(e)}")
+                logger.exception(f"[GRUPO] Falha ao criar '{nome_grupo}' localmente: {e}")
                 return None, str(e)
-        except Exception as e:
-            logger.exception(f"[GRUPO] Exceção externa ao criar grupo '{group_name}': {str(e)}")
-            return None, str(e)
+        else:
+            logger.info(f"[GRUPO] '{nome_grupo}' já existe localmente (id={grupo.id})")
+            sp = transaction.savepoint()
+
+        success, err = self._sync_group(grupo)
+        if not success:
+            transaction.savepoint_rollback(sp)
+            logger.error(f"[GRUPO] Rollback de '{nome_grupo}' após falha na catraca: {err}")
+            return None, err
+
+        transaction.savepoint_commit(sp)
+        return grupo, None
+
+    def _sync_users_batch(self, users: list[User], sheet_name: str) -> list[User]:
+        """
+        Upsert em batch de todos os usuários em todas as catracas.
+        Retorna apenas os usuários confirmados na catraca.
+        """
+        if not users:
+            return []
+
+        self._device = None
+        batch_payload = [self._build_user_payload(u) for u in users]
+
+        logger.info(
+            f"[USERS] Batch upsert de {len(batch_payload)} usuário(s) "
+            f"ids={[p['id'] for p in batch_payload]}"
+        )
+
+        response = self.create_or_update_objects_in_all_devices("users", batch_payload)
+
+        logger.info(
+            f"[USERS] Resposta batch: status={response.status_code} "
+            f"data={getattr(response, 'data', None)}"
+        )
+
+        if response.status_code != status.HTTP_200_OK:
+            error_detail = getattr(response, "data", str(response))
+            logger.error(f"[USERS] Falha batch aba '{sheet_name}': {error_detail}")
+            return []
+
+        logger.info(f"[USERS] {len(users)} usuário(s) confirmado(s) na catraca")
+        return users
+
+    def _sync_relations_batch(
+        self, users: list[User], grupo: Group, sheet_name: str
+    ) -> bool:
+        """
+        Upsert em batch das relações user_groups em todas as catracas.
+        Retorna True se bem-sucedido.
+        """
+        if not users:
+            return True
+
+        self._device = None
+        relations_payload = [
+            {"user_id": u.id, "group_id": grupo.id} for u in users
+        ]
+
+        logger.info(
+            f"[RELACAO] Batch upsert de {len(relations_payload)} relação(ões) "
+            f"grupo id={grupo.id} name='{grupo.name}'"
+        )
+
+        response = self.create_or_update_objects_in_all_devices(
+            "user_groups", relations_payload
+        )
+
+        logger.info(
+            f"[RELACAO] Resposta batch: status={response.status_code} "
+            f"data={getattr(response, 'data', None)}"
+        )
+
+        if response.status_code != status.HTTP_200_OK:
+            error_detail = getattr(response, "data", str(response))
+            logger.error(f"[RELACAO] Falha batch aba '{sheet_name}': {error_detail}")
+            return False
+
+        return True
+
+
+    def get(self, request, *args, **kwargs):
+        return Response({
+            "message": "Upload de arquivo Excel para importação de usuários",
+            "instructions": {
+                "method": "POST",
+                "content_type": "multipart/form-data",
+                "field_name": "file",
+                "file_format": ".xlsx",
+                "sheet_format": "1INFO1(2025), 1AGRO1(2025), 1QUIMI1(2025), etc.",
+                "required_columns": REQUIRED_COLUMNS,
+            },
+            "example": {
+                "curl": "curl -X POST -F 'file=@alunos.xlsx' http://localhost:8000/api/control_id/import-users/"
+            },
+        })
 
     def post(self, request, *args, **kwargs):
         tmp_path = None
         try:
             file: InMemoryUploadedFile = request.FILES.get("file")
             if not file:
-                return Response(
-                    {"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST
-                )
+                return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
 
-            if not re.match(r".*\.xlsx$", file.name):
+            if not EXCEL_EXTENSION_PATTERN.match(file.name):
                 return Response(
                     {"error": "Invalid file format. Please upload an .xlsx file."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -144,13 +246,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             sheet_names = excel_file.sheet_names
             excel_file.close()
 
-            logger.info(f"[IMPORT] Arquivo recebido com {len(sheet_names)} aba(s): {sheet_names}")
+            logger.info(f"[IMPORT] Arquivo recebido: {len(sheet_names)} aba(s) → {sheet_names}")
 
             if not sheet_names:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
                 return Response(
                     {"error": "No sheets found in the Excel file."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -161,251 +259,180 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             created_groups = 0
             updated_groups = 0
             created_relations = 0
-            catraca_errors = []
             errors = []
+            catraca_errors = []
 
             for sheet_name in sheet_names:
                 sheet_name = str(sheet_name).strip()
-                logger.info(f"[IMPORT] ── Iniciando aba '{sheet_name}' ──")
+                logger.info(f"[IMPORT] ── Aba '{sheet_name}' ──")
 
                 df = pd.read_excel(tmp_path, sheet_name=sheet_name)
 
                 if len(df.columns) != 3:
-                    msg = f"Sheet '{sheet_name}': Expected exactly 3 columns (ORDEM, Matrícula, Nome)"
-                    logger.warning(f"[IMPORT] {msg}")
-                    errors.append(msg)
-                    continue
-                df.columns = ["ORDEM", "Matrícula", "Nome"]
-
-                if not {"Matrícula", "Nome"}.issubset(df.columns) or df.empty:
-                    msg = f"Sheet '{sheet_name}': Missing required columns or empty sheet"
+                    msg = f"Sheet '{sheet_name}': esperado 3 colunas (ORDEM, Matrícula, Nome)"
                     logger.warning(f"[IMPORT] {msg}")
                     errors.append(msg)
                     continue
 
-                match_full = re.match(r"(\d+)([A-Z]+)(\d+)\s*\((\d+)\)", sheet_name)
-                if not match_full:
-                    msg = f"Sheet '{sheet_name}': Invalid sheet name format. Expected: '1INFO1(2025)', '1AGRO1(2025)', etc."
+                df.columns = REQUIRED_COLUMNS
+
+                if df.empty:
+                    msg = f"Sheet '{sheet_name}': sem dados"
                     logger.warning(f"[IMPORT] {msg}")
                     errors.append(msg)
                     continue
 
-                nivel = int(match_full.group(1))
-                curso = match_full.group(2)
-                secao = int(match_full.group(3))
-                nome_grupo = f"{nivel}{curso}{secao}"
+                nome_grupo = self._parse_sheet_name(sheet_name)
+                if not nome_grupo:
+                    msg = f"Sheet '{sheet_name}': formato inválido. Esperado: '1INFO1(2025)'"
+                    logger.warning(f"[IMPORT] {msg}")
+                    errors.append(msg)
+                    continue
 
                 with transaction.atomic():
-                    # ── 1. Grupo ──────────────────────────────────────────────────
-                    # Garante que o grupo existe no Django e na catraca antes de
-                    # qualquer operação de usuário — evita FK quebrada nas relações.
-                    grupo = Group.objects.filter(name=nome_grupo).first()
-                    if not grupo:
-                        self._device = None
-                        logger.info(f"[GRUPO] Grupo '{nome_grupo}' não existe localmente — criando")
-                        grupo, err = self.create_group_local_then_remote(nome_grupo)
-                        if err:
-                            logger.error(f"[GRUPO] Falha ao criar grupo '{nome_grupo}': {err}")
-                            catraca_errors.append(f"Grupo {nome_grupo}: {err}")
-                            continue
-                        created_groups += 1
-                    else:
-                        # Mesmo existindo no Django, garante que está em todos os devices
-                        self._device = None
-                        logger.info(f"[GRUPO] Grupo '{nome_grupo}' existe localmente — garantindo sync em todos os devices")
-                        success, err = self.create_group_in_catraca(grupo)
-                        if err:
-                            logger.error(f"[GRUPO] Falha ao sincronizar grupo existente '{nome_grupo}': {err}")
-                            catraca_errors.append(f"Grupo {nome_grupo}: {err}")
-                            continue
-                        updated_groups += 1
+                    grupo, err = self._ensure_group(nome_grupo)
+                    if err:
+                        catraca_errors.append(f"Grupo {nome_grupo}: {err}")
+                        continue
 
-                    # ── 2. Pré-processa linhas válidas ─────────────────────────────
+                    if Group.objects.filter(name=nome_grupo, id=grupo.id).exists():
+                        if created_groups == 0 or grupo.id not in [
+                            g.id for g in Group.objects.filter(name=nome_grupo)
+                        ]:
+                            created_groups += 1
+                        else:
+                            updated_groups += 1
+                    updated_groups += 1
+
                     rows_valid = []
                     for row_number, (_, row) in enumerate(df.iterrows(), start=2):
                         if pd.isna(row["Matrícula"]) or pd.isna(row["Nome"]):
-                            msg = f"Sheet '{sheet_name}', row {row_number}: Missing Matrícula or Nome"
+                            msg = f"Sheet '{sheet_name}', linha {row_number}: Matrícula ou Nome vazio"
                             logger.warning(f"[IMPORT] {msg}")
                             errors.append(msg)
                             continue
                         rows_valid.append({
                             "name": str(row["Nome"]).strip(),
                             "registration": str(row["Matrícula"]).strip(),
-                            "email": f"{str(row['Matrícula']).strip()}@escola.edu",
                         })
 
                     if not rows_valid:
-                        logger.warning(f"[IMPORT] Aba '{sheet_name}' sem linhas válidas após filtragem — pulando")
+                        logger.warning(f"[IMPORT] Aba '{sheet_name}' sem linhas válidas — pulando")
                         continue
 
                     logger.info(f"[IMPORT] Aba '{sheet_name}': {len(rows_valid)} aluno(s) válido(s)")
 
-                    # ── 3. Resolve users no Django (create ou update local) ─────────
-                    users_to_create_remote = []
-                    users_to_update_remote = []
+                    users_new = []
+                    users_existing = []
 
                     for row in rows_valid:
-                        user = (
-                            User.objects.filter(registration=row["registration"]).first()
-                            or User.objects.filter(email=row["email"]).first()
-                        )
+                        user = User.objects.filter(registration=row["registration"]).first()
+
                         if not user:
+
+                            email = f"{row['registration']}@escola.edu"
                             user = User.objects.create(
                                 name=row["name"],
                                 registration=row["registration"],
-                                email=row["email"],
+                                email=email,
                                 is_active=True,
                             )
-                            logger.info(f"[USER] Novo usuário criado localmente: id={user.id} name='{user.name}' registration={user.registration}")
-                            users_to_create_remote.append(user)
+                            logger.info(
+                                f"[USER] Criado: id={user.id} "
+                                f"name='{user.name}' registration={user.registration}"
+                            )
+                            users_new.append(user)
                             created_users += 1
                         else:
-                            if (
+                            needs_update = (
                                 user.name != row["name"]
                                 or user.registration != row["registration"]
                                 or not user.is_active
-                            ):
-                                logger.info(f"[USER] Atualizando localmente: id={user.id} '{user.name}' → '{row['name']}'")
+                            )
+                            if needs_update:
+                                logger.info(
+                                    f"[USER] Atualizado: id={user.id} "
+                                    f"'{user.name}' → '{row['name']}'"
+                                )
                                 user.name = row["name"]
                                 user.registration = row["registration"]
                                 user.is_active = True
                                 user.save(update_fields=["name", "registration", "is_active"])
                             else:
-                                logger.info(f"[USER] Sem alterações locais: id={user.id} name='{user.name}'")
-                            users_to_update_remote.append(user)
+                                logger.info(f"[USER] Sem alterações: id={user.id} name='{user.name}'")
+                            users_existing.append(user)
                             updated_users += 1
 
                     logger.info(
-                        f"[USER] Aba '{sheet_name}': {len(users_to_create_remote)} novo(s), "
-                        f"{len(users_to_update_remote)} existente(s)"
+                        f"[USER] Aba '{sheet_name}': "
+                        f"{len(users_new)} novo(s), {len(users_existing)} existente(s)"
                     )
 
-                    # ── 4+5. Batch upsert de TODOS os usuários na catraca ──────────
-                    # Novos e existentes vão juntos num único request por device.
-                    # create_or_update_objects_in_all_devices usa create_or_modify_objects.fcgi
-                    # que resolve o upsert nativamente — sem UNIQUE constraint error.
-                    # synced_users controla quem foi confirmado na catraca:
-                    # relações só são criadas para estes, evitando FK quebrada.
-                    synced_users = []
-                    all_users = users_to_create_remote + users_to_update_remote
+                    all_users = users_new + users_existing
+                    synced_users = self._sync_users_batch(all_users, sheet_name)
 
-                    if all_users:
-                        self._device = None
-                        batch_payload = [self._build_user_payload(u) for u in all_users]
-                        logger.info(
-                            f"[CATRACA] Enviando batch upsert de {len(batch_payload)} usuário(s) "
-                            f"ids={[p['id'] for p in batch_payload]}"
+                    if not synced_users:
+                        catraca_errors.append(
+                            f"Sheet '{sheet_name}': falha ao sincronizar usuários na catraca — "
+                            f"relações não serão criadas"
                         )
-                        response = self.create_or_update_objects_in_all_devices("users", batch_payload)
-                        logger.info(
-                            f"[CATRACA] Resposta batch users: status={response.status_code} "
-                            f"data={getattr(response, 'data', None)}"
-                        )
-                        if response.status_code != status.HTTP_200_OK:
-                            error_detail = getattr(response, "data", str(response))
-                            logger.error(
-                                f"[CATRACA] Falha no batch upsert de usuários da aba '{sheet_name}': {error_detail}"
-                            )
+                        continue
+
+                    new_relation_users = []
+                    for user in synced_users:
+                        _, created = UserGroup.objects.get_or_create(user=user, group=grupo)
+                        if created:
+                            new_relation_users.append(user)
+                            created_relations += 1
+
+                    logger.info(
+                        f"[RELACAO] {len(new_relation_users)} nova(s) relação(ões) "
+                        f"para grupo '{grupo.name}'"
+                    )
+
+                    if new_relation_users:
+                        success = self._sync_relations_batch(new_relation_users, grupo, sheet_name)
+                        if not success:
                             catraca_errors.append(
-                                f"Sheet '{sheet_name}': Erro ao sincronizar batch de "
-                                f"{len(batch_payload)} usuário(s): {error_detail}"
+                                f"Sheet '{sheet_name}': falha ao sincronizar relações na catraca"
                             )
-                            # Nenhum usuário confirmado — relações não serão criadas
-                        else:
-                            synced_users.extend(all_users)
-                            logger.info(
-                                f"[CATRACA] Batch upsert confirmado: {len(synced_users)} usuário(s) sincronizado(s)"
-                            )
-
-                    # ── 6. Relações UserGroup apenas para usuários confirmados ───────
-                    if synced_users:
-                        new_relation_pairs = []
-                        for user in synced_users:
-                            _, created = UserGroup.objects.get_or_create(
-                                user=user, group=grupo
-                            )
-                            if created:
-                                new_relation_pairs.append(user)
-                                created_relations += 1
-
-                        logger.info(
-                            f"[RELACAO] {len(new_relation_pairs)} nova(s) relação(ões) para criar "
-                            f"(grupo id={grupo.id} name='{grupo.name}')"
-                        )
-
-                        if new_relation_pairs:
-                            self._device = None
-                            relations_payload = [
-                                {"user_id": u.id, "group_id": grupo.id}
-                                for u in new_relation_pairs
-                            ]
-                            logger.info(
-                                f"[CATRACA] Enviando batch upsert de {len(relations_payload)} relação(ões): "
-                                f"{relations_payload}"
-                            )
-                            response = self.create_or_update_objects_in_all_devices(
-                                "user_groups", relations_payload
-                            )
-                            logger.info(
-                                f"[CATRACA] Resposta batch user_groups: status={response.status_code} "
-                                f"data={getattr(response, 'data', None)}"
-                            )
-                            if response.status_code != status.HTTP_200_OK:
-                                error_detail = getattr(response, "data", str(response))
-                                logger.error(
-                                    f"[CATRACA] Falha no batch de relações da aba '{sheet_name}': {error_detail}"
-                                )
-                                catraca_errors.append(
-                                    f"Sheet '{sheet_name}': Erro ao criar batch de relações: {error_detail}"
-                                )
-                    else:
-                        logger.warning(
-                            f"[RELACAO] Nenhum usuário confirmado na catraca para aba '{sheet_name}' — relações ignoradas"
-                        )
 
                 logger.info(f"[IMPORT] ── Aba '{sheet_name}' concluída ──")
 
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-
             logger.info(
-                f"[IMPORT] Importação finalizada — "
-                f"Groups: created={created_groups} updated={updated_groups} | "
-                f"Users: created={created_users} updated={updated_users} | "
-                f"Relations: created={created_relations} | "
-                f"errors={len(errors)} catraca_errors={len(catraca_errors)}"
+                f"[IMPORT] Finalizado — "
+                f"grupos: +{created_groups} ~{updated_groups} | "
+                f"usuários: +{created_users} ~{updated_users} | "
+                f"relações: +{created_relations} | "
+                f"erros: {len(errors)} | erros catraca: {len(catraca_errors)}"
             )
 
-            response_data = {
-                "success": True,
-                "message": (
-                    f"Import completed. "
-                    f"Groups: Created {created_groups}, Updated {updated_groups}. "
-                    f"Users: Created {created_users}, Updated {updated_users}. "
-                    f"Relations: Created {created_relations}"
-                ),
-                "sheets_processed": len(sheet_names),
-                "errors": errors or None,
-                "catraca_errors": catraca_errors or None,
-            }
-
-            status_code = (
-                status.HTTP_200_OK
-                if not (errors or catraca_errors)
-                else status.HTTP_207_MULTI_STATUS
+            return Response(
+                {
+                    "success": True,
+                    "message": (
+                        f"Importação concluída. "
+                        f"Grupos: {created_groups} criados, {updated_groups} sincronizados. "
+                        f"Usuários: {created_users} criados, {updated_users} atualizados. "
+                        f"Relações: {created_relations} criadas."
+                    ),
+                    "sheets_processed": len(sheet_names),
+                    "errors": errors or None,
+                    "catraca_errors": catraca_errors or None,
+                },
+                status=status.HTTP_200_OK if not (errors or catraca_errors) else status.HTTP_207_MULTI_STATUS,
             )
-            return Response(response_data, status=status_code)
 
         except Exception as e:
-            logger.exception(f"[IMPORT] Exceção não tratada ao processar arquivo: {str(e)}")
+            logger.exception(f"[IMPORT] Exceção não tratada: {e}")
+            return Response(
+                {"error": f"Erro ao processar arquivo: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        finally:
             if tmp_path:
                 try:
                     os.unlink(tmp_path)
                 except Exception:
                     pass
-            return Response(
-                {"error": f"Erro ao processar arquivo: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
