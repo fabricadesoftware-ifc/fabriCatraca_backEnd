@@ -95,6 +95,10 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         return True, None
 
     def sync_user_in_catraca(self, user):
+        """
+        Sincroniza o usuário em todas as catracas ativas.
+        Tenta create primeiro; se falhar, faz update (usuário já existe na catraca).
+        """
         try:
             devices = list(Device.objects.filter(is_active=True))
             if not devices:
@@ -130,20 +134,18 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             }
         )
 
-    def create_user_in_catraca(self, user):
-        """
-        Cria o usuário em todas as catracas ativas usando a mesma lógica do UserViewSet.
-        """
-        return self.sync_user_in_catraca(user)
-
     def create_group_in_catraca(self, group):
         """
         Cria o grupo em todas as catracas ativas.
+        Garante broadcast para todos os devices limpando self._device antes.
         """
         try:
             devices = list(Device.objects.filter(is_active=True))
             if not devices:
                 return False, "Nenhuma catraca ativa encontrada"
+
+            # Garante que vai para todos os devices, não apenas o último setado
+            self._device = None
 
             response = self.create_objects(
                 "groups", [{"id": group.id, "name": group.name}]
@@ -181,69 +183,20 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         except Exception as e:
             return None, str(e)
 
-    def create_user_local_then_remote(self, name: str, registration: str, email: str):
-        """
-        Cria primeiro o usuário no Django e replica para as catracas usando o ID local.
-        Retorna (instance, error_message)
-        """
-        try:
-            sp = transaction.savepoint()
-            try:
-                instance = User.objects.create(
-                    name=name,
-                    registration=registration,
-                    email=email,
-                    is_active=True,
-                )
-                success, error_message = self.create_user_in_catraca(instance)
-                if not success:
-                    transaction.savepoint_rollback(sp)
-                    return None, error_message
-
-                transaction.savepoint_commit(sp)
-                return instance, None
-            except Exception as e:
-                transaction.savepoint_rollback(sp)
-                return None, str(e)
-        except Exception as e:
-            return None, str(e)
-
-    def create_user_group_relation_in_catraca(self, user, group):
-        """
-        Cria a relação usuário-grupo em todas as catracas ativas.
-        """
-        try:
-            devices = Device.objects.filter(is_active=True)
-            if not devices:
-                return False, "Nenhuma catraca ativa encontrada"
-
-            for device in devices:
-                self.set_device(device)
-
-                response = self.create_objects(
-                    "user_groups", [{"user_id": user.id, "group_id": group.id}]
-                )
-
-                if response.status_code != status.HTTP_201_CREATED:
-                    return (
-                        False,
-                        f"Erro ao criar relação usuário-grupo na catraca {device.name}: {response.data}",
-                    )
-
-            return True, "Relação usuário-grupo criada com sucesso em todas as catracas"
-
-        except Exception as e:
-            return False, f"Erro ao criar relação usuário-grupo na catraca: {str(e)}"
-
     def post(self, request, *args, **kwargs):
         tmp_path = None
         try:
             file: InMemoryUploadedFile = request.FILES.get("file")
             if not file:
-                return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST
+                )
 
             if not re.match(r".*\.xlsx$", file.name):
-                return Response({"error": "Invalid file format. Please upload an .xlsx file."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "Invalid file format. Please upload an .xlsx file."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
                 for chunk in file.chunks():
@@ -256,8 +209,14 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             excel_file.close()
 
             if not sheet_names:
-                os.unlink(tmp_path)
-                return Response({"error": "No sheets found in the Excel file."}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+                return Response(
+                    {"error": "No sheets found in the Excel file."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             created_users = 0
             updated_users = 0
@@ -272,26 +231,38 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 df = pd.read_excel(tmp_path, sheet_name=sheet_name)
 
                 if len(df.columns) != 3:
-                    errors.append(f"Sheet '{sheet_name}': Expected exactly 3 columns")
+                    errors.append(
+                        f"Sheet '{sheet_name}': Expected exactly 3 columns (ORDEM, Matrícula, Nome)"
+                    )
                     continue
                 df.columns = ["ORDEM", "Matrícula", "Nome"]
 
                 if not {"Matrícula", "Nome"}.issubset(df.columns) or df.empty:
-                    errors.append(f"Sheet '{sheet_name}': Missing columns or empty")
+                    errors.append(
+                        f"Sheet '{sheet_name}': Missing required columns or empty sheet"
+                    )
                     continue
 
                 match_full = re.match(r"(\d+)([A-Z]+)(\d+)\s*\((\d+)\)", sheet_name)
                 if not match_full:
-                    errors.append(f"Sheet '{sheet_name}': Invalid sheet name format.")
+                    errors.append(
+                        f"Sheet '{sheet_name}': Invalid sheet name format. Expected: '1INFO1(2025)', '1AGRO1(2025)', etc."
+                    )
                     continue
 
-                nivel, curso, secao = int(match_full.group(1)), match_full.group(2), int(match_full.group(3))
+                nivel = int(match_full.group(1))
+                curso = match_full.group(2)
+                secao = int(match_full.group(3))
                 nome_grupo = f"{nivel}{curso}{secao}"
 
                 with transaction.atomic():
-                    # ── 1. Grupo ────────────────────────────────────────────────
+                    # ── 1. Grupo ─────────────────────────────────────────────────
+                    # Garante que o grupo existe no Django e na catraca antes de
+                    # qualquer operação de usuário — evita FK quebrada nas relações.
                     grupo = Group.objects.filter(name=nome_grupo).first()
                     if not grupo:
+                        # _device = None garante broadcast para todos os devices
+                        self._device = None
                         grupo, err = self.create_group_local_then_remote(nome_grupo)
                         if err:
                             catraca_errors.append(f"Grupo {nome_grupo}: {err}")
@@ -300,11 +271,13 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     else:
                         updated_groups += 1
 
-                    # ── 2. Pré-processa linhas válidas ───────────────────────────
+                    # ── 2. Pré-processa linhas válidas ────────────────────────────
                     rows_valid = []
                     for row_number, (_, row) in enumerate(df.iterrows(), start=2):
                         if pd.isna(row["Matrícula"]) or pd.isna(row["Nome"]):
-                            errors.append(f"Sheet '{sheet_name}', row {row_number}: Missing data")
+                            errors.append(
+                                f"Sheet '{sheet_name}', row {row_number}: Missing Matrícula or Nome"
+                            )
                             continue
                         rows_valid.append({
                             "name": str(row["Nome"]).strip(),
@@ -315,10 +288,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     if not rows_valid:
                         continue
 
-                    # ── 3. Resolve users no Django (create ou update local) ──────
-                    users_to_create_remote = []   # novos: precisam ir à catraca via batch
-                    users_to_update_remote = []   # existentes: sync individual (update tem where)
-                    user_group_pairs = []         # todos: (user, criou_relacao_nova?)
+                    # ── 3. Resolve users no Django (create ou update local) ────────
+                    users_to_create_remote = []  # novos: batch create na catraca
+                    users_to_update_remote = []  # existentes: sync create-or-update por device
 
                     for row in rows_valid:
                         user = (
@@ -335,7 +307,11 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                             users_to_create_remote.append(user)
                             created_users += 1
                         else:
-                            if user.name != row["name"] or user.registration != row["registration"] or not user.is_active:
+                            if (
+                                user.name != row["name"]
+                                or user.registration != row["registration"]
+                                or not user.is_active
+                            ):
                                 user.name = row["name"]
                                 user.registration = row["registration"]
                                 user.is_active = True
@@ -343,44 +319,63 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                             users_to_update_remote.append(user)
                             updated_users += 1
 
-                        user_group_pairs.append(user)
+                    # ── 4. Batch create na catraca (todos os novos de uma vez) ─────
+                    # synced_users controla quem foi confirmado na catraca.
+                    # Relações só são criadas para estes — evita FK quebrada.
+                    synced_users = []
 
-                    # ── 4. Batch create na catraca (todos os novos de uma vez) ───
                     if users_to_create_remote:
+                        self._device = None  # broadcast para todos os devices
                         batch_payload = [self._build_user_payload(u) for u in users_to_create_remote]
                         response = self.create_objects("users", batch_payload)
                         if response.status_code != status.HTTP_201_CREATED:
                             catraca_errors.append(
-                                f"Sheet '{sheet_name}': Erro ao criar batch de {len(batch_payload)} usuários: "
+                                f"Sheet '{sheet_name}': Erro ao criar batch de "
+                                f"{len(batch_payload)} usuários: "
                                 f"{getattr(response, 'data', str(response))}"
                             )
-                            # Não faz rollback total — continua para updates e relações
+                            # Usuários não confirmados ficam fora de synced_users
+                        else:
+                            synced_users.extend(users_to_create_remote)
 
-                    # ── 5. Sync individual dos usuários existentes (update) ──────
+                    # ── 5. Sync usuários existentes (create-or-update por device) ──
+                    # sync_user_in_catraca tenta create primeiro; se o usuário já
+                    # existir na catraca, faz update — cobre casos de reimportação
+                    # após falha parcial anterior.
                     for user in users_to_update_remote:
+                        self._device = None  # reseta para iterar todos os devices
                         success, err = self.sync_user_in_catraca(user)
                         if not success:
-                            catraca_errors.append(f"Usuário {user.name} ({user.registration}): {err}")
-
-                    # ── 6. Relações UserGroup + batch na catraca ─────────────────
-                    new_relation_pairs = []
-                    for user in user_group_pairs:
-                        _, created = UserGroup.objects.get_or_create(user=user, group=grupo)
-                        if created:
-                            new_relation_pairs.append(user)
-                            created_relations += 1
-
-                    if new_relation_pairs:
-                        relations_payload = [
-                            {"user_id": u.id, "group_id": grupo.id}
-                            for u in new_relation_pairs
-                        ]
-                        response = self.create_objects("user_groups", relations_payload)
-                        if response.status_code != status.HTTP_201_CREATED:
                             catraca_errors.append(
-                                f"Sheet '{sheet_name}': Erro ao criar batch de relações: "
-                                f"{getattr(response, 'data', str(response))}"
+                                f"Usuário {user.name} ({user.registration}): {err}"
                             )
+                            # Não entra em synced_users — FK das relações ficaria quebrada
+                        else:
+                            synced_users.append(user)
+
+                    # ── 6. Relações UserGroup apenas para usuários confirmados ──────
+                    if synced_users:
+                        new_relation_pairs = []
+                        for user in synced_users:
+                            _, created = UserGroup.objects.get_or_create(
+                                user=user, group=grupo
+                            )
+                            if created:
+                                new_relation_pairs.append(user)
+                                created_relations += 1
+
+                        if new_relation_pairs:
+                            self._device = None  # broadcast para todos os devices
+                            relations_payload = [
+                                {"user_id": u.id, "group_id": grupo.id}
+                                for u in new_relation_pairs
+                            ]
+                            response = self.create_objects("user_groups", relations_payload)
+                            if response.status_code != status.HTTP_201_CREATED:
+                                catraca_errors.append(
+                                    f"Sheet '{sheet_name}': Erro ao criar batch de relações: "
+                                    f"{getattr(response, 'data', str(response))}"
+                                )
 
             try:
                 os.unlink(tmp_path)
@@ -400,7 +395,11 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 "catraca_errors": catraca_errors or None,
             }
 
-            status_code = status.HTTP_200_OK if not (errors or catraca_errors) else status.HTTP_207_MULTI_STATUS
+            status_code = (
+                status.HTTP_200_OK
+                if not (errors or catraca_errors)
+                else status.HTTP_207_MULTI_STATUS
+            )
             return Response(response_data, status=status_code)
 
         except Exception as e:
@@ -409,4 +408,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     os.unlink(tmp_path)
                 except Exception:
                     pass
-            return Response({"error": f"Erro ao processar arquivo: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": f"Erro ao processar arquivo: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
