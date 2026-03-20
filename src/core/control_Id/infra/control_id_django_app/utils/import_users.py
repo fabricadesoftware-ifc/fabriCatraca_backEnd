@@ -337,7 +337,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                                 f"{relations_payload}"
                             )
                             response = self.create_or_update_objects_in_all_devices(
-                                "user_groups", relations_payload, id_field="user_id"
+                                "user_groups", relations_payload
                             )
                             logger.info(
                                 f"[CATRACA] Resposta batch user_groups: status={response.status_code} "
