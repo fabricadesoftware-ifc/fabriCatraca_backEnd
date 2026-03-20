@@ -428,7 +428,11 @@ class ControlIDSyncMixin:
                         timeout=30,
                     )
                     if response.status_code != 200:
-                        raise Exception(response.json())
+                        try:
+                            error_data = response.json()
+                        except Exception:
+                            error_data = {"error": response.text}
+                        return Response(error_data, status=status.HTTP_400_BAD_REQUEST)
                     response.raise_for_status()
 
                 return Response({"success": True}, status=status.HTTP_200_OK)

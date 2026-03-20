@@ -210,7 +210,14 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                             continue
                         created_groups += 1
                     else:
-                        logger.info(f"[GRUPO] Grupo '{nome_grupo}' já existe localmente (id={grupo.id})")
+                        # Mesmo existindo no Django, garante que está em todos os devices
+                        self._device = None
+                        logger.info(f"[GRUPO] Grupo '{nome_grupo}' existe localmente — garantindo sync em todos os devices")
+                        success, err = self.create_group_in_catraca(grupo)
+                        if err:
+                            logger.error(f"[GRUPO] Falha ao sincronizar grupo existente '{nome_grupo}': {err}")
+                            catraca_errors.append(f"Grupo {nome_grupo}: {err}")
+                            continue
                         updated_groups += 1
 
                     # ── 2. Pré-processa linhas válidas ─────────────────────────────
