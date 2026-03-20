@@ -377,7 +377,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                                 for u in new_relation_pairs
                             ]
                             print(f"[SYNC] Batch create user_groups: {relations_payload}")
-                            response = self.create_objects("user_groups", relations_payload)
+                            response = self.create_or_update_objects("user_groups", relations_payload)
                             print(f"[SYNC] Resposta user_groups: status={response.status_code} data={getattr(response, 'data', None)}")
                             if response.status_code != status.HTTP_201_CREATED:
                                 catraca_errors.append(
