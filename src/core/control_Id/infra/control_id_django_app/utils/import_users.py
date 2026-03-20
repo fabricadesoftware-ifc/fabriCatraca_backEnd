@@ -146,11 +146,12 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
 
             # Garante que vai para todos os devices, não apenas o último setado
             self._device = None
+            print(f"[SYNC] Criando grupo na catraca: id={group.id} name={group.name}")
 
             response = self.create_objects(
                 "groups", [{"id": group.id, "name": group.name}]
             )
-
+            print(f"[SYNC] Resposta grupo: status={response.status_code} data={getattr(response, 'data', None)}")
             if response.status_code != status.HTTP_201_CREATED:
                 return (
                     False,
@@ -160,6 +161,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             return True, "Grupo criado com sucesso em todas as catracas"
 
         except Exception as e:
+            print(f"[SYNC] EXCEPTION grupo: {str(e)}")
             return False, f"Erro ao criar grupo na catraca: {str(e)}"
 
     def create_group_local_then_remote(self, group_name: str):
@@ -327,7 +329,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     if users_to_create_remote:
                         self._device = None  # broadcast para todos os devices
                         batch_payload = [self._build_user_payload(u) for u in users_to_create_remote]
+                        print(f"[SYNC] Batch create users: {[p['id'] for p in batch_payload]}")
                         response = self.create_objects("users", batch_payload)
+                        print(f"[SYNC] Resposta batch users: status={response.status_code} data={getattr(response, 'data', None)}")
                         if response.status_code != status.HTTP_201_CREATED:
                             catraca_errors.append(
                                 f"Sheet '{sheet_name}': Erro ao criar batch de "
@@ -343,8 +347,10 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                     # existir na catraca, faz update — cobre casos de reimportação
                     # após falha parcial anterior.
                     for user in users_to_update_remote:
+                        print(f"[SYNC] Sync user existente: id={user.id} name={user.name} registration={user.registration}")
                         self._device = None  # reseta para iterar todos os devices
                         success, err = self.sync_user_in_catraca(user)
+                        print(f"[SYNC] Resultado sync user id={user.id}: success={success} err={err}")
                         if not success:
                             catraca_errors.append(
                                 f"Usuário {user.name} ({user.registration}): {err}"
@@ -370,7 +376,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                                 {"user_id": u.id, "group_id": grupo.id}
                                 for u in new_relation_pairs
                             ]
+                            print(f"[SYNC] Batch create user_groups: {relations_payload}")
                             response = self.create_objects("user_groups", relations_payload)
+                            print(f"[SYNC] Resposta user_groups: status={response.status_code} data={getattr(response, 'data', None)}")
                             if response.status_code != status.HTTP_201_CREATED:
                                 catraca_errors.append(
                                     f"Sheet '{sheet_name}': Erro ao criar batch de relações: "
