@@ -48,7 +48,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
     def _sync_user_in_device(self, user, device):
         self.set_device(device)
 
-        create_response = self.create_objects(
+        create_response = self.create_or_update_objects(
             "users",
             [self._build_user_payload(user)],
         )

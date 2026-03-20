@@ -388,6 +388,55 @@ class ControlIDSyncMixin:
             return Response(
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+            
+    def create_or_update_objects_in_all_devices(
+        self, object_name: str, values: List[Dict[str, Any]]
+    ) -> Response:
+        """
+        Cria ou atualiza objetos em todas as catracas ativas com base em um campo de ID.
+        Se o objeto já existir (baseado no id_field), ele será atualizado; caso contrário, criado.
+        Args:
+            object_name: Nome do objeto na API da catraca
+            values: Lista de valores para criar ou atualizar
+            id_field: Campo que identifica unicamente o objeto (padrão é "id")
+        Returns:
+            Response: Resposta da API
+        """
+        try:
+            from src.core.control_Id.infra.control_id_django_app.models.device import (
+                Device,
+            )
+
+            if self._device is not None:
+                devices = [self._device]
+            else:
+                devices = list(Device.objects.filter(is_active=True))
+                if not devices:
+                    return Response(
+                        {"error": "Nenhuma catraca ativa encontrada"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            with transaction.atomic():
+                for device in devices:
+                    self.set_device(device)
+                    sess = self.login()
+                    response = requests.post(
+                        self.get_url(f"create_or_modify_objects.fcgi?session={sess}"),
+                        json={"object": object_name, "values": values},
+                        timeout=30,
+                    )
+                    if response.status_code != 200:
+                        raise Exception(response.json())
+                    response.raise_for_status()
+
+                return Response({"success": True}, status=status.HTTP_200_OK)
+
+        except requests.RequestException as e:
+            return Response(
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def update_objects_in_all_devices(
         self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]
@@ -487,6 +536,12 @@ class ControlIDSyncMixin:
     ) -> Response:
         """Mantido por compatibilidade, chama create_objects_in_all_devices"""
         return self.create_objects_in_all_devices(object_name, values)
+    
+    def create_or_update_objects(
+        self, object_name: str, values: List[Dict[str, Any]]
+    ) -> Response:
+        """Mantido por compatibilidade, chama create_or_update_objects_in_all_devices"""
+        return self.create_or_update_objects_in_all_devices(object_name, values)
 
     def update_objects(
         self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]
