@@ -35,28 +35,3 @@ class UserAccessRuleSyncMixin(ControlIDSyncMixin):
             }}
         )
         return response
-
-    def sync_from_catraca(self):
-        try:
-            from src.core.control_Id.infra.control_id_django_app.models import UserAccessRule, AccessRule
-            from src.core.user.infra.user_django_app.models import User
-            
-            catraca_objects = self.load_objects("user_access_rules")
-
-            with transaction.atomic():
-                UserAccessRule.objects.all().delete()
-                for data in catraca_objects:
-                    user = User.objects.get(id=data["user_id"])
-                    access_rule = AccessRule.objects.get(id=data["access_rule_id"])
-                    UserAccessRule.objects.create(
-                        user=user,
-                        access_rule=access_rule
-                    )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} associações usuário-regra"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-

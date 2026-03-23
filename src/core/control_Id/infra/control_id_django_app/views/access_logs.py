@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from src.core.control_Id.infra.control_id_django_app.models import AccessLogs
 from src.core.control_Id.infra.control_id_django_app.serializers import AccessLogsSerializer
-from src.core.__seedwork__.infra.mixins import AccessLogsSyncMixin
 
 from rest_framework.pagination import PageNumberPagination
 
@@ -16,79 +15,14 @@ class AccessLogsPagination(PageNumberPagination):
     max_page_size = 1000
 
 @extend_schema(tags=["Access Logs"])
-class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
+class AccessLogsViewSet(viewsets.ModelViewSet):
     queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule').all()
     serializer_class = AccessLogsSerializer
     pagination_class = AccessLogsPagination
     filterset_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule']
     search_fields = ['device__name', 'user__name', 'portal__name', 'identifier_id']
     ordering_fields = ['id', 'time', 'event_type']
-    
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
-        
-        # Criar na catraca
-        response = self.create_objects("access_logs", [{
-            "id": instance.id,
-            "time": instance.time,
-            "event": instance.event_type,
-            "device": instance.device,
-            "identifier_id": instance.identifier_id,
-            "user": instance.user,
-            "portal": instance.portal,
-            "access_rule": instance.access_rule,
-            "qr_code": instance.qr_code,
-            "uhf_value": instance.uhf_value,
-            "pin_value": instance.pin_value,
-            "card_value": instance.card_value,
-            "confidence": instance.confidence,
-            "mask": instance.mask
-        }])
-        
-        if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
-            return response
-        
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
-        
-        # Atualizar na catraca
-        response = self.update_objects("access_logs", {
-            "id": instance.id,
-            "time": instance.time,
-            "event": instance.event_type,
-            "device": instance.device,
-            "identifier_id": instance.identifier_id,
-            "user": instance.user,
-            "portal": instance.portal,
-            "access_rule": instance.access_rule,
-        }, {"access_logs": {"id": instance.id}})
-        
-        if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
-            return response
-        
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        
-        # Deletar na catraca
-        response = self.destroy_objects("access_logs", {"access_logs": {"id": instance.id}})
-        
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            return response
-        
-        # Deletar no banco local
-        instance.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    http_method_names = ['get']
     
     @action(detail=False, methods=['get'])
     def list_all_by_type(self, request):
@@ -163,12 +97,6 @@ class AccessLogsViewSet(AccessLogsSyncMixin, viewsets.ModelViewSet):
                         {"error": "O parâmetro 'event_type' deve ser um número válido"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            
-            # Aplica paginação
-            page = self.paginate_queryset(logs)
-            if page is not None:
-                serializer = self.get_serializer(page, many=True)
-                return self.get_paginated_response(serializer.data)
             
             serializer = self.get_serializer(logs, many=True)
             return Response(serializer.data)

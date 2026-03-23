@@ -34,26 +34,3 @@ class PortalAccessRuleSyncMixin(ControlIDSyncMixin):
             }}
         )
         return response
-
-    def sync_from_catraca(self):
-        try:
-            from src.core.control_Id.infra.control_id_django_app.models import PortalAccessRule, AccessRule
-            
-            catraca_objects = self.load_objects("portal_access_rules")
-
-            with transaction.atomic():
-                PortalAccessRule.objects.all().delete()
-                for data in catraca_objects:
-                    access_rule = AccessRule.objects.get(id=data["access_rule_id"])
-                    PortalAccessRule.objects.create(
-                        portal_id=data["portal_id"],
-                        access_rule=access_rule
-                    )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} associações regra-portal"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
-

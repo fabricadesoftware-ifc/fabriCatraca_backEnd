@@ -2,10 +2,11 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from django.db import transaction
 from rest_framework.response import Response
 from rest_framework import status
+from typing import List
 
 
 class UserGroupsSyncMixin(ControlIDSyncMixin):
-    def create_in_catraca(self, instance):
+    def create_in_catraca(self, instance: List[object]) -> dict:
         response = self.create_objects(
             "user_groups",
             [{"user_id": instance.user.id, "group_id": instance.group.id}],

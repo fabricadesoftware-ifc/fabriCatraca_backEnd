@@ -11,7 +11,6 @@ from .area import AreaSyncMixin
 from .group import GroupSyncMixin
 from .user_groups import UserGroupsSyncMixin
 from .group_access_rules import GroupAccessRulesSyncMixin
-from .access_logs import AccessLogsSyncMixin    
 
 __all__ = [
     'AccessRuleSyncMixin',
@@ -27,5 +26,4 @@ __all__ = [
     'GroupSyncMixin',
     'UserGroupsSyncMixin',
     'GroupAccessRulesSyncMixin',
-    'AccessLogsSyncMixin',
 ]

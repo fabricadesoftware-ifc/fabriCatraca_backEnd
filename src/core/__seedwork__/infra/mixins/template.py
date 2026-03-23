@@ -35,29 +35,3 @@ class TemplateSyncMixin(ControlIDSyncMixin):
         )
         return response
 
-    def sync_from_catraca(self):
-        try:
-            from src.core.control_Id.infra.control_id_django_app.models import Template
-            from src.core.user.infra.user_django_app.models import User
-            
-            catraca_objects = self.load_objects(
-                "templates",
-                fields=["id", "user_id", "template", "finger_type", "finger_position"]
-            )
-
-            with transaction.atomic():
-                Template.objects.all().delete()
-                for data in catraca_objects:
-                    Template.objects.create(
-                        id=data["id"],
-                        user_id=data["user_id"],
-                        template=data["template"]
-                    )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} templates"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        

@@ -29,21 +29,3 @@ class GroupSyncMixin(ControlIDSyncMixin):
         )
         return response
     
-    def sync_from_catraca(self):
-        try:
-            from src.core.control_Id.infra.control_id_django_app.models import CustomGroup
-            
-            catraca_objects = self.load_objects("groups")
-
-            with transaction.atomic():
-                CustomGroup.objects.all().delete()
-                for data in catraca_objects:
-                    CustomGroup.objects.create(**data)
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizados {len(catraca_objects)} grupos"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR) 
-        

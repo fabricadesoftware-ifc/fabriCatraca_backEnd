@@ -32,26 +32,3 @@ class AccessRuleSyncMixin(ControlIDSyncMixin):
             {"access_rules": {"id": instance.id}}
         )
         return response
-
-    def sync_from_catraca(self):
-        try:
-            from src.core.control_Id.infra.control_id_django_app.models import AccessRule
-            
-            catraca_objects = self.load_objects("access_rules")
-
-            with transaction.atomic():
-                AccessRule.objects.all().delete()
-                for data in catraca_objects:
-                    AccessRule.objects.create(
-                        id=data["id"],
-                        name=data["name"],
-                        type=data["type"],
-                        priority=data["priority"]
-                    )
-
-            return Response({
-                "success": True,
-                "message": f"Sincronizadas {len(catraca_objects)} regras de acesso"
-            })
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
