@@ -1,36 +1,35 @@
 from src.core.__seedwork__.infra import ControlIDSyncMixin
-from django.db import transaction
 from rest_framework.response import Response
-from rest_framework import status
+from src.core.__seedwork__.infra.mixins._typing import PortalAccessRuleLike
+from src.core.__seedwork__.infra.types import PortalAccessRuleData
 
 class PortalAccessRuleSyncMixin(ControlIDSyncMixin):
-    def create_in_catraca(self, instance):
-        response = self.create_objects("portal_access_rules", [{
+    def create_in_catraca(self, instance: PortalAccessRuleLike) -> Response:
+        payload: PortalAccessRuleData = {
             "portal_id": instance.portal_id,
-            "access_rule_id": instance.access_rule.id
-        }])
+            "access_rule_id": instance.access_rule.id,
+        }
+        response = self.create_objects("portal_access_rules", [payload])
         return response
 
-    def update_in_catraca(self, instance):
+    def update_in_catraca(self, instance: PortalAccessRuleLike) -> Response:
+        payload: PortalAccessRuleData = {
+            "portal_id": instance.portal_id,
+            "access_rule_id": instance.access_rule.id,
+        }
         response = self.update_objects(
             "portal_access_rules",
-            {
-                "portal_id": instance.portal_id,
-                "access_rule_id": instance.access_rule.id
-            },
-            {"portal_access_rules": {
-                "portal_id": instance.portal_id,
-                "access_rule_id": instance.access_rule.id
-            }}
+            payload,
+            {"portal_access_rules": payload},
         )
         return response
 
-    def delete_in_catraca(self, instance):
+    def delete_in_catraca(self, instance: PortalAccessRuleLike) -> Response:
         response = self.destroy_objects(
             "portal_access_rules",
             {"portal_access_rules": {
                 "portal_id": instance.portal_id,
-                "access_rule_id": instance.access_rule.id
-            }}
+                "access_rule_id": instance.access_rule.id,
+            }},
         )
         return response

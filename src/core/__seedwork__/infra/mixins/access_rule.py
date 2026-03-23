@@ -1,34 +1,38 @@
+from typing import cast
+
 from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
-from django.db import transaction
 from rest_framework.response import Response
-from rest_framework import status
+from src.core.__seedwork__.infra.mixins._typing import AccessRuleLike
+from src.core.__seedwork__.infra.types.access_rules import AccessRuleData, AccessRuleType
 
 class AccessRuleSyncMixin(ControlIDSyncMixin):
-    def create_in_catraca(self, instance):
-        response = self.create_objects("access_rules", [{
+    def create_in_catraca(self, instance: AccessRuleLike) -> Response:
+        payload: AccessRuleData = {
             "id": instance.id,
             "name": instance.name,
-            "type": instance.type,
-            "priority": instance.priority
-        }])
+            "type": cast(AccessRuleType, instance.type),
+            "priority": instance.priority,
+        }
+        response = self.create_objects("access_rules", [payload])
         return response
 
-    def update_in_catraca(self, instance):
+    def update_in_catraca(self, instance: AccessRuleLike) -> Response:
+        payload: AccessRuleData = {
+            "id": instance.id,
+            "name": instance.name,
+            "type": cast(AccessRuleType, instance.type),
+            "priority": instance.priority,
+        }
         response = self.update_objects(
             "access_rules",
-            {
-                "id": instance.id,
-                "name": instance.name,
-                "type": instance.type,
-                "priority": instance.priority
-            },
-            {"access_rules": {"id": instance.id}}
+            payload,
+            {"access_rules": {"id": instance.id}},
         )
         return response
 
-    def delete_in_catraca(self, instance):
+    def delete_in_catraca(self, instance: AccessRuleLike) -> Response:
         response = self.destroy_objects(
             "access_rules",
-            {"access_rules": {"id": instance.id}}
+            {"access_rules": {"id": instance.id}},
         )
         return response

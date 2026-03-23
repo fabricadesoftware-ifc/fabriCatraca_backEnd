@@ -1,20 +1,19 @@
 from typing import TypedDict
-from enum import IntEnum
 
 
 class TimeSpansData(TypedDict):
     id: int
-    time_zoned_id: int
+    time_zone_id: int
     start: int
     end: int
-    sun: IntEnum
-    mon: IntEnum
-    tue: IntEnum
-    wed: IntEnum
-    thu: IntEnum
-    fri: IntEnum
-    sat: IntEnum
-    hol1: IntEnum
-    hol2: IntEnum
-    hol3: IntEnum
+    sun: int
+    mon: int
+    tue: int
+    wed: int
+    thu: int
+    fri: int
+    sat: int
+    hol1: int
+    hol2: int
+    hol3: int
     

@@ -1,11 +1,10 @@
 from src.core.__seedwork__.infra import ControlIDSyncMixin
-from django.db import transaction
 from rest_framework.response import Response
-from rest_framework import status
+from src.core.__seedwork__.infra.mixins._typing import GeneralConfigLike
 
 
 class GeneralSyncMixin(ControlIDSyncMixin):
-    def update_in_catraca(self, instance):
+    def update_in_catraca(self, instance: GeneralConfigLike) -> Response:
         response = self.update_objects(
             "general",
             {

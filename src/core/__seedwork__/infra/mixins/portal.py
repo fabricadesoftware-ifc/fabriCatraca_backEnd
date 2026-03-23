@@ -1,35 +1,37 @@
 from src.core.__seedwork__.infra import ControlIDSyncMixin
-from django.db import transaction
 from rest_framework.response import Response
-from rest_framework import status
+from src.core.__seedwork__.infra.mixins._typing import PortalLike
+from src.core.__seedwork__.infra.types import PortalData
 
 class PortalSyncMixin(ControlIDSyncMixin):
-    def create_in_catraca(self, instance):
-        response = self.create_objects("portals", [{
+    def create_in_catraca(self, instance: PortalLike) -> Response:
+        payload: PortalData = {
             "id": instance.id,
             "name": instance.name,
             "area_from_id": instance.area_from.id,
-            "area_to_id": instance.area_to.id
-        }])
+            "area_to_id": instance.area_to.id,
+        }
+        response = self.create_objects("portals", [payload])
         return response
     
-    def update_in_catraca(self, instance):
+    def update_in_catraca(self, instance: PortalLike) -> Response:
+        payload: PortalData = {
+            "id": instance.id,
+            "name": instance.name,
+            "area_from_id": instance.area_from.id,
+            "area_to_id": instance.area_to.id,
+        }
         response = self.update_objects(
             "portals",
-            {
-                "id": instance.id,
-                "name": instance.name,
-                "area_from_id": instance.area_from.id,
-                "area_to_id": instance.area_to.id
-            },
-            {"portals": {"id": instance.id}}
+            payload,
+            {"portals": {"id": instance.id}},
         )
         return response
     
-    def delete_in_catraca(self, instance):
+    def delete_in_catraca(self, instance: PortalLike) -> Response:
         response = self.destroy_objects(
             "portals",
-            {"portals": {"id": instance.id}}
+            {"portals": {"id": instance.id}},
         )
         return response
     

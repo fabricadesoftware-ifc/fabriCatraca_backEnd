@@ -1,31 +1,33 @@
 from src.core.__seedwork__.infra import ControlIDSyncMixin
-from django.db import transaction
 from rest_framework.response import Response
-from rest_framework import status
+from src.core.__seedwork__.infra.mixins._typing import GroupLike
+from src.core.__seedwork__.infra.types import GroupsData
 
 class GroupSyncMixin(ControlIDSyncMixin):
-    def create_in_catraca(self, instance):
-        response = self.create_objects("groups", [{
+    def create_in_catraca(self, instance: GroupLike) -> Response:
+        payload: GroupsData = {
             "id": instance.id,
-            "name": instance.name
-        }])
+            "name": instance.name,
+        }
+        response = self.create_objects("groups", [payload])
         return response
     
-    def update_in_catraca(self, instance):
+    def update_in_catraca(self, instance: GroupLike) -> Response:
+        payload: GroupsData = {
+            "id": instance.id,
+            "name": instance.name,
+        }
         response = self.update_objects(
             "groups",
-            {
-                "id": instance.id,
-                "name": instance.name
-            },
-            {"groups": {"id": instance.id}}
+            payload,
+            {"groups": {"id": instance.id}},
         )
         return response
     
-    def delete_in_catraca(self, instance):
+    def delete_in_catraca(self, instance: GroupLike) -> Response:
         response = self.destroy_objects(
             "groups",
-            {"groups": {"id": instance.id}}
+            {"groups": {"id": instance.id}},
         )
         return response
     

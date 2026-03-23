@@ -1,7 +1,7 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class CardsData(TypedDict):
     id: int
-    value: int
-    user_id: int
+    value: str
+    user_id: NotRequired[int]

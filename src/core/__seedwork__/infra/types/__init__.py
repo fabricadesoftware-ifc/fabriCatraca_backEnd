@@ -20,31 +20,33 @@ from .time_spans import TimeSpansData
 from .time_zone import TimeZonesData
 from .uhf_tags import UhfTagsData
 from .user_access_rules import UserAccessRulesData
+from .user_groups import UserGroupsData
 from .user_roles import UserRolesData
 
 
 __all__ = [
-    AccessLogAccessRulesData,
-    AccessRuleTimeZoneData,
-    AccessRuleData,
-    ActionsData,
-    AreaAccessRulesData,
-    AreasData,
-    CardsData,
-    CatraInfosData,
-    ContigencyCardsData,
-    DevicesData,
-    GroupAccessRuleData,
-    HolidaysData,
-    PinsData,
-    PortalAccessRuleData,
-    PortalActionsData,
-    PortalData,
-    QrcodesData,
-    ScheduledUnlockAccessRuleData,
-    TimeSpansData,
-    TimeZonesData,
-    UhfTagsData,
-    UserAccessRulesData,
-    UserRolesData
+    "AccessLogAccessRulesData",
+    "AccessRuleTimeZoneData",
+    "AccessRuleData",
+    "ActionsData",
+    "AreaAccessRulesData",
+    "AreasData",
+    "CardsData",
+    "CatraInfosData",
+    "ContigencyCardsData",
+    "DevicesData",
+    "GroupAccessRuleData",
+    "HolidaysData",
+    "PinsData",
+    "PortalAccessRuleData",
+    "PortalActionsData",
+    "PortalData",
+    "QrcodesData",
+    "ScheduledUnlockAccessRuleData",
+    "TimeSpansData",
+    "TimeZonesData",
+    "UhfTagsData",
+    "UserAccessRulesData",
+    "UserGroupsData",
+    "UserRolesData",
 ]

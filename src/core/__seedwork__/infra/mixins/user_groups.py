@@ -2,31 +2,36 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from django.db import transaction
 from rest_framework.response import Response
 from rest_framework import status
-from typing import List
+
+from src.core.__seedwork__.infra.mixins._typing import UserGroupLike
+from src.core.__seedwork__.infra.types.user_groups import UserGroupsData
 
 
 class UserGroupsSyncMixin(ControlIDSyncMixin):
-    def create_in_catraca(self, instance: List[object]) -> dict:
+    def create_in_catraca(self, instance: UserGroupLike) -> Response:
+        payload: UserGroupsData = {
+            "user_id": instance.user.id,
+            "group_id": instance.group.id,
+        }
         response = self.create_objects(
             "user_groups",
-            [{"user_id": instance.user.id, "group_id": instance.group.id}],
+            [payload],
         )
         return response
 
-    def update_in_catraca(self, instance):
+    def update_in_catraca(self, instance: UserGroupLike) -> Response:
+        payload: UserGroupsData = {
+            "user_id": instance.user.id,
+            "group_id": instance.group.id,
+        }
         response = self.update_objects(
             "user_groups",
-            {"user_id": instance.user.id, "group_id": instance.group.id},
-            {
-                "user_groups": {
-                    "user_id": instance.user.id,
-                    "group_id": instance.group.id,
-                }
-            },
+            payload,
+            {"user_groups": payload},
         )
         return response
 
-    def delete_in_catraca(self, instance):
+    def delete_in_catraca(self, instance: UserGroupLike) -> Response:
         response = self.destroy_objects(
             "user_groups",
             {
@@ -38,7 +43,7 @@ class UserGroupsSyncMixin(ControlIDSyncMixin):
         )
         return response
 
-    def sync_from_catraca(self):
+    def sync_from_catraca(self) -> Response:
         try:
             from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 
