@@ -330,8 +330,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
 
                         if not user:
 
-                            email = f"{row['registration']}@escola.edu"
+                            email = f"{row['name'].split(' ')[0].lower() + row['name'].split(' ')[-1].lower()}@estudantes.ifc.edu.br" #Exemplo Jonatas Silva Peraza = jonatas.peraza@estudantes.ifc.edu.br
                             user = User.objects.create(
+                                id=row["registration"],
                                 name=row["name"],
                                 registration=row["registration"],
                                 email=email,

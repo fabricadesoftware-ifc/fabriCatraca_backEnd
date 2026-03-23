@@ -179,6 +179,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        serializer.id = serializer.validated_data.get("registration")
 
         with transaction.atomic():
             instance = serializer.save()
