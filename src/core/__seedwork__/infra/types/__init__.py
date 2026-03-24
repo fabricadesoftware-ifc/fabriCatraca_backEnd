@@ -9,6 +9,7 @@ from .catra_infos import CatraInfosData
 from .contigency_cards import ContigencyCardsData
 from .devices import DevicesData
 from .group_access_rules import GroupAccessRuleData
+from .groups import GroupsData
 from .holidays import HolidaysData
 from .pins import PinsData
 from .portal_access_rules import PortalAccessRuleData
@@ -36,6 +37,7 @@ __all__ = [
     "ContigencyCardsData",
     "DevicesData",
     "GroupAccessRuleData",
+    "GroupsData",
     "HolidaysData",
     "PinsData",
     "PortalAccessRuleData",

@@ -1,10 +1,26 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
+from dataclasses import dataclass
+from typing import Optional
+from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 import requests
 from django.conf import settings
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
+
+@dataclass
+class DefaultDeviceClass:
+    ip: str
+    username: str
+    password: str
+
+@dataclass
+class DeviceClass:
+    id: int
+    ip: str
+    username: str
+    password: str
 
 
 class ControlIDSyncMixin:
@@ -16,26 +32,27 @@ class ControlIDSyncMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.session = None
-        self._device = None
+        self._device: Optional[Device] = None
         self._use_default_config = False
 
     @property
-    def device(self):
+    def device(self) -> DefaultDeviceClass | Device:
         """Retorna o dispositivo atual ou busca o dispositivo padrão"""
         if self._device is None and self._use_default_config:
             # Usa configurações do settings.py como fallback
-            return type(
-                "Device",
-                (),
-                {
-                    "ip": settings.CATRAKA_URL,
-                    "username": settings.CATRAKA_USER,
-                    "password": settings.CATRAKA_PASS,
-                },
+            return DefaultDeviceClass(
+                ip=settings.CATRAKA_URL,
+                username=settings.CATRAKA_USER,
+                password=settings.CATRAKA_PASS,
             )
+
+        if self._device is None:
+            raise ValueError("Device não definido")
+
+
         return self._device
 
-    def set_device(self, device):
+    def set_device(self, device: Device):
         """Define o dispositivo para usar nas operações"""
         self._device = device
         self._use_default_config = False
@@ -86,7 +103,7 @@ class ControlIDSyncMixin:
         self,
         endpoint: str,
         method: str = "POST",
-        json_data: Dict = None,
+        json_data: Optional[Dict[str, Any]] = None,
         retry_on_auth_fail: bool = True,
         request_timeout: int = 10,
     ) -> requests.Response:
@@ -171,11 +188,10 @@ class ControlIDSyncMixin:
         Executa o mesmo endpoint remoto em uma lista de catracas.
         """
         try:
-            from src.core.control_Id.infra.control_id_django_app.models.device import (
-                Device,
-            )
 
-            devices = list(Device.objects.filter(id__in=device_ids).order_by("id"))
+            devices: List[Device] = list(
+                Device.objects.filter(id__in=device_ids).order_by("id")
+            )
             found_ids = {device.id for device in devices}
             missing_ids = sorted(set(device_ids) - found_ids)
 
@@ -257,8 +273,11 @@ class ControlIDSyncMixin:
             )
 
     def load_objects(
-        self, object_name: str, fields: List[str] = None, order_by: List[str] = None
-    ) -> List[Dict[str, Any]]:
+        self,
+        object_name: str,
+        fields: list[str] | None = None,
+        order_by: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Carrega objetos da catraca.
         Args:
@@ -266,10 +285,10 @@ class ControlIDSyncMixin:
             fields: Lista de campos para retornar
             order_by: Lista de campos para ordenação
         Returns:
-            List[Dict[str, Any]]: Lista de objetos carregados
+            list[dict[str, Any]]: Lista de objetos carregados
         """
         sess = self.login()
-        payload = {"object": object_name}
+        payload: dict[str, Any] = {"object": object_name}
 
         if fields:
             payload["fields"] = fields
@@ -285,7 +304,7 @@ class ControlIDSyncMixin:
         return response.json().get(f"{object_name}", [])
 
     def create_objects_in_all_devices(
-        self, object_name: str, values: List[Dict[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]]
     ) -> Response:
         """
         Cria objetos em todas as catracas ativas.
@@ -388,10 +407,10 @@ class ControlIDSyncMixin:
             return Response(
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-            
-            
+
+
     def create_or_update_objects_in_all_devices(
-        self, object_name: str, values: List[Dict[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]]
     ) -> Response:
         """
         Cria ou atualiza objetos em todas as catracas ativas com base em um campo de ID.
@@ -443,7 +462,7 @@ class ControlIDSyncMixin:
             )
 
     def update_objects_in_all_devices(
-        self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]
+        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any]
     ) -> Response:
         """
         Atualiza objetos em todas as catracas ativas.
@@ -536,19 +555,19 @@ class ControlIDSyncMixin:
             )
 
     def create_objects(
-        self, object_name: str, values: List[Dict[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]]
     ) -> Response:
         """Mantido por compatibilidade, chama create_objects_in_all_devices"""
         return self.create_objects_in_all_devices(object_name, values)
-    
+
     def create_or_update_objects(
-        self, object_name: str, values: List[Dict[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]]
     ) -> Response:
         """Mantido por compatibilidade, chama create_or_update_objects_in_all_devices"""
         return self.create_or_update_objects_in_all_devices(object_name, values)
 
     def update_objects(
-        self, object_name: str, values: Dict[str, Any], where: Dict[str, Any]
+        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any]
     ) -> Response:
         """Mantido por compatibilidade, chama update_objects_in_all_devices"""
         return self.update_objects_in_all_devices(object_name, values, where)

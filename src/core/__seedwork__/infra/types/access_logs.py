@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional
+from typing import TypedDict
 from enum import IntEnum
 
 
@@ -31,7 +31,7 @@ class AccessLogData(TypedDict):
     identification_rule_id: int
     qrcode_value: str
     uhf_tag: str
-    pin_value: str 
+    pin_value: str
     card_value: int
     confidence: int
     mask: int

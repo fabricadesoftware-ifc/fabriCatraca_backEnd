@@ -1,6 +1,8 @@
 from django.db import models
 
 class Device(models.Model):
+    id: int
+
     name = models.CharField(max_length=255, help_text="Nome descritivo do equipamento")
     ip = models.CharField(max_length=255, help_text="IP ou hostname do equipamento. Ex: 192.168.0.129")
     username = models.CharField(max_length=255, help_text="Usuário para autenticação")
@@ -20,4 +22,4 @@ class Device(models.Model):
         if self.is_default:
             # Remove o status de padrão de outros dispositivos
             Device.objects.filter(is_default=True).update(is_default=False)
-        super().save(*args, **kwargs) 
+        super().save(*args, **kwargs)
