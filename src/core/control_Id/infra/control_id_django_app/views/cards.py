@@ -6,15 +6,27 @@ from rest_framework.response import Response
 from src.core.__seedwork__.infra.mixins import CardSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.cards import Card
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
-from src.core.control_Id.infra.control_id_django_app.serializers.cards import CardSerializer
+from src.core.control_Id.infra.control_id_django_app.serializers.cards import (
+    CardSerializer,
+)
 
 
 @extend_schema(tags=["Cards"])
 class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer
-    filterset_fields = ["user_id", "enrollment_device_id"]
+    filterset_fields = ["id", "user", "value"]
     search_fields = ["value", "user__name", "user__id", "user__registration"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        # Compatibilidade com clientes que ainda enviam ?user_id=<id>
+        user_id = self.request.query_params.get("user_id")
+        if user_id not in (None, ""):
+            queryset = queryset.filter(user_id=user_id)
+
+        return queryset
 
     @staticmethod
     def _card_value_as_int(value):
