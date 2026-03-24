@@ -33,6 +33,7 @@ et-xmlfile==2.0.0
 factory-boy==3.3.3
 faker==37.8.0
 gunicorn==23.0.0
+idbio-sdk==0.1.0
 idna==3.10
 inflection==0.5.1
 iniconfig==2.1.0

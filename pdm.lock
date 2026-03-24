@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:bd3b952ac3908cfcafe174a40c32cf984d40f938a74f59f68ec3fce6b2c5bac0"
+content_hash = "sha256:91133fa52e4d061f992fe579c0b4e28685ec3eb44dce7ab6fda0cf89ab0a779b"
 
 [[metadata.targets]]
 requires_python = ">=3.13"
@@ -626,6 +626,17 @@ dependencies = [
 files = [
     {file = "gunicorn-23.0.0-py3-none-any.whl", hash = "sha256:ec400d38950de4dfd418cff8328b2c8faed0edb0d517d3394e457c317908ca4d"},
     {file = "gunicorn-23.0.0.tar.gz", hash = "sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec"},
+]
+
+[[package]]
+name = "idbio-sdk"
+version = "0.1.0"
+requires_python = ">=3.10"
+summary = "Python wrapper for libcidbio.dll"
+groups = ["default"]
+files = [
+    {file = "idbio_sdk-0.1.0-py3-none-any.whl", hash = "sha256:f1d097f5a847419235df7af123ccd436a1ef65d679106523f7301cf8c7084de5"},
+    {file = "idbio_sdk-0.1.0.tar.gz", hash = "sha256:37d49605d95d1a998d7432da8bc1d32c80c4d78471d48f9e59fb1d8de58ed224"},
 ]
 
 [[package]]

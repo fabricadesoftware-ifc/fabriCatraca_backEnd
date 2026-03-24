@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models import CustomGroup as Group
+from django.contrib.auth.models import Group as DjangoGroup
 from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from src.core.user.infra.user_django_app.models import User
@@ -51,11 +52,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = FileUploadSerializer
 
-    # ── Helpers ─────────────────────────────────────────────────────────────
-
     def _build_user_payload(self, user: User) -> dict:
         payload = {
-            "id": user.id,
+            "id": user.pk,
             "name": user.name,
             "registration": user.registration,
         }
@@ -78,7 +77,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         return f"{nivel}{curso}{secao}"
 
 
-    def _sync_group(self, group: Group) -> tuple[bool, str | None]:
+    def _sync_group(self, group: DjangoGroup) -> tuple[bool, str | None]:
         """
         Upsert do grupo em todas as catracas ativas.
         Garante que o grupo existe em todos os devices antes de criar relações.
@@ -89,25 +88,25 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                 return False, "Nenhuma catraca ativa encontrada"
 
             self._device = None
-            logger.info(f"[GRUPO] Sincronizando id={group.id} name='{group.name}' → {len(devices)} device(s)")
+            logger.info(f"[GRUPO] Sincronizando id={group.pk} name='{group.name}' → {len(devices)} device(s)")
 
             response = self.create_or_update_objects_in_all_devices(
-                "groups", [{"id": group.id, "name": group.name}]
+                "groups", [{"id": group.pk, "name": group.name}]
             )
 
             if response.status_code != status.HTTP_200_OK:
                 error_detail = getattr(response, "data", str(response))
-                logger.error(f"[GRUPO] Falha id={group.id} name='{group.name}': {error_detail}")
+                logger.error(f"[GRUPO] Falha id={group.pk} name='{group.name}': {error_detail}")
                 return False, f"Erro ao sincronizar grupo na catraca: {error_detail}"
 
-            logger.info(f"[GRUPO] OK id={group.id} name='{group.name}'")
+            logger.info(f"[GRUPO] OK id={group.pk} name='{group.name}'")
             return True, None
 
         except Exception as e:
-            logger.exception(f"[GRUPO] Exceção id={group.id} name='{group.name}': {e}")
+            logger.exception(f"[GRUPO] Exceção id={group.pk} name='{group.name}': {e}")
             return False, str(e)
 
-    def _ensure_group(self, nome_grupo: str) -> tuple[Group | None, str | None]:
+    def _ensure_group(self, nome_grupo: str) -> tuple[DjangoGroup | None, str | None]:
         """
         Garante que o grupo existe no Django e em todas as catracas.
         Cria localmente se não existir, depois faz upsert na catraca.
@@ -121,13 +120,13 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
             sp = transaction.savepoint()
             try:
                 grupo = Group.objects.create(name=nome_grupo)
-                logger.info(f"[GRUPO] Criado localmente: id={grupo.id}")
+                logger.info(f"[GRUPO] Criado localmente: id={grupo.pk}")
             except Exception as e:
                 transaction.savepoint_rollback(sp)
                 logger.exception(f"[GRUPO] Falha ao criar '{nome_grupo}' localmente: {e}")
                 return None, str(e)
         else:
-            logger.info(f"[GRUPO] '{nome_grupo}' já existe localmente (id={grupo.id})")
+            logger.info(f"[GRUPO] '{nome_grupo}' já existe localmente (id={grupo.pk})")
             sp = transaction.savepoint()
 
         success, err = self._sync_group(grupo)
@@ -171,7 +170,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
         return users
 
     def _sync_relations_batch(
-        self, users: list[User], grupo: Group, sheet_name: str
+        self, users: list[User], grupo: DjangoGroup, sheet_name: str
     ) -> bool:
         """
         Upsert em batch das relações user_groups em todas as catracas.
@@ -182,12 +181,12 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
 
         self._device = None
         relations_payload = [
-            {"user_id": u.id, "group_id": grupo.id} for u in users
+            {"user_id": u.pk, "group_id": grupo.pk} for u in users
         ]
 
         logger.info(
             f"[RELACAO] Batch upsert de {len(relations_payload)} relação(ões) "
-            f"grupo id={grupo.id} name='{grupo.name}'"
+            f"grupo id={grupo.pk} name='{grupo.name}'"
         )
 
         response = self.create_or_update_objects_in_all_devices(
@@ -295,9 +294,9 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                         catraca_errors.append(f"Grupo {nome_grupo}: {err}")
                         continue
 
-                    if Group.objects.filter(name=nome_grupo, id=grupo.id).exists():
-                        if created_groups == 0 or grupo.id not in [
-                            g.id for g in Group.objects.filter(name=nome_grupo)
+                    if Group.objects.filter(name=nome_grupo, id=grupo.pk).exists():
+                        if created_groups == 0 or grupo.pk not in [
+                            g.pk for g in Group.objects.filter(name=nome_grupo)
                         ]:
                             created_groups += 1
                         else:
@@ -339,7 +338,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                                 is_active=True,
                             )
                             logger.info(
-                                f"[USER] Criado: id={user.id} "
+                                f"[USER] Criado: id={user.pk} "
                                 f"name='{user.name}' registration={user.registration}"
                             )
                             users_new.append(user)
@@ -352,7 +351,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                             )
                             if needs_update:
                                 logger.info(
-                                    f"[USER] Atualizado: id={user.id} "
+                                    f"[USER] Atualizado: id={user.pk} "
                                     f"'{user.name}' → '{row['name']}'"
                                 )
                                 user.name = row["name"]
@@ -360,7 +359,7 @@ class ImportUsersView(ControlIDSyncMixin, APIView):
                                 user.is_active = True
                                 user.save(update_fields=["name", "registration", "is_active"])
                             else:
-                                logger.info(f"[USER] Sem alterações: id={user.id} name='{user.name}'")
+                                logger.info(f"[USER] Sem alterações: id={user.pk} name='{user.name}'")
                             users_existing.append(user)
                             updated_users += 1
 
