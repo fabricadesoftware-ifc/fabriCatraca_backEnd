@@ -13,6 +13,8 @@ from src.core.control_Id.infra.control_id_django_app.serializers.cards import Ca
 class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
     queryset = Card.objects.all()
     serializer_class = CardSerializer
+    filterset_fields = ["user_id", "enrollment_device_id"]
+    search_fields = ["value", "user__name", "user__id", "user__registration"]
 
     @staticmethod
     def _card_value_as_int(value):
