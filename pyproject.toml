@@ -83,6 +83,8 @@ exclude_lines = [
     "@(abc\\.)?abstractmethod"
 ]
 
+
+
 [tool.pdm]
 distribution = true
 
@@ -115,13 +117,8 @@ test-e2e = "pytest tests/e2e {args}"
 [dependency-groups]
 dev = [
     "pygraphviz>=1.14",
-    "django-stubs>=6.0.1",
     "mypy>=1.19.1",
+    "django-types>=0.23.0",
+    "djangorestframework-types>=0.9.0",
 ]
 
-[tool.mypy]
-plugins = ["mypy_django_plugin.main"]
-ignore_missing_imports = true
-
-[tool.django-stubs]
-django_settings_module = "src.django_project.settings"

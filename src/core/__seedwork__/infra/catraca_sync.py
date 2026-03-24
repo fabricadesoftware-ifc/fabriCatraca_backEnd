@@ -17,7 +17,7 @@ class DefaultDeviceClass:
 
 @dataclass
 class DeviceClass:
-    id: int
+    pk: int
     ip: str
     username: str
     password: str
@@ -192,7 +192,7 @@ class ControlIDSyncMixin:
             devices: List[Device] = list(
                 Device.objects.filter(id__in=device_ids).order_by("id")
             )
-            found_ids = {device.id for device in devices}
+            found_ids = {device.pk for device in devices}
             missing_ids = sorted(set(device_ids) - found_ids)
 
             if missing_ids:
@@ -225,7 +225,7 @@ class ControlIDSyncMixin:
 
                     results.append(
                         {
-                            "device_id": device.id,
+                            "device_id": device.pk,
                             "device_name": device.name,
                             "success": ok,
                             "status_code": response.status_code,
@@ -238,7 +238,7 @@ class ControlIDSyncMixin:
                 except Exception as exc:
                     results.append(
                         {
-                            "device_id": device.id,
+                            "device_id": device.pk,
                             "device_name": device.name,
                             "success": False,
                             "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:50c169a37620aed128d54a7aaae977d0d7a002bc5f2f7f0a5ba09c9aacf42c52"
+content_hash = "sha256:bd3b952ac3908cfcafe174a40c32cf984d40f938a74f59f68ec3fce6b2c5bac0"
 
 [[metadata.targets]]
 requires_python = ">=3.13"
@@ -29,7 +29,7 @@ name = "asgiref"
 version = "3.9.1"
 requires_python = ">=3.9"
 summary = "ASGI specs, helper code, and adapters"
-groups = ["default", "dev"]
+groups = ["default"]
 dependencies = [
     "typing-extensions>=4; python_version < \"3.11\"",
 ]
@@ -348,7 +348,7 @@ name = "django"
 version = "5.2.4"
 requires_python = ">=3.10"
 summary = "A high-level Python web framework that encourages rapid development and clean, pragmatic design."
-groups = ["default", "dev"]
+groups = ["default"]
 dependencies = [
     "asgiref>=3.8.1",
     "sqlparse>=0.3.1",
@@ -481,39 +481,6 @@ files = [
 ]
 
 [[package]]
-name = "django-stubs"
-version = "6.0.1"
-requires_python = ">=3.10"
-summary = "Mypy stubs for Django"
-groups = ["dev"]
-dependencies = [
-    "django",
-    "django-stubs-ext>=6.0.1",
-    "tomli; python_full_version < \"3.11\"",
-    "types-pyyaml",
-    "typing-extensions>=4.11.0",
-]
-files = [
-    {file = "django_stubs-6.0.1-py3-none-any.whl", hash = "sha256:d885044bd0876610f3eb969d6b5ed22f386002a879fdcb369cd8efa0502dbbce"},
-    {file = "django_stubs-6.0.1.tar.gz", hash = "sha256:e1ca63634221b57a55e16562b9b6d1849aeee2cabfd0fc026084dbe8aa893366"},
-]
-
-[[package]]
-name = "django-stubs-ext"
-version = "6.0.1"
-requires_python = ">=3.10"
-summary = "Monkey-patching and extensions for django-stubs"
-groups = ["dev"]
-dependencies = [
-    "django",
-    "typing-extensions",
-]
-files = [
-    {file = "django_stubs_ext-6.0.1-py3-none-any.whl", hash = "sha256:17415759b9a3f4b4da7998ac3b08c7dc5137f9a019490b918aece1a8a4c2ade4"},
-    {file = "django_stubs_ext-6.0.1.tar.gz", hash = "sha256:633b280f89c0cbb7e3ce2f2f842e0acc43d8091378e75f84921d6be675d052dc"},
-]
-
-[[package]]
 name = "django-timezone-field"
 version = "7.1"
 requires_python = "<4.0,>=3.8"
@@ -526,6 +493,20 @@ dependencies = [
 files = [
     {file = "django_timezone_field-7.1-py3-none-any.whl", hash = "sha256:93914713ed882f5bccda080eda388f7006349f25930b6122e9b07bf8db49c4b4"},
     {file = "django_timezone_field-7.1.tar.gz", hash = "sha256:b3ef409d88a2718b566fabe10ea996f2838bc72b22d3a2900c0aa905c761380c"},
+]
+
+[[package]]
+name = "django-types"
+version = "0.23.0"
+requires_python = ">=3.10"
+summary = "Type stubs for Django"
+groups = ["dev"]
+dependencies = [
+    "types-psycopg2>=2.9.21.13",
+]
+files = [
+    {file = "django_types-0.23.0-py3-none-any.whl", hash = "sha256:0727b13ae810c4b1f14eeac9872834ac928c99dc76584ea7c23afc4461e049dd"},
+    {file = "django_types-0.23.0.tar.gz", hash = "sha256:f97fb746166fb15a5f40e470a1fd7a58226349aac9e0a9cb8ae81deb14d94fd0"},
 ]
 
 [[package]]
@@ -557,6 +538,20 @@ dependencies = [
 files = [
     {file = "djangorestframework_simplejwt-5.5.1-py3-none-any.whl", hash = "sha256:2c30f3707053d384e9f315d11c2daccfcb548d4faa453111ca19a542b732e469"},
     {file = "djangorestframework_simplejwt-5.5.1.tar.gz", hash = "sha256:e72c5572f51d7803021288e2057afcbd03f17fe11d484096f40a460abc76e87f"},
+]
+
+[[package]]
+name = "djangorestframework-types"
+version = "0.9.0"
+requires_python = "<4.0,>=3.8"
+summary = "Type stubs for Django Rest Framework"
+groups = ["dev"]
+dependencies = [
+    "typing-extensions<5.0,>=4.6; python_version < \"3.11\"",
+]
+files = [
+    {file = "djangorestframework_types-0.9.0-py3-none-any.whl", hash = "sha256:5e4258fe43774d0a3d018780170bd702bf615407fe244453ea5ec6e6676b98c4"},
+    {file = "djangorestframework_types-0.9.0.tar.gz", hash = "sha256:aa6b27fbdab5ff4ab1dfa5376f3b6ec45713ce48dbcdd4226bf3e1410f0deaca"},
 ]
 
 [[package]]
@@ -1312,21 +1307,21 @@ name = "sqlparse"
 version = "0.5.3"
 requires_python = ">=3.8"
 summary = "A non-validating SQL parser."
-groups = ["default", "dev"]
+groups = ["default"]
 files = [
     {file = "sqlparse-0.5.3-py3-none-any.whl", hash = "sha256:cf2196ed3418f3ba5de6af7e82c694a9fbdbfecccdfc72e281548517081f16ca"},
     {file = "sqlparse-0.5.3.tar.gz", hash = "sha256:09f67787f56a0b16ecdbde1bfc7f5d9c3371ca683cfeaa8e6ff60b4807ec9272"},
 ]
 
 [[package]]
-name = "types-pyyaml"
-version = "6.0.12.20250915"
-requires_python = ">=3.9"
-summary = "Typing stubs for PyYAML"
+name = "types-psycopg2"
+version = "2.9.21.20260223"
+requires_python = ">=3.10"
+summary = "Typing stubs for psycopg2"
 groups = ["dev"]
 files = [
-    {file = "types_pyyaml-6.0.12.20250915-py3-none-any.whl", hash = "sha256:e7d4d9e064e89a3b3cae120b4990cd370874d2bf12fa5f46c97018dd5d3c9ab6"},
-    {file = "types_pyyaml-6.0.12.20250915.tar.gz", hash = "sha256:0f8b54a528c303f0e6f7165687dd33fafa81c807fcac23f632b63aa624ced1d3"},
+    {file = "types_psycopg2-2.9.21.20260223-py3-none-any.whl", hash = "sha256:c6228ade72d813b0624f4c03feeb89471950ac27cd0506b5debed6f053086bc8"},
+    {file = "types_psycopg2-2.9.21.20260223.tar.gz", hash = "sha256:78ed70de2e56bc6b5c26c8c1da8e9af54e49fdc3c94d1504609f3519e2b84f02"},
 ]
 
 [[package]]
@@ -1345,7 +1340,7 @@ name = "tzdata"
 version = "2025.2"
 requires_python = ">=2"
 summary = "Provider of IANA time zone data"
-groups = ["default", "dev"]
+groups = ["default"]
 files = [
     {file = "tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8"},
     {file = "tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9"},

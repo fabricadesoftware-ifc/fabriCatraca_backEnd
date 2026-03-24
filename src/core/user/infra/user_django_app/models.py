@@ -75,7 +75,7 @@ class User(AbstractUser):
         return self.effective_app_role == self.AppRole.SISAE
 
     def __str__(self):
-        return f"{self.id} - {self.name}"
+        return f"{self.pk} - {self.name}"
 
     class Meta:
         verbose_name = "User"
