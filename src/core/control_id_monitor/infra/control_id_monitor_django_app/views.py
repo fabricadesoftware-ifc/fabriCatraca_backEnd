@@ -719,6 +719,8 @@ def receive_catra_event(request):
             )
 
         # ── Timestamp ──
+        # TODO: revisar esta conversao de timezone; hoje o timestamp do
+        # catra_event esta sendo persistido explicitamente em UTC.
         timestamp = (
             datetime.fromtimestamp(int(event_time), tz=dt_timezone.utc)
             if event_time

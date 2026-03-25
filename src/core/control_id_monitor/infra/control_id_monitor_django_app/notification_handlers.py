@@ -291,6 +291,10 @@ class MonitorNotificationHandler:
 
             if change_type == "inserted":
                 # Converte timestamp Unix para datetime
+                # TODO: revisar esta conversao de timezone; hoje o timestamp da
+                # catraca esta sendo persistido explicitamente em UTC.
+                # TODO: revisar esta conversao de timezone; hoje o timestamp da
+                # catraca esta sendo persistido explicitamente em UTC.
                 timestamp = (
                     datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
                     if time_unix
