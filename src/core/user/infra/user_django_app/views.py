@@ -41,7 +41,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         return [IsAdminRole()]
 
     def get_serializer_class(self):  # pyright: ignore[reportIncompatibleMethodOverride]
-        if self.action in ("list", "retrieve", "me"):
+        if self.action == "me":
+            return UserSerializer
+        if self.action in ("list", "retrieve"):
             return RoleAwareUserReadSerializer
         return UserSerializer
 
