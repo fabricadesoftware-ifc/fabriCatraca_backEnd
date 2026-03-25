@@ -11,6 +11,7 @@ Quando há inserção, alteração ou deleção dessas entidades.
 """
 
 from typing import Dict, Any, List
+from copy import deepcopy
 from datetime import datetime, timezone as dt_timezone
 from django.utils import timezone
 from django.db import transaction
@@ -93,7 +94,11 @@ class MonitorNotificationHandler:
             with transaction.atomic():
                 for change in object_changes:
                     try:
-                        result = self._process_single_change(device_id, change)
+                        result = self._process_single_change(
+                            device_id=device_id,
+                            change=change,
+                            raw_notification=payload,
+                        )
                         results.append(result)
                         if result.get("success"):
                             processed += 1
@@ -124,7 +129,7 @@ class MonitorNotificationHandler:
             return {"success": False, "error": str(e), "processed": 0}
 
     def _process_single_change(
-        self, device_id: int, change: Dict[str, Any]
+        self, device_id: int, change: Dict[str, Any], raw_notification: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Processa uma única mudança de objeto
@@ -158,10 +163,15 @@ class MonitorNotificationHandler:
 
         logger.debug(f"🔄 [MONITOR] Processando {object_type} - {change_type}")
 
-        return handler(device_id, change_type, values)
+        return handler(device_id, change_type, values, raw_notification=raw_notification, raw_change=change)
 
     def _handle_access_log(
-        self, device_id: int, change_type: str, values: Dict[str, Any]
+        self,
+        device_id: int,
+        change_type: str,
+        values: Dict[str, Any],
+        raw_notification: Dict[str, Any] | None = None,
+        raw_change: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """
         Processa mudanças em access_logs
@@ -308,6 +318,13 @@ class MonitorNotificationHandler:
                         "pin_value": values.get("pin_value", ""),
                         "confidence": values.get("confidence", 0),
                         "mask": values.get("mask", ""),
+                        "raw_payload": {
+                            "source": "dao_notification",
+                            "device_id": device_id,
+                            "change_type": change_type,
+                            "change": deepcopy(raw_change or {}),
+                            "notification": deepcopy(raw_notification or {}),
+                        },
                     },
                 )
 
@@ -371,6 +388,13 @@ class MonitorNotificationHandler:
                         "pin_value": values.get("pin_value", ""),
                         "confidence": values.get("confidence", 0),
                         "mask": values.get("mask", ""),
+                        "raw_payload": {
+                            "source": "dao_notification",
+                            "device_id": device_id,
+                            "change_type": change_type,
+                            "change": deepcopy(raw_change or {}),
+                            "notification": deepcopy(raw_notification or {}),
+                        },
                     },
                 )
 

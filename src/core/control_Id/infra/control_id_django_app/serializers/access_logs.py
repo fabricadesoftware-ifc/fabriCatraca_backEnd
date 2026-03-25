@@ -30,7 +30,7 @@ class AccessLogsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AccessLogs
-        fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask']
+        fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask', 'raw_payload']
         read_only_fields = ['id']
 
     def to_representation(self, instance):
@@ -49,4 +49,3 @@ class AccessLogsSerializer(serializers.ModelSerializer):
             }
         # Se for um registro único, retorna todos os campos
         return super().to_representation(instance)
-

@@ -66,6 +66,10 @@ class MonitorConfig(models.Model):
         blank=True,
         help_text="Pausa temporaria da deteccao de offline durante manutencao/easy setup",
     )
+    auto_disabled_due_to_offline = models.BooleanField(
+        default=False,
+        help_text="Indica se a catraca foi desativada automaticamente por ter ficado offline",
+    )
     is_offline = models.BooleanField(
         default=False,
         help_text="Indica se a catraca esta atualmente sem sinais dentro do timeout",

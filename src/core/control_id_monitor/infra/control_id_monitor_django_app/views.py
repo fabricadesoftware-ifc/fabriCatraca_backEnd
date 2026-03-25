@@ -773,6 +773,10 @@ def receive_catra_event(request):
                 "pin_value": "",
                 "confidence": 0,
                 "mask": "",
+                "raw_payload": {
+                    "source": "catra_event",
+                    "notification": payload,
+                },
             },
         )
 

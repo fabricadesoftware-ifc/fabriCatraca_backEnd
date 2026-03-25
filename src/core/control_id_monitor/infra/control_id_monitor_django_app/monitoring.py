@@ -40,11 +40,13 @@ def touch_device_heartbeat(device_identifier, source="monitor"):
     now = timezone.now()
     config, _ = MonitorConfig.objects.select_for_update().get_or_create(device=device)
     was_offline = config.is_offline
+    should_reactivate_device = config.auto_disabled_due_to_offline
     config.last_seen_at = now
     config.last_payload_at = now
     config.last_signal_source = source
     config.is_offline = False
     config.offline_since = None
+    config.auto_disabled_due_to_offline = False
     config.save(
         update_fields=[
             "last_seen_at",
@@ -52,9 +54,14 @@ def touch_device_heartbeat(device_identifier, source="monitor"):
             "last_signal_source",
             "is_offline",
             "offline_since",
+            "auto_disabled_due_to_offline",
             "updated_at",
         ]
     )
+
+    if should_reactivate_device and not device.is_active:
+        device.is_active = True
+        device.save(update_fields=["is_active"])
 
     if was_offline:
         MonitorAlert.objects.filter(
@@ -74,9 +81,23 @@ def mark_monitor_config_offline(config, detected_at=None):
     if config.is_offline:
         return None
 
+    auto_disabled_due_to_offline = False
+    if config.device.is_active:
+        config.device.is_active = False
+        config.device.save(update_fields=["is_active"])
+        auto_disabled_due_to_offline = True
+
     config.is_offline = True
     config.offline_since = detected_at
-    config.save(update_fields=["is_offline", "offline_since", "updated_at"])
+    config.auto_disabled_due_to_offline = auto_disabled_due_to_offline
+    config.save(
+        update_fields=[
+            "is_offline",
+            "offline_since",
+            "auto_disabled_due_to_offline",
+            "updated_at",
+        ]
+    )
 
     existing = MonitorAlert.objects.filter(
         device=config.device,

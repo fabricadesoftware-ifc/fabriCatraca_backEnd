@@ -41,6 +41,7 @@ class AccessLogs(models.Model):
     card_value = models.CharField(max_length=255)
     confidence = models.IntegerField()
     mask = models.CharField(max_length=255)
+    raw_payload = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = "access_logs"
