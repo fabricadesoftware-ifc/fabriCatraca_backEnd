@@ -8,8 +8,8 @@ from src.core.user.infra.user_django_app.models import User
 class UserAdminForm(forms.ModelForm):
     """Formulário para administrar usuários com suporte a trocar senha."""
 
-    password = forms.CharField(
-        label=_("Senha"),
+    new_password = forms.CharField(
+        label=_("Nova senha"),
         required=False,
         widget=forms.PasswordInput(attrs={"autocomplete": "off"}),
         help_text=_(
@@ -23,7 +23,6 @@ class UserAdminForm(forms.ModelForm):
             "name",
             "email",
             "registration",
-            "password",
             "user_type_id",
             "app_role",
             "panel_access_only",
@@ -37,16 +36,15 @@ class UserAdminForm(forms.ModelForm):
             "date_joined",
         ]
 
-    def clean_password(self):
+    def clean_new_password(self):
         """Valida o campo de senha."""
-        password = self.cleaned_data.get("password")
-        # Se vazio, retorna None (será ignorado na alteração)
-        return password if password else None
+        password = self.cleaned_data.get("new_password")
+        return password or None
 
     def save(self, commit=True):
         """Salva o usuário e altera a senha se fornecida."""
         user = super().save(commit=False)
-        password = self.cleaned_data.get("password")
+        password = self.cleaned_data.get("new_password")
         if password:  # Só altera se senha foi preenchida
             user.set_password(password)
         if commit:
@@ -102,7 +100,7 @@ class UserAdmin(DjangoUserAdmin):
             _("Senha"),
             {
                 "classes": ("wide",),
-                "fields": ("password",),
+                "fields": ("new_password",),
             },
         ),
         (
