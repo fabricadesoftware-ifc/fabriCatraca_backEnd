@@ -1,11 +1,15 @@
+import logging
+
+import requests
+from django.conf import settings
 from django.db.models import Q
+from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
-import logging
 
 from .models import MonitorAlert, MonitorAlertRead, MonitorConfig
 from src.core.control_Id.infra.control_id_django_app.models import Device
@@ -15,6 +19,25 @@ from .mixins import MonitorConfigSyncMixin
 from .notification_handlers import monitor_handler
 
 logger = logging.getLogger(__name__)
+
+
+@api_view(["GET"])
+def ifc_schedules_proxy(request):
+    try:
+        response = requests.get(
+            settings.IFC_SCHEDULES_SOURCE_URL,
+            timeout=15,
+            headers={"User-Agent": "Fabricatraca/1.0"},
+        )
+        response.raise_for_status()
+    except requests.RequestException as error:
+        logger.error("Erro ao buscar horarios do IFC: %s", error, exc_info=True)
+        return Response(
+            {"error": "Nao foi possivel carregar os horarios do IFC."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return HttpResponse(response.text, content_type="text/html; charset=utf-8")
 
 
 @extend_schema(tags=["Monitor (Push Logs)"])

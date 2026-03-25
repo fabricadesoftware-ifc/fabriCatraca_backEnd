@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from .views import (
+    ifc_schedules_proxy,
     MonitorAlertViewSet,
     MonitorConfigViewSet,
     receive_auxiliary_notification,
@@ -38,6 +39,7 @@ def monitor_root(request, format=None):
 
 urlpatterns = [
     path("", monitor_root, name="monitor-root"),
+    path("ifc-schedules/source", ifc_schedules_proxy, name="monitor-ifc-schedules-source"),
     # Endpoint para receber notificações da catraca (PUSH)
     path(
         "notifications/dao", receive_dao_notification, name="monitor-dao-notification"
