@@ -5,13 +5,13 @@ from django.db import transaction
 import logging
 import requests
 from .models import User
-from .serializers import UserSerializer
+from .serializers import RoleAwareUserReadSerializer, UserSerializer
 from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import IsAuthenticated
 
-from .permissions import IsAdminRole, IsAdminOrSisaeRole
+from .permissions import IsAdminRole, IsOperationalRole
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,13 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         if self.action == "me":
             return [IsAuthenticated()]
         if self.action in ("list", "retrieve"):
-            return [IsAdminOrSisaeRole()]
+            return [IsOperationalRole()]
         return [IsAdminRole()]
+
+    def get_serializer_class(self):  # pyright: ignore[reportIncompatibleMethodOverride]
+        if self.action in ("list", "retrieve", "me"):
+            return RoleAwareUserReadSerializer
+        return UserSerializer
 
     def _normalize_user_type(self, instance):
         if instance.user_type_id in (0, "0"):

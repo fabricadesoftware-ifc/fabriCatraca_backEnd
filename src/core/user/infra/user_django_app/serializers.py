@@ -31,7 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_user_groups(self, obj):
         return [
-            {"id": group.id, "name": group.name}
+            {"id": group.pk, "name": group.name}
             for group in Group.objects.filter(usergroup__user=obj)
         ]
 
@@ -48,20 +48,29 @@ class UserSerializer(serializers.ModelSerializer):
         effective_role = app_role if app_role is not None else current_role
         effective_email = email if email is not None else current_email
 
-        if effective_role in (
-            User.AppRole.ADMIN,
-            User.AppRole.GUARITA,
-            User.AppRole.SISAE,
-        ) and not effective_email:
+        if (
+            effective_role
+            in (
+                User.AppRole.ADMIN,
+                User.AppRole.GUARITA,
+                User.AppRole.SISAE,
+            )
+            and not effective_email
+        ):
             raise serializers.ValidationError(
                 {"email": ["Perfis de painel exigem um e-mail para login."]}
             )
 
-        if instance is None and effective_role in (
-            User.AppRole.ADMIN,
-            User.AppRole.GUARITA,
-            User.AppRole.SISAE,
-        ) and not password:
+        if (
+            instance is None
+            and effective_role
+            in (
+                User.AppRole.ADMIN,
+                User.AppRole.GUARITA,
+                User.AppRole.SISAE,
+            )
+            and not password
+        ):
             raise serializers.ValidationError(
                 {"password": ["Perfis de painel exigem uma senha ao criar a conta."]}
             )
@@ -115,3 +124,37 @@ class UserSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class RoleAwareUserReadSerializer(UserSerializer):
+    ROLE_FIELDS = {
+        User.AppRole.ADMIN: None,  # None = todos os campos
+        "sisae": {
+            "id",
+            "name",
+            "registration",
+            "app_role",
+            "effective_app_role",
+            "panel_access_only",
+            "user_type_id",
+            "user_groups",
+        },
+        "guarita": {
+            "id",
+            "name",
+            "registration",
+            "app_role",
+            "effective_app_role",
+        },
+    }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        role = getattr(user, "effective_app_role", User.AppRole.NONE)
+        allowed = self.ROLE_FIELDS.get(role)
+
+        if allowed is None:
+            return data
+        return {k: v for k, v in data.items() if k in allowed}
