@@ -133,19 +133,10 @@ class RoleAwareUserReadSerializer(UserSerializer):
             "id",
             "name",
             "registration",
-            "app_role",
-            "effective_app_role",
-            "panel_access_only",
-            "user_type_id",
+            "pin",
             "user_groups",
         },
-        "guarita": {
-            "id",
-            "name",
-            "registration",
-            "app_role",
-            "effective_app_role",
-        },
+        "guarita": {"id", "name", "registration"},
     }
 
     def to_representation(self, instance):
