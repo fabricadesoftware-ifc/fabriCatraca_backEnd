@@ -232,6 +232,8 @@ AXES_META_PRECEDENCE_ORDER = [
     "REMOTE_ADDR",
 ]
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+AXES_ENABLED = False
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
