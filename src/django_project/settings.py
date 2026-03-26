@@ -15,6 +15,10 @@ def _get_int_env(name: str, default=None):
         return default
     return int(value)
 
+
+def show_toolbar(request):
+    return DEBUG
+
 SECRET_KEY = os.getenv("SECRET_KEY", 'django-insecure-nice_key')
 
 MODE = os.getenv("MODE")
@@ -30,6 +34,14 @@ CSRF_TRUSTED_ORIGINS = [
 CORS_ALLOWED_ORIGINS = [
     "https://catraca.fabricadesoftware.ifc.edu.br",
     "http://localhost:3000",
+]
+
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",  # novo padrão
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",  # lê senhas antigas
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+    "django.contrib.auth.hashers.ScryptPasswordHasher",
 ]
 
 # Permitir cookies nas requisições cross-origin
@@ -82,10 +94,12 @@ INSTALLED_APPS = [
     # Celery results backend via django-celery-results (opcional)
     "django_celery_results",
     "debug_toolbar",
+    "axes",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -94,7 +108,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "debug_toolbar.middleware.DebugToolbarMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "axes.middleware.AxesMiddleware",
 ]
 
 
@@ -132,6 +146,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
 
@@ -205,12 +220,29 @@ STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
 ]
 
+AXES_FAILURE_LIMIT = 7  # bloqueia após 5 tentativas falhas
+AXES_COOLOFF_TIME = 1  # bloqueia por 1 hora
+AXES_LOCKOUT_PARAMETERS = ["ip_address", "username"]  # bloqueia por IP + usuário
+NUM_PROXIES = 1
+USE_X_FORWARDED_HOST = True
+
+AXES_PROXY_COUNT = 1
+AXES_META_PRECEDENCE_ORDER = [
+    "HTTP_X_FORWARDED_FOR",
+    "REMOTE_ADDR",
+]
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 INTERNAL_IPS = ['*', '127.0.0.1', 'localhost', '0.0.0.0', '172.16.0.1']
+
+DEBUG_TOOLBAR_CONFIG = {
+    "SHOW_TOOLBAR_CALLBACK": "src.django_project.settings.show_toolbar",
+}
 
 CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
 CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')

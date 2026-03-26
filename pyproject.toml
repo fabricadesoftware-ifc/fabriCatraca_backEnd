@@ -38,7 +38,9 @@ dependencies = [
     "django-extensions>=4.1",
     "pydot>=4.0.1",
     "pydotplus>=2.0.2",
-    "idbio-sdk>=0.1.0"
+    "idbio-sdk>=0.1.0",
+    "argon2-cffi>=25.1.0",
+    "django-axes>=8.3.1"
     ]
 requires-python = ">=3.13"
 readme = "README.md"

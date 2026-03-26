@@ -2,6 +2,9 @@ from django.db import migrations, models
 
 
 def _convert_security_log_type_to_boolean(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+
     table_name = "control_id_config_django_app_securityconfig"
 
     with schema_editor.connection.cursor() as cursor:
@@ -50,6 +53,9 @@ def _convert_security_log_type_to_boolean(apps, schema_editor):
 
 
 def _convert_security_log_type_to_smallint(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+
     table_name = "control_id_config_django_app_securityconfig"
 
     with schema_editor.connection.cursor() as cursor:
