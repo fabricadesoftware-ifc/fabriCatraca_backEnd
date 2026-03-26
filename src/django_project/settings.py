@@ -210,7 +210,7 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-INTERNAL_IPS = ["127.0.0.1", "localhost", "0.0.0.0"]
+INTERNAL_IPS = ['*', '127.0.0.1', 'localhost', '0.0.0.0']
 
 CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
 CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')
