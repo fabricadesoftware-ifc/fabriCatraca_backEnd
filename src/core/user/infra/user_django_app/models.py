@@ -47,6 +47,8 @@ class User(AbstractUser):
         default=generate_pin,
         help_text="PIN de 4 dígitos para acesso na catraca (campo 'password' na API Control iD)",
     )
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["name"]
