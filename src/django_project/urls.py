@@ -41,13 +41,13 @@ urlpatterns = [
     path('api/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/admin/', django_admin.site.urls),
     path('', lambda request: redirect('api/', permanent=True)),
-    
+
 ]
 
 if settings.DEBUG:
-    import debug_toolbar
-    urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
-    
+    from debug_toolbar.toolbar import debug_toolbar_urls
+    urlpatterns += debug_toolbar_urls()
+
 if settings.DEBUG:
     urlpatterns += [
         path("api/swagger/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

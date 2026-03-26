@@ -74,7 +74,6 @@ INSTALLED_APPS = [
     "django_filters",
     "rest_framework",
     "rest_framework_simplejwt",
-    "debug_toolbar",
     "django_extensions",
     "src.core.user.infra.user_django_app",
     "src.core.control_Id.infra.control_id_django_app",
@@ -82,6 +81,7 @@ INSTALLED_APPS = [
     "src.core.control_id_monitor.infra.control_id_monitor_django_app",
     # Celery results backend via django-celery-results (opcional)
     "django_celery_results",
+    "debug_toolbar",
 ]
 
 MIDDLEWARE = [
@@ -210,7 +210,7 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-INTERNAL_IPS = ['*', '127.0.0.1', 'localhost', '0.0.0.0']
+INTERNAL_IPS = ['*', '127.0.0.1', 'localhost', '0.0.0.0', '172.16.0.1']
 
 CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
 CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')
