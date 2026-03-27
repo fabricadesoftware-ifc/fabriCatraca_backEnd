@@ -101,7 +101,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
                 {
                     "non_field_errors": [
                         "TEMPORARY_RELEASE_ACCESS_RULE_ID não está configurado no backend."
-                    ] #TODO: criar regras nas setting
+                    ]
                 }
             )
 
