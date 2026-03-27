@@ -55,6 +55,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         required=True,
     )
     valid_from = serializers.DateTimeField(required=False)
+    notes = serializers.CharField(required=False)
 
     class Meta:
         model = TemporaryUserRelease
@@ -118,6 +119,11 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         user = attrs["user"]
         access_rule = self._get_temporary_access_rule()
+
+        if self.instance is None:  # CREATE
+            notes = attrs.get("notes")
+            if not notes or not str(notes).strip():
+                raise serializers.ValidationError({"notes": ["Este campo é obrigatório na criação."]})
 
         if TemporaryUserRelease.objects.filter(
             user=user,
