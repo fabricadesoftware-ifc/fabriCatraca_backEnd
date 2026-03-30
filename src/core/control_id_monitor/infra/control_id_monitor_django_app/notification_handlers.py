@@ -64,6 +64,7 @@ class MonitorNotificationHandler:
             dict: Resultado do processamento
         """
         try:
+            sentido = payload.get("name")  # Campo opcional que pode indicar direção do acesso
             device_id = payload.get("device_id")
             object_changes = payload.get("object_changes", [])
 
@@ -98,6 +99,7 @@ class MonitorNotificationHandler:
                             device_id=device_id,
                             change=change,
                             raw_notification=payload,
+                            sentido=sentido,
                         )
                         results.append(result)
                         if result.get("success"):
@@ -129,7 +131,7 @@ class MonitorNotificationHandler:
             return {"success": False, "error": str(e), "processed": 0}
 
     def _process_single_change(
-        self, device_id: int, change: Dict[str, Any], raw_notification: Dict[str, Any]
+        self, device_id: int, change: Dict[str, Any], raw_notification: Dict[str, Any], sentido: str | None = None
     ) -> Dict[str, Any]:
         """
         Processa uma única mudança de objeto
@@ -163,7 +165,7 @@ class MonitorNotificationHandler:
 
         logger.debug(f"🔄 [MONITOR] Processando {object_type} - {change_type}")
 
-        return handler(device_id, change_type, values, raw_notification=raw_notification, raw_change=change)
+        return handler(device_id, change_type, values, raw_notification=raw_notification, raw_change=change, sentido=sentido)
 
     def _handle_access_log(
         self,
@@ -172,6 +174,7 @@ class MonitorNotificationHandler:
         values: Dict[str, Any],
         raw_notification: Dict[str, Any] | None = None,
         raw_change: Dict[str, Any] | None = None,
+        sentido: str | None = None,
     ) -> Dict[str, Any]:
         """
         Processa mudanças em access_logs
@@ -283,9 +286,9 @@ class MonitorNotificationHandler:
             logger.info(f"📋 [ACCESS_LOG] RAW values da catraca: {values}")
             logger.info(
                 f"📋 [ACCESS_LOG] Resolução: log_id={log_id}, event={event}, "
-                f"device_catraca_id={device_id}→device_django={device.name}(id={device.id}), "  # type: ignore[attr-defined]
-                f"portal_id={portal_id}→portal={'SIM (' + portal.name + ', id=' + str(portal.id) + ')' if portal else 'NÃO ENCONTRADO'}, "
-                f"user_id={user_id}→user={user.name + '(id=' + str(user.id) + ')' if user else 'N/A'}, "
+                f"device_catraca_id={device_id}→device_django={device.name}(id={device.pk}), "  # type: ignore[attr-defined]
+                f"portal_id={portal_id}→portal={'SIM (' + portal.name + ', id=' + str(portal.pk) + ')' if portal else 'NÃO ENCONTRADO'}, "
+                f"user_id={user_id}→user={user.name + '(id=' + str(user.pk) + ')' if user else 'N/A'}, "
                 f"rule_id={rule_id}→rule={'SIM (' + access_rule.name + ')' if access_rule else 'N/A'}"
             )
 
@@ -322,6 +325,7 @@ class MonitorNotificationHandler:
                         "pin_value": values.get("pin_value", ""),
                         "confidence": values.get("confidence", 0),
                         "mask": values.get("mask", ""),
+                        "sentido": sentido,
                         "raw_payload": {
                             "source": "dao_notification",
                             "device_id": device_id,
