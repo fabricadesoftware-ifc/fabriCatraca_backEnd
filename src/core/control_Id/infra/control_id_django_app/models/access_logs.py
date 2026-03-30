@@ -42,6 +42,7 @@ class AccessLogs(models.Model):
     confidence = models.IntegerField()
     mask = models.CharField(max_length=255)
     raw_payload = models.JSONField(default=dict, blank=True)
+    sentido = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
         db_table = "access_logs"
