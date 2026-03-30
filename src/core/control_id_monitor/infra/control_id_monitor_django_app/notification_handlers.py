@@ -10,10 +10,10 @@ O Monitor é um sistema PUSH onde a catraca envia automaticamente:
 Quando há inserção, alteração ou deleção dessas entidades.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 from copy import deepcopy
 from datetime import datetime, timezone as dt_timezone
-from django.utils import timezone
+
 from django.db import transaction
 import logging
 
@@ -325,7 +325,7 @@ class MonitorNotificationHandler:
                         "pin_value": values.get("pin_value", ""),
                         "confidence": values.get("confidence", 0),
                         "mask": values.get("mask", ""),
-                        "sentido": sentido,
+                        "sentido": sentido or "",
                         "raw_payload": {
                             "source": "dao_notification",
                             "device_id": device_id,
@@ -396,6 +396,7 @@ class MonitorNotificationHandler:
                         "pin_value": values.get("pin_value", ""),
                         "confidence": values.get("confidence", 0),
                         "mask": values.get("mask", ""),
+                        "sentido": sentido or "",
                         "raw_payload": {
                             "source": "dao_notification",
                             "device_id": device_id,
@@ -415,10 +416,10 @@ class MonitorNotificationHandler:
                 if created:
                     try:
                         access_verifier.analyze_access(
-                            user_id=user.id if user else None,
-                            portal_id=portal.id if portal else None,
+                            user_id=user.pk if user else None,
+                            portal_id=portal.pk if portal else None,
                             event_type=int(event) if event else 0,
-                            access_rule_id=access_rule.id if access_rule else None,
+                            access_rule_id=access_rule.pk if access_rule else None,
                             device_name=device.name,
                             access_time=timestamp,
                             device=device,

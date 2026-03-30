@@ -16,33 +16,33 @@ class AccessLogsPagination(PageNumberPagination):
 
 @extend_schema(tags=["Access Logs"])
 class AccessLogsViewSet(viewsets.ModelViewSet):
-    queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule').all()
+    queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule', 'name').all()
     serializer_class = AccessLogsSerializer
     pagination_class = AccessLogsPagination
     filterset_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule']
     search_fields = ['device__name', 'user__name', 'portal__name', 'identifier_id']
     ordering_fields = ['id', 'time', 'event_type']
     http_method_names = ['get']
-    
+
     @action(detail=False, methods=['get'])
     def list_all_by_type(self, request):
         event_type = request.query_params.get('event_type', None)
-        
+
         # Usa o queryset base que já tem select_related
         logs = self.get_queryset()
-        
+
         if event_type is not None:
             logs = logs.filter(event_type=event_type)
-        
+
         # Aplica paginação
         page = self.paginate_queryset(logs)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
-        
+
         serializer = self.get_serializer(logs, many=True)
         return Response(serializer.data)
-    
+
     @action(detail=False, methods=['get'])
     @extend_schema(
         parameters=[
@@ -75,17 +75,17 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
                     {"error": "O parâmetro 'days' deve ser um número positivo"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
+
             # Calcular a data de início (hoje - N dias)
             end_date = timezone.now()
             start_date = end_date - timedelta(days=days)
-            
+
             # Usa o queryset base que já tem select_related
             logs = self.get_queryset().filter(
                 time__gte=start_date,
                 time__lte=end_date
             )
-            
+
             # Filtro opcional por tipo de evento
             event_type = request.query_params.get('event_type', None)
             if event_type is not None:
@@ -97,10 +97,10 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
                         {"error": "O parâmetro 'event_type' deve ser um número válido"},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-            
+
             serializer = self.get_serializer(logs, many=True)
             return Response(serializer.data)
-            
+
         except ValueError:
             return Response(
                 {"error": "O parâmetro 'days' deve ser um número válido"},
