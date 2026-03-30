@@ -8,7 +8,7 @@ from src.core.control_Id.infra.control_id_django_app.serializers import (
     TemporaryGroupReleaseSerializer,
 )
 from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
-    TemporaryUserReleaseService,
+    TemporaryGroupReleaseService,
 )
 from src.core.user.infra.user_django_app.permissions import IsAdminOrSisaeRole
 
@@ -65,7 +65,7 @@ class TemporaryGroupReleaseViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        service = TemporaryUserReleaseService()
+        service = TemporaryGroupReleaseService()
         try:
             service.close_release(
                 release,

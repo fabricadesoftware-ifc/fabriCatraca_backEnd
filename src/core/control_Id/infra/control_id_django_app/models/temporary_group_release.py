@@ -7,7 +7,7 @@ from src.core.control_Id.infra.control_id_django_app.models import CustomGroup a
 
 from .access_logs import AccessLogs
 from .access_rule import AccessRule
-from .user_access_rule import UserAccessRule
+from .group_access_rule import GroupAccessRule
 
 
 class TemporaryGroupRelease(models.Model):
@@ -35,7 +35,7 @@ class TemporaryGroupRelease(models.Model):
         related_name="temporary_group_releases",
     )
     group_access_rule = models.ForeignKey(
-        UserAccessRule,
+        GroupAccessRule,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
