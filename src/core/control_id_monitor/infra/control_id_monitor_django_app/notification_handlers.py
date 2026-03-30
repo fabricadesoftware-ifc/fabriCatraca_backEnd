@@ -332,6 +332,7 @@ class MonitorNotificationHandler:
                             "change_type": change_type,
                             "change": deepcopy(raw_change or {}),
                             "notification": deepcopy(raw_notification or {}),
+                            
                         },
                     },
                 )

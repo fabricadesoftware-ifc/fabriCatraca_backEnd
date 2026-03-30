@@ -798,6 +798,7 @@ def receive_catra_event(request):
                 "pin_value": "",
                 "confidence": 0,
                 "mask": "",
+                "sentido": event_data.get("name", ""),
                 "raw_payload": {
                     "source": "catra_event",
                     "notification": payload,
@@ -810,6 +811,7 @@ def receive_catra_event(request):
             f"✅ [CATRA_EVENT] {action} — {event_name} (type={event_type}) "
             f"device={device.name} portal={portal.name if portal else raw_portal_id} "
             f"uuid={event_uuid} access_event_id={access_event_id}"
+            f"{payload}"
         )
 
         return Response(
@@ -822,6 +824,7 @@ def receive_catra_event(request):
                 "device": str(device),
                 "portal": portal.name if portal else None,
                 "time": str(timestamp),
+                "sentido": event_data.get("name", ""),
             },
             status=status.HTTP_200_OK,
         )
