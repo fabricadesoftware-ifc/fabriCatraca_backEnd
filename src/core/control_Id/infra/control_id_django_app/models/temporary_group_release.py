@@ -7,7 +7,7 @@ from src.core.control_Id.infra.control_id_django_app.models import CustomGroup a
 
 from .access_logs import AccessLogs
 from .access_rule import AccessRule
-from .group_access_rule import GroupAccessRule
+from .group_access_rules import GroupAccessRule
 
 
 class TemporaryGroupRelease(models.Model):
