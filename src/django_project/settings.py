@@ -278,6 +278,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "src.core.control_Id.infra.control_id_django_app.tasks.process_temporary_user_releases",
         "schedule": TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS,
     },
+    "process_temporary_group_releases": {
+        "task": "src.core.control_Id.infra.control_id_django_app.tasks.process_temporary_group_releases",
+        "schedule": TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS,
+    },
     "check_monitor_heartbeats": {
         "task": "src.core.control_id_monitor.infra.control_id_monitor_django_app.tasks.check_monitor_heartbeats",
         "schedule": MONITOR_OFFLINE_CHECK_INTERVAL_SECONDS,

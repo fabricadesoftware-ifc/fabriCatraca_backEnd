@@ -11,9 +11,11 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     AccessLogs,
     Device,
     TemporaryUserRelease,
+    TemporaryGroupRelease,
 )
 from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
     TemporaryUserReleaseService,
+    TemporaryGroupReleaseService,
 )
 from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
@@ -153,6 +155,129 @@ def process_temporary_user_releases(self) -> dict:
             service.fail_release(
                 release,
                 result_message=f"Falha ao expirar liberação temporária: {exc}",
+            )
+            stats["failed"] += 1
+
+    return {"success": True, "stats": stats}
+
+
+@shared_task(bind=True)
+def process_temporary_group_releases(self) -> dict:
+    service = TemporaryGroupReleaseService()
+    now = timezone.now()
+
+    stats = {
+        "processed": 0,
+        "activated": 0,
+        "consumed": 0,
+        "expired": 0,
+        "failed": 0,
+    }
+
+    pending_releases = list(
+        TemporaryGroupRelease.objects.select_related("group", "access_rule").filter(
+            status=TemporaryGroupRelease.Status.PENDING,
+            valid_from__lte=now,
+        )
+    )
+
+    for release in pending_releases:
+        stats["processed"] += 1
+
+        if release.valid_until <= now:
+            release.status = release.Status.EXPIRED
+            release.closed_at = now
+            release.result_message = "Liberação expirou antes de ser ativada."
+            release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+            ReleaseAuditService.sync_from_temporary_release(release)
+            stats["expired"] += 1
+            continue
+
+        try:
+            service.activate_release(release)
+            stats["activated"] += 1
+        except Exception as exc:
+            logger.exception("Erro ao ativar liberação temporária de turma %s", release.id)
+            service.fail_release(
+                release,
+                result_message=f"Falha ao ativar liberação de turma: {exc}",
+            )
+            stats["failed"] += 1
+
+    refreshed_active_releases = list(
+        TemporaryGroupRelease.objects.select_related(
+            "group",
+            "access_rule",
+            "group_access_rule",
+        ).filter(status=TemporaryGroupRelease.Status.ACTIVE)
+    )
+
+    for release in refreshed_active_releases:
+        stats["processed"] += 1
+
+        # Verifica se qualquer usuário do grupo utilizou a liberação
+        consumed_log = (
+            AccessLogs.objects.filter(
+                user__groups=release.group,
+                access_rule=release.access_rule,
+                time__gte=release.activated_at or release.valid_from,
+                event_type__in=GRANTED_EVENT_TYPES,
+            )
+            .order_by("time")
+            .first()
+        )
+
+        if consumed_log:
+            try:
+                service.close_release(
+                    release,
+                    final_status=release.Status.CONSUMED,
+                    result_message="Liberação de turma utilizada com sucesso.",
+                    consumed_log=consumed_log,
+                    consumed_at=consumed_log.time,
+                )
+                stats["consumed"] += 1
+            except Exception as exc:
+                logger.exception("Erro ao finalizar liberação de turma consumida %s", release.id)
+                service.fail_release(
+                    release,
+                    result_message=f"Falha ao encerrar liberação de turma consumida: {exc}",
+                )
+                stats["failed"] += 1
+            continue
+
+        if release.valid_until > now:
+            continue
+
+        desistance_log = (
+            AccessLogs.objects.filter(
+                user__groups=release.group,
+                access_rule=release.access_rule,
+                time__gte=release.activated_at or release.valid_from,
+                event_type=DESISTANCE_EVENT_TYPE,
+            )
+            .order_by("time")
+            .first()
+        )
+
+        result_message = (
+            "Turma desistiu da entrada após a liberação temporária."
+            if desistance_log
+            else "Turma não utilizou a liberação temporária."
+        )
+
+        try:
+            service.close_release(
+                release,
+                final_status=release.Status.EXPIRED,
+                result_message=result_message,
+            )
+            stats["expired"] += 1
+        except Exception as exc:
+            logger.exception("Erro ao expirar liberação de turma %s", release.id)
+            service.fail_release(
+                release,
+                result_message=f"Falha ao expirar liberação de turma: {exc}",
             )
             stats["failed"] += 1
 
