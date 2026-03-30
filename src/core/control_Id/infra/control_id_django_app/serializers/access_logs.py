@@ -30,11 +30,11 @@ class AccessLogsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AccessLogs
-        fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask', 'raw_payload']
+        fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask', 'raw_payload', 'name']
         read_only_fields = ['id']
 
     def to_representation(self, instance):
-        # Se estiver listando múltiplos registros, use uma versão simplificada
+        # TODO: rever essa logica peraza2k26
         if isinstance(self.instance, (list, AccessLogs.objects.none().__class__)) or self.many:
             return {
                 'id': instance.id,
@@ -46,6 +46,8 @@ class AccessLogsSerializer(serializers.ModelSerializer):
                 'user_name': instance.user.name if instance.user else None,
                 'portal_id': instance.portal_id,
                 'portal_name': instance.portal.name if instance.portal else None,
+                'access_rule_id': instance.access_rule_id,
+                'name': instance.name
             }
         # Se for um registro único, retorna todos os campos
         return super().to_representation(instance)

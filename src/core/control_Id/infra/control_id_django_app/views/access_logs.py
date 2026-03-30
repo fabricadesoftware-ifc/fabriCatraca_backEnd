@@ -16,7 +16,7 @@ class AccessLogsPagination(PageNumberPagination):
 
 @extend_schema(tags=["Access Logs"])
 class AccessLogsViewSet(viewsets.ModelViewSet):
-    queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule', 'name').all()
+    queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule').all()
     serializer_class = AccessLogsSerializer
     pagination_class = AccessLogsPagination
     filterset_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule']
