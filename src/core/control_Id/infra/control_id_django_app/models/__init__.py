@@ -15,6 +15,7 @@ from .group_access_rules import GroupAccessRule
 from .access_logs import AccessLogs
 from .release_audit import ReleaseAudit
 from .temporary_user_release import TemporaryUserRelease
+from .temporary_group_release import TemporaryGroupRelease
 
 __all__ = [
     'Template',
@@ -34,4 +35,5 @@ __all__ = [
     'AccessLogs',
     'ReleaseAudit',
     'TemporaryUserRelease',
-] 
+    'TemporaryGroupRelease'
+]

@@ -7,6 +7,8 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     Portal,
     ReleaseAudit,
     TemporaryUserRelease,
+    TemporaryGroupRelease,
+    CustomGroup as Group,
 )
 from src.core.user.infra.user_django_app.models import User
 
@@ -43,6 +45,18 @@ class ReleaseAuditService:
         }
 
     @staticmethod
+    def _target_group_snapshot(group):
+        if not group:
+            return {
+                "target_group": None,
+                "target_group_name": "",
+            }
+        return {
+            "target_group": group,
+            "target_group_name": group.name or "",
+        }
+
+    @staticmethod
     def _temporary_release_status(release):
         mapping = {
             TemporaryUserRelease.Status.PENDING: ReleaseAudit.Status.REQUESTED,
@@ -62,40 +76,76 @@ class ReleaseAuditService:
         return ReleaseAudit.ReleaseType.TEMPORARY_USER_RELEASE
 
     @classmethod
-    def sync_from_temporary_release(cls, release: TemporaryUserRelease):
-        defaults = {
-            **cls._requested_by_snapshot(release.requested_by),
-            **cls._target_user_snapshot(release.user),
-            "release_type": cls._temporary_release_type(release),
-            "status": cls._temporary_release_status(release),
-            "notes": release.notes or "",
-            "request_payload": {
-                "user_id": release.user_id,
-                "access_rule_id": release.access_rule_id,
-            },
-            "response_payload": (
-                {"result_message": release.result_message}
-                if release.result_message
-                else {}
-            ),
-            "scheduled_for": release.valid_from,
-            "executed_at": release.activated_at,
-            "expires_at": release.valid_until,
-            "closed_at": release.closed_at,
-            "access_log": release.consumed_log,
-        }
-        audit, created = ReleaseAudit.objects.get_or_create(
-            temporary_release=release,
-            defaults={
-                **defaults,
-                "requested_at": release.created_at or timezone.now(),
-            },
-        )
-        if not created:
-            for field, value in defaults.items():
-                setattr(audit, field, value)
-            audit.save()
-        return audit
+    def sync_from_temporary_release(cls, release: TemporaryUserRelease | TemporaryGroupRelease):
+        if (type(release) is TemporaryUserRelease):
+            defaults = {
+                **cls._requested_by_snapshot(release.requested_by),
+                **cls._target_user_snapshot(release.user),
+                "release_type": cls._temporary_release_type(release),
+                "status": cls._temporary_release_status(release),
+                "notes": release.notes or "",
+                "request_payload": {
+                    "user_id": release.user.pk,
+                    "access_rule_id": release.access_rule.pk,
+                },
+                "response_payload": (
+                    {"result_message": release.result_message}
+                    if release.result_message
+                    else {}
+                ),
+                "scheduled_for": release.valid_from,
+                "executed_at": release.activated_at,
+                "expires_at": release.valid_until,
+                "closed_at": release.closed_at,
+                "access_log": release.consumed_log,
+            }
+            audit, created = ReleaseAudit.objects.get_or_create(
+                temporary_release=release,
+                defaults={
+                    **defaults,
+                    "requested_at": release.created_at or timezone.now(),
+                },
+            )
+            if not created:
+                for field, value in defaults.items():
+                    setattr(audit, field, value)
+                audit.save()
+            return audit
+
+        elif (type(release) is TemporaryGroupRelease):
+            defaults = {
+                **cls._requested_by_snapshot(release.requested_by),
+                **cls._target_group_snapshot(release.group),
+                "release_type": cls._temporary_release_type(release),
+                "status": cls._temporary_release_status(release),
+                "notes": release.notes or "",
+                "request_payload": {
+                    "user_id": release.group.pk,
+                    "access_rule_id": release.access_rule.pk,
+                },
+                "response_payload": (
+                    {"result_message": release.result_message}
+                    if release.result_message
+                    else {}
+                ),
+                "scheduled_for": release.valid_from,
+                "executed_at": release.activated_at,
+                "expires_at": release.valid_until,
+                "closed_at": release.closed_at,
+                "access_log": release.consumed_log,
+            }
+            audit, created = ReleaseAudit.objects.get_or_create(
+                temporary_release=release,
+                defaults={
+                    **defaults,
+                    "requested_at": release.created_at or timezone.now(),
+                },
+            )
+            if not created:
+                for field, value in defaults.items():
+                    setattr(audit, field, value)
+                audit.save()
+            return audit
 
     @classmethod
     def create_remote_authorization(cls, requested_by, payload, response):

@@ -20,6 +20,7 @@ from .device_actions import (
     remote_user_authorization,
 )
 from .temporary_user_release import TemporaryUserReleaseViewSet
+from .temporary_group_release import TemporaryGroupReleaseViewSet
 from .release_audit import ReleaseAuditViewSet
 
 
@@ -38,7 +39,7 @@ __all__ = [
     'GroupViewSet',
     'UserGroupViewSet',
     'GroupAccessRulesViewSet',
-    'sync_all',
+    #'sync_all', TODO: Rever sync_all para não expor essa funcionalidade via API peraza 2k26
     'sync_status',
     'sync_device_config',
     'DeviceViewSet',
@@ -47,5 +48,6 @@ __all__ = [
     'buzzer_buzz',
     'remote_user_authorization',
     'TemporaryUserReleaseViewSet',
+    'TemporaryGroupReleaseViewSet',
     'ReleaseAuditViewSet',
-] 
+]
