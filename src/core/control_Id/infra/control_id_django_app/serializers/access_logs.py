@@ -30,24 +30,41 @@ class AccessLogsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AccessLogs
-        fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule', 'qr_code', 'uhf_value', 'pin_value', 'card_value', 'confidence', 'mask', 'raw_payload', 'name']
+        fields = [
+            "id",
+            "time",
+            "event_type",
+            "device",
+            "identifier_id",
+            "user",
+            "portal",
+            "access_rule",
+            "qr_code",
+            "uhf_value",
+            "pin_value",
+            "card_value",
+            "confidence",
+            "mask",
+            "raw_payload",
+            "sentido",
+        ]
         read_only_fields = ['id']
 
     def to_representation(self, instance):
         # TODO: rever essa logica peraza2k26
         if isinstance(self.instance, (list, AccessLogs.objects.none().__class__)) or self.many:
             return {
-                'id': instance.id,
-                'time': instance.time,
-                'event_type': instance.event_type,
-                'device_id': instance.device_id,
-                'device_name': instance.device.name if instance.device else None,
-                'user_id': instance.user_id,
-                'user_name': instance.user.name if instance.user else None,
-                'portal_id': instance.portal_id,
-                'portal_name': instance.portal.name if instance.portal else None,
-                'access_rule_id': instance.access_rule_id,
-                'name': instance.name
+                "id": instance.id,
+                "time": instance.time,
+                "event_type": instance.event_type,
+                "device_id": instance.device_id,
+                "device_name": instance.device.name if instance.device else None,
+                "user_id": instance.user_id,
+                "user_name": instance.user.name if instance.user else None,
+                "portal_id": instance.portal_id,
+                "portal_name": instance.portal.name if instance.portal else None,
+                "access_rule_id": instance.access_rule_id,
+                "sentido": instance.sentido,
             }
         # Se for um registro único, retorna todos os campos
         return super().to_representation(instance)
