@@ -8,7 +8,6 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     ReleaseAudit,
     TemporaryUserRelease,
     TemporaryGroupRelease,
-    CustomGroup as Group,
 )
 from src.core.user.infra.user_django_app.models import User
 
@@ -45,18 +44,6 @@ class ReleaseAuditService:
         }
 
     @staticmethod
-    def _target_group_snapshot(group):
-        if not group:
-            return {
-                "target_group": None,
-                "target_group_name": "",
-            }
-        return {
-            "target_group": group,
-            "target_group_name": group.name or "",
-        }
-
-    @staticmethod
     def _temporary_release_status(release):
         mapping = {
             TemporaryUserRelease.Status.PENDING: ReleaseAudit.Status.REQUESTED,
@@ -70,6 +57,8 @@ class ReleaseAuditService:
 
     @staticmethod
     def _temporary_release_type(release):
+        if type(release) is TemporaryGroupRelease:
+            return ReleaseAudit.ReleaseType.TEMPORARY_GROUP_RELEASE
         threshold = timedelta(minutes=1)
         if release.valid_from and release.created_at and release.valid_from > release.created_at + threshold:
             return ReleaseAudit.ReleaseType.SCHEDULED_USER_RELEASE
@@ -115,12 +104,13 @@ class ReleaseAuditService:
         elif (type(release) is TemporaryGroupRelease):
             defaults = {
                 **cls._requested_by_snapshot(release.requested_by),
-                **cls._target_group_snapshot(release.group),
+                "target_group": release.group,
+                "target_group_name": release.group.name or "",
                 "release_type": cls._temporary_release_type(release),
                 "status": cls._temporary_release_status(release),
                 "notes": release.notes or "",
                 "request_payload": {
-                    "user_id": release.group.pk,
+                    "group_id": release.group.pk,
                     "access_rule_id": release.access_rule.pk,
                 },
                 "response_payload": (
@@ -135,7 +125,7 @@ class ReleaseAuditService:
                 "access_log": release.consumed_log,
             }
             audit, created = ReleaseAudit.objects.get_or_create(
-                temporary_release=release,
+                temporary_group_release=release,
                 defaults={
                     **defaults,
                     "requested_at": release.created_at or timezone.now(),

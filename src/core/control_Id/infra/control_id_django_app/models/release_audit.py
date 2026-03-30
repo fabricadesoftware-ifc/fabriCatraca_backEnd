@@ -8,6 +8,7 @@ class ReleaseAudit(models.Model):
         SINGLE_TURN = "single_turn", "Giro único"
         SCHEDULED_USER_RELEASE = "scheduled_user_release", "Liberação agendada"
         TEMPORARY_USER_RELEASE = "temporary_user_release", "Liberação temporária"
+        TEMPORARY_GROUP_RELEASE = "temporary_group_release", "Liberação de turma"
 
     class Status(models.TextChoices):
         REQUESTED = "requested", "Solicitada"
@@ -60,6 +61,21 @@ class ReleaseAudit(models.Model):
         blank=True,
         related_name="release_audit",
     )
+    temporary_group_release = models.OneToOneField(
+        "control_id_django_app.TemporaryGroupRelease",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="release_audit",
+    )
+    target_group = models.ForeignKey(
+        "control_id_django_app.CustomGroup",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="release_audits_targeted",
+    )
+    target_group_name = models.CharField(max_length=255, blank=True, default="")
     access_log = models.ForeignKey(
         "control_id_django_app.AccessLogs",
         on_delete=models.SET_NULL,
