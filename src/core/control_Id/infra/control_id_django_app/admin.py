@@ -18,6 +18,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     AccessLogs,
     ReleaseAudit,
     TemporaryUserRelease,
+    TemporaryGroupRelease
 )
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
@@ -138,6 +139,21 @@ class TemporaryUserReleaseAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "access_rule")
     search_fields = ("user__name", "requested_by__name", "notes", "result_message")
+
+@admin.register(TemporaryGroupRelease)
+class TemporaryGroupReleaseAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "group",
+        "requested_by",
+        "access_rule",
+        "status",
+        "valid_until",
+        "activated_at",
+        "closed_at",
+    )
+    list_filter = ("status", "access_rule")
+    search_fields = ("group__name", "requested_by__name", "notes", "result_message")
 
 
 @admin.register(ReleaseAudit)

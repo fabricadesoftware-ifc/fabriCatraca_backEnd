@@ -259,12 +259,12 @@ TEMPORARY_RELEASE_DELAY_ALERT_SECONDS = _get_int_env(
     300,
 )
 MONITOR_OFFLINE_CHECK_INTERVAL_SECONDS = _get_int_env(
-    "MONITOR_OFFLINE_CHECK_INTERVAL_SECONDS",
+    "MONITOR_OFFLINE_CHECK_INTERVAL_SveECONDS",
     60,
 )
 IFC_SCHEDULES_SOURCE_URL = os.getenv(
     "IFC_SCHEDULES_SOURCE_URL",
-    "https://horarios.araquari.ifc.edu.br/data/horario2026.23_mar%C3%A7o_years_days_horizontal.html",
+    "https://horarios.araquari.ifc.edu.br/data/horario2026.29_mar%C3%A7o_years_days_horizontal.html",
 )
 
 CELERY_TIMEZONE = "America/Sao_Paulo"

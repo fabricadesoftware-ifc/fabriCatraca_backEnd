@@ -115,6 +115,7 @@ test-cov = "pytest --cov=src --cov-report=html --cov-report=term {args}"
 test-unit = "pytest tests/unit {args}"
 test-integration = "pytest tests/integration {args}"
 test-e2e = "pytest tests/e2e {args}"
+showmigrations = "python src/manage.py showmigrations"
 
 
 [dependency-groups]

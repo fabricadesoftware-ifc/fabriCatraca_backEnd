@@ -2,6 +2,7 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from rest_framework.response import Response
 from src.core.__seedwork__.infra.mixins._typing import GroupAccessRuleLike
 from src.core.__seedwork__.infra.types import GroupAccessRuleData
+from rest_framework import status
 
 class GroupAccessRulesSyncMixin(ControlIDSyncMixin):
     def create_in_catraca(self, instance: GroupAccessRuleLike) -> Response:
@@ -9,9 +10,11 @@ class GroupAccessRulesSyncMixin(ControlIDSyncMixin):
             "group_id": instance.group.id,
             "access_rule_id": instance.access_rule.id,
         }
-        response = self.create_objects("group_access_rules", [payload])
+        response = self.create_or_update_objects("group_access_rules", [payload])
+        if response.status_code == status.HTTP_200_OK:
+            response.status_code = status.HTTP_201_CREATED
         return response
-    
+
     def update_in_catraca(self, instance: GroupAccessRuleLike) -> Response:
         payload: GroupAccessRuleData = {
             "group_id": instance.group.id,
@@ -23,7 +26,7 @@ class GroupAccessRulesSyncMixin(ControlIDSyncMixin):
             {"group_access_rules": payload},
         )
         return response
-    
+
     def delete_in_catraca(self, instance: GroupAccessRuleLike) -> Response:
         response = self.destroy_objects(
             "group_access_rules",
@@ -33,4 +36,3 @@ class GroupAccessRulesSyncMixin(ControlIDSyncMixin):
             }},
         )
         return response
-    
