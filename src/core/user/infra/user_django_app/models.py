@@ -3,6 +3,7 @@ import random
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from .managers import CustomUserManager
+from src.core.uploader.models import Archive
 
 
 def generate_pin():
@@ -25,7 +26,7 @@ class User(AbstractUser):
     registration = models.CharField(max_length=50, blank=True, null=True, unique=True)
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=255, null=True, blank=True)
-    
+
     app_role = models.CharField(
         max_length=20,
         choices=AppRole.choices,
@@ -49,6 +50,8 @@ class User(AbstractUser):
         help_text="PIN de 4 dígitos para acesso na catraca (campo 'password' na API Control iD)",
     )
     phone = models.CharField(max_length=20, blank=True, null=True)
+    birth_date = models.DateField(blank=True, null=True)
+    picture = models.ForeignKey(Archive, on_delete=models.SET_NULL, null=True, blank=True)
 
 
     USERNAME_FIELD = "email"
