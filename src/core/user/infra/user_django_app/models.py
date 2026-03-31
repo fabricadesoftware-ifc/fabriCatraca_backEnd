@@ -25,6 +25,7 @@ class User(AbstractUser):
     registration = models.CharField(max_length=50, blank=True, null=True, unique=True)
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=255, null=True, blank=True)
+    
     app_role = models.CharField(
         max_length=20,
         choices=AppRole.choices,
@@ -48,7 +49,7 @@ class User(AbstractUser):
         help_text="PIN de 4 dígitos para acesso na catraca (campo 'password' na API Control iD)",
     )
     phone = models.CharField(max_length=20, blank=True, null=True)
-    
+
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["name"]

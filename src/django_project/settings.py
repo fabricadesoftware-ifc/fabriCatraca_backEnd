@@ -87,10 +87,12 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "django_extensions",
+    "minio_storage",
     "src.core.user.infra.user_django_app",
     "src.core.control_Id.infra.control_id_django_app",
     "src.core.control_id_config.infra.control_id_config_django_app",
     "src.core.control_id_monitor.infra.control_id_monitor_django_app",
+    "src.core.uploader",
     # Celery results backend via django-celery-results (opcional)
     "django_celery_results",
     "debug_toolbar",
@@ -326,3 +328,19 @@ LOGGING = {
         },
     },
 }
+
+MINIO_STORAGE_ENDPOINT = os.getenv(
+    "MINIO_STORAGE_ENDPOINT", "minio.fabricadesoftware.ifc.edu.br"
+)
+MINIO_STORAGE_ACCESS_KEY = os.getenv("MINIO_STORAGE_ACCESS_KEY", "my_access_key")
+MINIO_STORAGE_SECRET_KEY = os.getenv("MINIO_STORAGE_SECRET_KEY", "my_secret_key")
+MINIO_STORAGE_USE_HTTPS = os.getenv("MINIO_STORAGE_USE_HTTPS", "True") == "True"
+MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", "minio.fabricadesoftware.ifc.edu.br")
+
+# Configurar o Minio como armazenamento padrão
+DEFAULT_FILE_STORAGE = "minio_storage.storage.MinioMediaStorage"
+STATICFILES_STORAGE = "minio_storage.storage.MinioStaticStorage"
+
+# Nome do bucket e criação automática
+MINIO_STORAGE_MEDIA_BUCKET_NAME = "catraca"
+MINIO_STORAGE_AUTO_CREATE_MEDIA_BUCKET = True
