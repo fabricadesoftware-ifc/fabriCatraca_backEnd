@@ -224,7 +224,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         return {
             "ok": True,
             "paused_until": paused_until.isoformat(),
-            "config_id": monitor.id,
+            "config_id": monitor.pk,
         }
 
     def _persist_applied_configs_to_database(
@@ -628,7 +628,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         sys_cfg = self._get_device_scoped_config(SystemConfig)
         if sys_cfg:
-            general["catra_timeout"] = str(sys_cfg.catra_timeout or 30000)
+            general["catra_timeout"] = str(sys_cfg.catra_timeout or 5000)
             general["online"] = bool_to_str(sys_cfg.online)
             general["local_identification"] = bool_to_str(sys_cfg.local_identification)
             general["language"] = str(sys_cfg.language or "pt_BR")

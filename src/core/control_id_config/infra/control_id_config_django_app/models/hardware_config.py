@@ -13,12 +13,12 @@ class HardwareConfig(models.Model):
     bell_relay = models.IntegerField(default=2, help_text="Rel? da campainha")
 
     # Configura??es SSH
-    ssh_enabled = models.BooleanField(default=False, help_text="Habilitar SSH")
+    ssh_enabled = models.BooleanField(default=True, help_text="Habilitar SSH")
 
     # Configura??es de rel?s
     relayN_enabled = models.BooleanField(default=False, help_text="Habilitar rel? N")
     relayN_timeout = models.IntegerField(default=5, help_text="Timeout do rel? N em segundos")
-    relayN_auto_close = models.BooleanField(default=True, help_text="Fechar rel? automaticamente")
+    relayN_auto_close = models.BooleanField(default=False, help_text="Fechar rel? automaticamente")
 
     # Configura??es de sensores de porta
     door_sensorN_enabled = models.BooleanField(default=False, help_text="Habilitar sensor de porta N")
