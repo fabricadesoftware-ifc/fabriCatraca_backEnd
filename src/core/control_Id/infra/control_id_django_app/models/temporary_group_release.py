@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from src.core.__seedwork__.domain import BaseModel
 from django.db.models import Q
 from django.utils import timezone
 
@@ -10,7 +11,7 @@ from .access_rule import AccessRule
 from .group_access_rules import GroupAccessRule
 
 
-class TemporaryGroupRelease(models.Model):
+class TemporaryGroupRelease(BaseModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"
         ACTIVE = "active", "Ativa"
@@ -60,8 +61,7 @@ class TemporaryGroupRelease(models.Model):
     closed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
     result_message = models.TextField(blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
 
     class Meta:
         db_table = "temporary_group_releases"

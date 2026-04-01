@@ -1,13 +1,14 @@
 from django.db import models
+from src.core.__seedwork__.domain import BaseModel
 
-class Device(models.Model):
+class Device(BaseModel):
     name = models.CharField(max_length=255, help_text="Nome descritivo do equipamento")
     ip = models.CharField(max_length=255, help_text="IP ou hostname do equipamento. Ex: 192.168.0.129")
     username = models.CharField(max_length=255, help_text="Usuário para autenticação")
     password = models.CharField(max_length=255, help_text="Senha para autenticação")
     is_active = models.BooleanField(default=True, help_text="Se o dispositivo está ativo para sincronização")
     is_default = models.BooleanField(default=False, help_text="Se é o dispositivo padrão quando nenhum é especificado")
-    class Meta:
+    class Meta(BaseModel.Meta):
         verbose_name = "Dispositivo"
         verbose_name_plural = "Dispositivos"
         db_table = "control_id_device"

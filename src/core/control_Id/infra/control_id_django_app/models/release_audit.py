@@ -1,8 +1,10 @@
 from django.conf import settings
 from django.db import models
+from src.core.__seedwork__.domain import BaseModel
 
 
-class ReleaseAudit(models.Model):
+
+class ReleaseAudit(BaseModel):
     class ReleaseType(models.TextChoices):
         DEVICE_EVENT = "device_event", "Liberação por evento"
         SINGLE_TURN = "single_turn", "Giro único"
@@ -100,10 +102,8 @@ class ReleaseAudit(models.Model):
     executed_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         db_table = "release_audits"
         verbose_name = "Auditoria de Liberação"
         verbose_name_plural = "Auditorias de Liberação"

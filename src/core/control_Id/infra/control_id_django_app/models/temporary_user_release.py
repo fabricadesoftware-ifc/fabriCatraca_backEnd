@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from src.core.__seedwork__.domain import BaseModel
 from django.db.models import Q
 from django.utils import timezone
 
@@ -10,7 +11,7 @@ from .access_rule import AccessRule
 from .user_access_rule import UserAccessRule
 
 
-class TemporaryUserRelease(models.Model):
+class TemporaryUserRelease(BaseModel):
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"
         ACTIVE = "active", "Ativa"
@@ -58,12 +59,10 @@ class TemporaryUserRelease(models.Model):
     activated_at = models.DateTimeField(null=True, blank=True)
     consumed_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
-    notes = models.TextField(blank=True, default="")
+    notes = models.TextField(default="Indefinido")
     result_message = models.TextField(blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         db_table = "temporary_user_releases"
         verbose_name = "Liberação Temporária"
         verbose_name_plural = "Liberações Temporárias"

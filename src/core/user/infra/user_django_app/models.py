@@ -4,6 +4,8 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from .managers import CustomUserManager
 from src.core.uploader.models import Archive
+from safedelete.models import SafeDeleteModel
+from safedelete.config import SOFT_DELETE_CASCADE
 
 
 def generate_pin():
@@ -11,7 +13,8 @@ def generate_pin():
     return str(random.randint(0, 9999)).zfill(4)
 
 
-class User(AbstractUser):
+class User(SafeDeleteModel, AbstractUser):  # type: ignore
+    _safedelete_policy = SOFT_DELETE_CASCADE
     class UserType(models.IntegerChoices):
         VISITOR = 1  # Tem id
 
@@ -52,6 +55,10 @@ class User(AbstractUser):
     phone = models.CharField(max_length=20, blank=True, null=True)
     birth_date = models.DateField(blank=True, null=True)
     picture = models.ForeignKey(Archive, on_delete=models.SET_NULL, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    phone_landline = models.CharField(max_length=20, blank=True, null=True)
+    phone_responsible = models.CharField(max_length=20, blank=True, null=True)
+    responsible_name = models.CharField(max_length=255, blank=True, null=True)
 
 
     USERNAME_FIELD = "email"
@@ -83,6 +90,6 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.pk} - {self.name}"
 
-    class Meta:
+    class Meta(SafeDeleteModel.Meta, AbstractUser.Meta):
         verbose_name = "User"
         verbose_name_plural = "Users"

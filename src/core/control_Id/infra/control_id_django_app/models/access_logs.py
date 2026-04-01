@@ -1,4 +1,5 @@
 from django.db import models
+from src.core.__seedwork__.domain import BaseModel
 from src.core.control_Id.infra.control_id_django_app.models import (
     Device,
     Portal,
@@ -25,7 +26,7 @@ class EventType(models.IntegerChoices):
     ACESSO_PELA_INTERFONIA = 15
 
 
-class AccessLogs(models.Model):
+class AccessLogs(BaseModel):
     time = models.DateTimeField()
     event_type = models.IntegerField(choices=EventType.choices)
     device = models.ForeignKey(Device, on_delete=models.DO_NOTHING)
@@ -44,7 +45,7 @@ class AccessLogs(models.Model):
     raw_payload = models.JSONField(default=dict, blank=True)
     sentido = models.CharField(max_length=64, blank=True, default="")
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         db_table = "access_logs"
         verbose_name = "Log de Acesso"
         verbose_name_plural = "Logs de Acesso"
