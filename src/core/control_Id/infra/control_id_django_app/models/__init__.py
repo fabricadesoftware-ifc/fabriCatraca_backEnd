@@ -16,6 +16,7 @@ from .access_logs import AccessLogs
 from .release_audit import ReleaseAudit
 from .temporary_user_release import TemporaryUserRelease
 from .temporary_group_release import TemporaryGroupRelease
+from .biometric_capture_session import BiometricCaptureSession
 
 __all__ = [
     'Template',
@@ -35,5 +36,6 @@ __all__ = [
     'AccessLogs',
     'ReleaseAudit',
     'TemporaryUserRelease',
-    'TemporaryGroupRelease'
+    'TemporaryGroupRelease',
+    'BiometricCaptureSession',
 ]

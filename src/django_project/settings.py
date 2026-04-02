@@ -344,3 +344,8 @@ STATICFILES_STORAGE = "minio_storage.storage.MinioStaticStorage"
 # Nome do bucket e criação automática
 MINIO_STORAGE_MEDIA_BUCKET_NAME = "catraca"
 MINIO_STORAGE_AUTO_CREATE_MEDIA_BUCKET = True
+
+BIOMETRIC_DEVICE_API_KEY = os.getenv(
+    "BIOMETRIC_DEVICE_API_KEY",
+    "troque-esta-chave-do-dispositivo",
+)

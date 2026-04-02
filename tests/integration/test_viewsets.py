@@ -4,6 +4,7 @@ Testes de integração para as ViewSets (API REST).
 import pytest
 from rest_framework import status
 from django.urls import reverse
+from unittest.mock import Mock, patch
 
 
 @pytest.mark.integration
@@ -240,3 +241,93 @@ class TestSystemConfigViewSet:
         assert response.status_code == status.HTTP_200_OK
         assert len(response.data) >= 1
         assert all(item['device'] == device1.id for item in response.data)
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+class TestTemplateViewSet:
+    @patch("requests.post")
+    def test_upload_raw_capture_creates_template_and_marks_session_completed(
+        self,
+        mock_post,
+        api_client,
+        device_factory,
+    ):
+        from src.core.user.infra.user_django_app.models import User
+        from src.core.control_Id.infra.control_id_django_app.models import (
+            BiometricCaptureSession,
+            Template,
+        )
+
+        extractor = device_factory(name="Catraca A", is_default=True, ip="10.0.0.10")
+        device_factory(name="Catraca B", ip="10.0.0.11")
+        user = User.objects.create(name="Maria", registration="2026001")
+        session = BiometricCaptureSession.objects.create(
+            user=user,
+            extractor_device=extractor,
+            sensor_identifier="local-default",
+        )
+
+        def build_response(status_code=200, json_data=None, text=""):
+            response = Mock()
+            response.status_code = status_code
+            response.json.return_value = json_data or {}
+            response.text = text
+            response.content = text.encode() if text else b"{}"
+            response.raise_for_status = Mock()
+            return response
+
+        mock_post.side_effect = [
+            build_response(json_data={"session": "sess-1"}),
+            build_response(json_data={"quality": 40, "template": "tpl-40"}),
+            build_response(json_data={"session": "sess-2"}),
+            build_response(json_data={"quality": 82, "template": "tpl-82"}),
+            build_response(json_data={"session": "sess-3"}),
+            build_response(json_data={"quality": 61, "template": "tpl-61"}),
+            build_response(json_data={"session": "sess-a"}),
+            build_response(json_data={"ids": [1]}),
+            build_response(json_data={"session": "sess-b"}),
+            build_response(json_data={"ids": [1]}),
+        ]
+
+        attempt1 = api_client.post(
+            f"/api/control_id/templates/local-capture/{session.id}/upload-raw/?api_key=troque-esta-chave-do-dispositivo&capture_token={session.token}&attempt=1&total_attempts=3",
+            b"\x11" * 32,
+            content_type="application/octet-stream",
+        )
+        assert attempt1.status_code == status.HTTP_200_OK
+        assert attempt1.data["completed"] is False
+
+        attempt2 = api_client.post(
+            f"/api/control_id/templates/local-capture/{session.id}/upload-raw/?api_key=troque-esta-chave-do-dispositivo&capture_token={session.token}&attempt=2&total_attempts=3",
+            b"\x22" * 32,
+            content_type="application/octet-stream",
+        )
+        assert attempt2.status_code == status.HTTP_200_OK
+        assert attempt2.data["completed"] is False
+
+        response = api_client.post(
+            f"/api/control_id/templates/local-capture/{session.id}/upload-raw/?api_key=troque-esta-chave-do-dispositivo&capture_token={session.token}&attempt=3&total_attempts=3",
+            b"\x33" * 32,
+            content_type="application/octet-stream",
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["completed"] is True
+        assert response.data["template"]["template"] == "tpl-82"
+        assert response.data["template"]["best_quality"] == 82
+        assert len(response.data["template"]["attempts"]) == 3
+        assert any(item["selected"] for item in response.data["template"]["attempts"])
+
+        saved = Template.objects.get(user=user)
+        assert saved.template == "tpl-82"
+
+        session.refresh_from_db()
+        assert session.status == "completed"
+        assert session.selected_quality == 82
+        assert session.template_id == saved.id
+
+        create_calls = [
+            call for call in mock_post.call_args_list if "create_objects.fcgi" in call.args[0]
+        ]
+        assert len(create_calls) == 2
