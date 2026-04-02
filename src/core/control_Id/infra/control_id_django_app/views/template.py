@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, authentication_classes, permission_classes
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -449,9 +449,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         detail=False,
         methods=["get"],
         url_path="local-capture/pending",
+        authentication_classes=[],
+        permission_classes=[AllowAny],
     )
-    @authentication_classes([])
-    @permission_classes([AllowAny])
     def pending_local_capture(self, request):
         if not self._check_device_api_key(request):
             return Response({"error": "Chave do dispositivo invalida"}, status=status.HTTP_403_FORBIDDEN)
@@ -494,9 +494,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         detail=False,
         methods=["post"],
         url_path=r"local-capture/(?P<session_id>\d+)/upload-raw",
+        authentication_classes=[],
+        permission_classes=[AllowAny],
     )
-    @authentication_classes([])
-    @permission_classes([AllowAny])
     def upload_local_capture_raw(self, request, session_id=None):
         if not self._check_device_api_key(request):
             return Response({"error": "Chave do dispositivo invalida"}, status=status.HTTP_403_FORBIDDEN)
