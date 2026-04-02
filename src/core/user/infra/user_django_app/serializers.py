@@ -32,6 +32,8 @@ class UserSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "email",
+            "cpf",
+            "phone",
             "registration",
             "app_role",
             "effective_app_role",
@@ -125,6 +127,17 @@ class UserSerializer(serializers.ModelSerializer):
                 }
             )
 
+        user_type_id = attrs.get(
+            "user_type_id",
+            instance.user_type_id if instance else None,
+        )
+        phone = attrs.get("phone", instance.phone if instance else None)
+
+        if user_type_id == User.UserType.VISITOR and not phone:
+            raise serializers.ValidationError(
+                {"phone": ["Telefone e obrigatorio para visitantes."]}
+            )
+
         return attrs
 
     def validate_email(self, value):
@@ -133,6 +146,16 @@ class UserSerializer(serializers.ModelSerializer):
         return value.strip().lower()
 
     def validate_registration(self, value):
+        if value in ("", None):
+            return None
+        return value.strip()
+
+    def validate_cpf(self, value):
+        if value in ("", None):
+            return None
+        return value.strip()
+
+    def validate_phone(self, value):
         if value in ("", None):
             return None
         return value.strip()
@@ -176,11 +199,24 @@ class RoleAwareUserReadSerializer(UserSerializer):
             "name",
             "registration",
             "pin",
+            "cpf",
+            "phone",
+            "email",
             "user_groups",
             "device_scope",
             "selected_devices",
         },
-        "guarita": {"id", "name", "registration", "device_scope", "selected_devices"},
+        "guarita": {
+            "id",
+            "name",
+            "registration",
+            "cpf",
+            "phone",
+            "email",
+            "user_type_id",
+            "device_scope",
+            "selected_devices",
+        },
     }
 
     def to_representation(self, instance):
