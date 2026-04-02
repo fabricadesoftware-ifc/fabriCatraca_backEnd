@@ -1,6 +1,23 @@
-# FabriCatraca
+<div id="top" class="">
 
-Sistema de controle de acesso do IFC das catracas ControlID
+<div align="center" class="text-center">
+<h1>FABRICATRACA_BACKEND</h1>
+
+<img alt="last-commit" src="https://img.shields.io/github/last-commit/fabricadesoftware-ifc/fabriCatraca_backEnd?style=flat&amp;logo=git&amp;logoColor=white&amp;color=0080ff" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="repo-top-language" src="https://img.shields.io/github/languages/top/fabricadesoftware-ifc/fabriCatraca_backEnd?style=flat&amp;color=0080ff" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="repo-language-count" src="https://img.shields.io/github/languages/count/fabricadesoftware-ifc/fabriCatraca_backEnd?style=flat&amp;color=0080ff" class="inline-block mx-1" style="margin: 0px 2px;">
+<p><em>Built with the tools and technologies:</em></p>
+<img alt="PDM" src="https://img.shields.io/badge/PDM-000000.svg?style=flat&amp;logo=PDM&amp;logoColor=#AC75D7" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="Markdown" src="https://img.shields.io/badge/Markdown-000000.svg?style=flat&amp;logo=Markdown&amp;logoColor=white" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="Celery" src="https://img.shields.io/badge/Celery-A9CC54.svg?style=flat&amp;logo=Celery&amp;logoColor=#DDF4A4" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="JavaScript" src="https://img.shields.io/badge/Python-3776AB.svg?style=flat&amp;logo=Python&amp;logoColor=white" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="Vue.js" src="https://img.shields.io/badge/Django-4FC08D.svg?style=flat&amp;logo=Django&amp;logoColor=white" class="inline-block mx-1" style="margin: 0px 2px;">
+<br>
+<img alt="TypeScript" src="https://img.shields.io/badge/RabbitMQ-FFFFFF.svg?style=flat&amp;logo=RabbitMQ&amp;logoColor=#FF6600" class="inline-block mx-1" style="margin: 0px 2px;">
+<img alt="Vuetify" src="https://img.shields.io/badge/PostgreSQL-1867C0.svg?style=flat&amp;logo=PostgreSQL&amp;logoColor=white" class="inline-block mx-1" style="margin: 0px 2px;">
+</div>
+<br>
+<hr>
 
 ## Instalação Local
 
