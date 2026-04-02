@@ -9,6 +9,7 @@ from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from src.core.control_Id.infra.control_id_django_app.serializers.cards import (
     CardSerializer,
 )
+from src.core.user.infra.user_django_app.models import User
 
 
 @extend_schema(tags=["Cards"])
@@ -73,6 +74,9 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
         except Exception:
             return False
 
+    def _get_target_devices_for_user(self, user: User):
+        return list(user.get_target_devices(include_inactive=False))
+
     def create(self, request, *args, **kwargs):
         """
         Cria um cartao por captura remota na catraca.
@@ -120,6 +124,21 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            user = User.objects.get(id=int(user_id))
+            target_device_ids = {
+                device.id for device in self._get_target_devices_for_user(user)
+            }
+            if not target_device_ids:
+                return Response(
+                    {"error": "Usuario nao possui catracas alvo para cartao."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if enrollment_device.id not in target_device_ids:
+                return Response(
+                    {"error": "A catraca escolhida nao faz parte do escopo do usuario."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             response = self.remote_enroll(
                 user_id=user_id,
                 type="card",
@@ -159,7 +178,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                 instance = serializer.save(value=str(captured_value))
                 card_value_int = self._card_value_as_int(captured_value)
 
-                devices = Device.objects.filter(is_active=True)
+                devices = self._get_target_devices_for_user(instance.user)
                 errors = []
                 for device in devices:
                     if not self._ensure_user_on_device(device, instance.user):
@@ -213,7 +232,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
         with transaction.atomic():
             instance = serializer.save()
 
-            devices = Device.objects.filter(is_active=True)
+            devices = self._get_target_devices_for_user(instance.user)
 
             for device in devices:
                 if not self._ensure_user_on_device(device, instance.user):
@@ -253,7 +272,7 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
 
         with transaction.atomic():
-            devices = Device.objects.filter(is_active=True)
+            devices = self._get_target_devices_for_user(instance.user)
 
             for device in devices:
                 self.set_device(device)

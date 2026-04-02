@@ -1,24 +1,26 @@
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from django.db import transaction
 import logging
+
 import requests
-from .models import User
-from .serializers import RoleAwareUserReadSerializer, UserSerializer
+from django.db import transaction
+from drf_spectacular.utils import extend_schema
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
 from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
-from drf_spectacular.utils import extend_schema
-from rest_framework.permissions import IsAuthenticated
 
+from .models import User
 from .permissions import IsAdminRole, IsOperationalRole
+from .serializers import RoleAwareUserReadSerializer, UserSerializer
 
 logger = logging.getLogger(__name__)
 
 
 @extend_schema(tags=["Users"])
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by("id").prefetch_related("usergroup_set")
+    queryset = User.objects.all().order_by("id").prefetch_related("usergroup_set", "selected_devices")
     serializer_class = UserSerializer
     filterset_fields = [
         "id",
@@ -27,6 +29,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         "user_type_id",
         "app_role",
         "panel_access_only",
+        "device_scope",
     ]
     search_fields = ["name", "email", "registration"]
     ordering_fields = ["id", "name", "registration", "user_type_id", "app_role"]
@@ -62,24 +65,20 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             payload["user_type_id"] = instance.user_type_id
         return payload
 
+    def _get_active_target_devices(self, user: User):
+        return list(user.get_target_devices(include_inactive=False))
+
     @staticmethod
     def _is_device_admin_user(user: User) -> bool:
-        """Admin no equipamento (user_roles.role=1): alinhado ao easy_setup e objetos.txt."""
         return bool(user.is_staff or user.is_superuser)
 
     def _set_user_admin_on_device(self, device, user_id: int):
-        """
-        Garante user_roles na catraca (user_id + role=1).
-        create_objects quando a linha não existe; modify_objects quando já existe
-        (evita modify só com {role:1}, que não bate com a API em vários firmwares).
-        """
         self.set_device(device)
         sess = self.login()
-        base_url = self.get_url
         payload_row = {"user_id": user_id, "role": 1}
 
         r_create = requests.post(
-            base_url(f"create_objects.fcgi?session={sess}"),
+            self.get_url(f"create_objects.fcgi?session={sess}"),
             json={"object": "user_roles", "values": [payload_row]},
             timeout=30,
         )
@@ -87,7 +86,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             return
 
         r_mod = requests.post(
-            base_url(f"modify_objects.fcgi?session={sess}"),
+            self.get_url(f"modify_objects.fcgi?session={sess}"),
             json={
                 "object": "user_roles",
                 "values": payload_row,
@@ -107,7 +106,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         response = self.create_objects("users", [self._build_user_payload(instance)])
         if response.status_code != status.HTTP_201_CREATED:
             raise RuntimeError(
-                f"Erro ao criar usuário na catraca {device.name}: {response.data}"
+                f"Erro ao criar usuario na catraca {device.name}: {response.data}"
             )
 
         if instance.pin:
@@ -116,11 +115,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 [{"user_id": instance.id, "value": instance.pin}],
             )
             if pin_resp.status_code != status.HTTP_201_CREATED:
-                logger.warning(
-                    "Falha ao criar PIN na catraca %s: %s",
-                    device.name,
-                    pin_resp.data,
-                )
+                logger.warning("Falha ao criar PIN na catraca %s: %s", device.name, pin_resp.data)
 
         if self._is_device_admin_user(instance):
             self._set_user_admin_on_device(device, instance.id)
@@ -142,7 +137,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         )
         if response.status_code != status.HTTP_200_OK:
             raise RuntimeError(
-                f"Erro ao atualizar usuário na catraca {device.name}: {response.data}"
+                f"Erro ao atualizar usuario na catraca {device.name}: {response.data}"
             )
 
         if instance.pin:
@@ -165,10 +160,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 "user_roles",
                 {"user_roles": {"user_id": instance.id}},
             )
-            if role_resp.status_code not in (
-                status.HTTP_204_NO_CONTENT,
-                status.HTTP_200_OK,
-            ):
+            if role_resp.status_code not in (status.HTTP_204_NO_CONTENT, status.HTTP_200_OK):
                 raise RuntimeError(
                     f"Erro ao remover papel administrativo na catraca {device.name}: {role_resp.data}"
                 )
@@ -180,7 +172,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         response = self.destroy_objects("users", {"users": {"id": instance.id}})
         if response.status_code != status.HTTP_204_NO_CONTENT:
             raise RuntimeError(
-                f"Erro ao deletar usuário da catraca {device.name}: {response.data}"
+                f"Erro ao deletar usuario da catraca {device.name}: {response.data}"
             )
 
     def create(self, request, *args, **kwargs):
@@ -193,23 +185,23 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             self._normalize_user_type(instance)
 
             if not instance.panel_access_only:
-                devices = Device.objects.filter(is_active=True)
+                devices = self._get_active_target_devices(instance)
                 try:
                     for device in devices:
                         self._create_user_in_device(device, instance)
                 except Exception as exc:
                     instance.delete()
-                    return Response(
-                        {"error": str(exc)},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         previous_panel_access_only = instance.panel_access_only
         previous_device_admin = self._is_device_admin_user(instance)
+        previous_devices = self._get_active_target_devices(instance)
+        previous_device_ids = {device.id for device in previous_devices}
+        previous_device_map = {device.id: device for device in previous_devices}
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -217,73 +209,74 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             instance = serializer.save()
             self._normalize_user_type(instance)
 
-            devices = Device.objects.filter(is_active=True)
+            current_devices = self._get_active_target_devices(instance)
+            current_device_ids = {device.id for device in current_devices}
+            current_device_map = {device.id: device for device in current_devices}
+
             try:
-                for device in devices:
-                    if previous_panel_access_only and instance.panel_access_only:
-                        continue
-                    if previous_panel_access_only and not instance.panel_access_only:
-                        self._create_user_in_device(device, instance)
-                        continue
-                    if not previous_panel_access_only and instance.panel_access_only:
-                        self._delete_user_from_device(device, instance)
-                        continue
+                removed_ids = previous_device_ids - current_device_ids
+                added_ids = current_device_ids - previous_device_ids
+                common_ids = previous_device_ids & current_device_ids
+
+                if previous_panel_access_only and instance.panel_access_only:
+                    removed_ids = set()
+                    added_ids = set()
+                    common_ids = set()
+                elif previous_panel_access_only and not instance.panel_access_only:
+                    removed_ids = set()
+                    added_ids = current_device_ids
+                    common_ids = set()
+                elif not previous_panel_access_only and instance.panel_access_only:
+                    removed_ids = previous_device_ids
+                    added_ids = set()
+                    common_ids = set()
+
+                for device_id in removed_ids:
+                    self._delete_user_from_device(previous_device_map[device_id], instance)
+
+                for device_id in added_ids:
+                    self._create_user_in_device(current_device_map[device_id], instance)
+
+                for device_id in common_ids:
                     self._update_user_in_device(
-                        device,
+                        current_device_map[device_id],
                         instance,
                         previous_device_admin=previous_device_admin,
                     )
             except Exception as exc:
-                return Response(
-                    {"error": str(exc)},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(serializer.data)
+        return Response(self.get_serializer(instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
         with transaction.atomic():
-            # Primeiro remove todas as relações
-            instance.useraccessrule_set.all().delete()  # Regras de acesso
-            instance.usergroup_set.all().delete()  # Grupos de usuário
-            instance.templates.all().delete()  # Templates
-            instance.cards.all().delete()  # Cartões
+            instance.useraccessrule_set.all().delete()
+            instance.usergroup_set.all().delete()
+            instance.templates.all().delete()
+            instance.cards.all().delete()
+            instance.groups.clear()
+            instance.user_permissions.clear()
 
-            # Remove relações ManyToMany
-            instance.groups.clear()  # Grupos do Django
-            instance.user_permissions.clear()  # Permissões do Django
-
-            # Define o user como NULL nos logs de acesso (já que usa DO_NOTHING)
-            from src.core.control_Id.infra.control_id_django_app.models.access_logs import (
-                AccessLogs,
-            )
+            from src.core.control_Id.infra.control_id_django_app.models.access_logs import AccessLogs
 
             AccessLogs.objects.filter(user=instance).update(user=None)
 
             if not instance.panel_access_only:
-                devices = Device.objects.filter(is_active=True)
-
-                for device in devices:
+                for device in self._get_active_target_devices(instance):
                     try:
                         self._delete_user_from_device(device, instance)
                     except Exception as exc:
-                        return Response(
-                            {"error": str(exc)},
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
+                        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Se removeu de todas as catracas, remove do banco
             instance.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"])
     def sync(self, request):
-        """Sincroniza usuários de todas as catracas ativas"""
         try:
             with transaction.atomic():
-                # Sincroniza com todas as catracas ativas
                 devices = Device.objects.filter(is_active=True)
 
                 for device in devices:
@@ -294,26 +287,16 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         order_by=["id"],
                     )
 
-                    # Atualiza/cria usuários no banco
                     for data in catraca_objects:
-                        # A catraca Control iD retorna user_type_id para todos
-                        # os usuários. Precisamos verificar se o usuário JÁ existe
-                        # no banco antes de sobrescrever o tipo.
                         raw_type = data.get("user_type_id")
 
                         try:
                             existing_user = User.objects.get(id=data["id"])
-                            # Usuário já existe: mantém o user_type_id do banco
-                            # (a fonte de verdade para tipo é o nosso sistema)
                             user_type = existing_user.user_type_id
                         except User.DoesNotExist:
-                            # Usuário novo vindo da catraca: só marca como
-                            # visitante se a catraca disser explicitamente
-                            user_type = (
-                                raw_type if raw_type and int(raw_type) == 1 else None
-                            )
+                            user_type = raw_type if raw_type and int(raw_type) == 1 else None
 
-                        user, created = User.objects.update_or_create(
+                        User.objects.update_or_create(
                             id=data["id"],
                             defaults={
                                 "name": data["name"],
@@ -321,25 +304,21 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                                 "user_type_id": user_type,
                             },
                         )
-                        # Adiciona a relação com a catraca
 
                 return Response(
                     {
                         "success": True,
-                        "message": f"Sincronizados usuários de {len(devices)} catraca(s)",
+                        "message": f"Sincronizados usuarios de {len(devices)} catraca(s)",
                     }
                 )
-        except Exception as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        except Exception as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def me(self, request):
-        """Retorna os dados do usuário autenticado"""
         if not request.user.is_authenticated:
             return Response(
-                {"error": "Usuário não autenticado"},
+                {"error": "Usuario nao autenticado"},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 

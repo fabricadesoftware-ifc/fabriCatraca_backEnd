@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, permission_classes
+from rest_framework.decorators import action, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -22,6 +22,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
 from src.core.control_Id.infra.control_id_django_app.serializers.template import (
     TemplateSerializer,
 )
+from src.core.user.infra.user_django_app.models import User
 
 
 @extend_schema(tags=["Templates"])
@@ -46,6 +47,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     def _get_active_devices(self):
         return list(Device.objects.filter(is_active=True).order_by("id"))
 
+    def _get_target_devices_for_user(self, user: User):
+        return list(user.get_target_devices(include_inactive=False))
+
     def _get_default_extractor_device(self):
         return (
             Device.objects.filter(is_active=True, is_default=True).first()
@@ -67,7 +71,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         )
 
     def _replicate_template_to_active_devices(self, instance: Template):
-        devices = self._get_active_devices()
+        devices = self._get_target_devices_for_user(instance.user)
         errors = []
 
         for device in devices:
@@ -322,6 +326,20 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 )
 
             enrollment_device = get_object_or_404(Device, id=enrollment_device_id)
+            user = get_object_or_404(User, id=int(user_id))
+            target_device_ids = {
+                device.id for device in self._get_target_devices_for_user(user)
+            }
+            if not target_device_ids:
+                return Response(
+                    {"error": "Usuario nao possui catracas alvo para biometria."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if enrollment_device.id not in target_device_ids:
+                return Response(
+                    {"error": "A catraca escolhida nao faz parte do escopo do usuario."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             instance, payload_or_response = self._create_remote_template(
                 user_id=int(user_id),
                 enrollment_device=enrollment_device,
@@ -353,6 +371,16 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        user = get_object_or_404(User, id=int(user_id))
+        target_device_ids = {
+            device.id for device in self._get_target_devices_for_user(user)
+        }
+        if not target_device_ids:
+            return Response(
+                {"error": "Usuario nao possui catracas alvo para biometria."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         extractor_device_id = request.data.get("extractor_device_id")
         sensor_identifier = str(request.data.get("sensor_identifier") or "local-default").strip()
         if not sensor_identifier:
@@ -367,8 +395,16 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 id=extractor_device_id,
                 is_active=True,
             )
+            if extractor_device.id not in target_device_ids:
+                return Response(
+                    {"error": "A catraca extratora nao faz parte do escopo do usuario."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         else:
-            extractor_device = self._get_default_extractor_device()
+            extractor_device = next(
+                (device for device in self._get_target_devices_for_user(user) if device.is_active),
+                None,
+            )
 
         if extractor_device is None:
             return Response(
@@ -414,6 +450,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         methods=["get"],
         url_path="local-capture/pending",
     )
+    @authentication_classes([])
     @permission_classes([AllowAny])
     def pending_local_capture(self, request):
         if not self._check_device_api_key(request):
@@ -458,6 +495,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         methods=["post"],
         url_path=r"local-capture/(?P<session_id>\d+)/upload-raw",
     )
+    @authentication_classes([])
     @permission_classes([AllowAny])
     def upload_local_capture_raw(self, request, session_id=None):
         if not self._check_device_api_key(request):
@@ -569,7 +607,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         with transaction.atomic():
             instance = serializer.save()
 
-            devices = self._get_active_devices()
+            devices = self._get_target_devices_for_user(instance.user)
             for device in devices:
                 self.set_device(device)
                 response = self.update_objects(
@@ -595,7 +633,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         instance = self.get_object()
 
         with transaction.atomic():
-            devices = self._get_active_devices()
+            devices = self._get_target_devices_for_user(instance.user)
             for device in devices:
                 self.set_device(device)
                 response = self.destroy_objects(

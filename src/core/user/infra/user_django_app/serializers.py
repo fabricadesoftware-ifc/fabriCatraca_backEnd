@@ -1,6 +1,15 @@
-from rest_framework import serializers
-from .models import User
 from django.contrib.auth.models import Group
+from rest_framework import serializers
+
+from src.core.control_Id.infra.control_id_django_app.models import Device
+
+from .models import User
+
+
+class DeviceBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Device
+        fields = ["id", "name", "ip", "is_active", "is_default"]
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -8,6 +17,14 @@ class UserSerializer(serializers.ModelSerializer):
     device_admin = serializers.BooleanField(source="is_staff", required=False)
     effective_app_role = serializers.CharField(read_only=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    selected_devices = DeviceBasicSerializer(read_only=True, many=True)
+    selected_device_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        write_only=True,
+        required=False,
+        queryset=Device.objects.all(),
+        source="selected_devices",
+    )
 
     class Meta:
         model = User
@@ -19,6 +36,9 @@ class UserSerializer(serializers.ModelSerializer):
             "app_role",
             "effective_app_role",
             "panel_access_only",
+            "device_scope",
+            "selected_devices",
+            "selected_device_ids",
             "user_type_id",
             "pin",
             "password",
@@ -41,7 +61,18 @@ class UserSerializer(serializers.ModelSerializer):
         app_role = attrs.get("app_role")
         email = attrs.get("email")
         password = attrs.get("password")
-        panel_access_only = attrs.get("panel_access_only")
+        panel_access_only = attrs.get(
+            "panel_access_only",
+            instance.panel_access_only if instance else False,
+        )
+        device_scope = attrs.get(
+            "device_scope",
+            instance.device_scope if instance else User.DeviceScope.ALL_ACTIVE,
+        )
+        selected_devices = attrs.get(
+            "selected_devices",
+            instance.selected_devices.all() if instance else [],
+        )
 
         current_role = instance.app_role if instance else User.AppRole.NONE
         current_email = instance.email if instance else None
@@ -50,11 +81,7 @@ class UserSerializer(serializers.ModelSerializer):
 
         if (
             effective_role
-            in (
-                User.AppRole.ADMIN,
-                User.AppRole.GUARITA,
-                User.AppRole.SISAE,
-            )
+            in (User.AppRole.ADMIN, User.AppRole.GUARITA, User.AppRole.SISAE)
             and not effective_email
         ):
             raise serializers.ValidationError(
@@ -64,11 +91,7 @@ class UserSerializer(serializers.ModelSerializer):
         if (
             instance is None
             and effective_role
-            in (
-                User.AppRole.ADMIN,
-                User.AppRole.GUARITA,
-                User.AppRole.SISAE,
-            )
+            in (User.AppRole.ADMIN, User.AppRole.GUARITA, User.AppRole.SISAE)
             and not password
         ):
             raise serializers.ValidationError(
@@ -79,7 +102,25 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {
                     "panel_access_only": [
-                        "Contas somente do painel precisam ter um perfil de aplicação."
+                        "Contas somente do painel precisam ter um perfil de aplicacao."
+                    ]
+                }
+            )
+
+        if panel_access_only and device_scope != User.DeviceScope.NONE:
+            raise serializers.ValidationError(
+                {
+                    "device_scope": [
+                        "Contas somente do painel devem usar o escopo 'none'."
+                    ]
+                }
+            )
+
+        if device_scope == User.DeviceScope.SELECTED and len(selected_devices) == 0:
+            raise serializers.ValidationError(
+                {
+                    "selected_device_ids": [
+                        "Selecione ao menos uma catraca quando o escopo for 'selected'."
                     ]
                 }
             )
@@ -97,46 +138,49 @@ class UserSerializer(serializers.ModelSerializer):
         return value.strip()
 
     def validate_user_type_id(self, value):
-        """Normaliza valores inválidos para None.
-
-        A catraca rejeita chaves estrangeiras inválidas. Quando recebemos 0 (ou strings vazias),
-        tratamos como None para representar "sem tipo" e evitar violar constraints no device.
-        """
         if value in (0, "0", "", None):
             return None
         return value
 
     def create(self, validated_data):
         password = validated_data.pop("password", "")
+        selected_devices = validated_data.pop("selected_devices", [])
         user = User(**validated_data)
         if password:
             user.set_password(password)
         else:
             user.set_unusable_password()
         user.save()
+        if selected_devices:
+            user.selected_devices.set(selected_devices)
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop("password", None)
+        selected_devices = validated_data.pop("selected_devices", None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
         instance.save()
+        if selected_devices is not None:
+            instance.selected_devices.set(selected_devices)
         return instance
 
 
 class RoleAwareUserReadSerializer(UserSerializer):
     ROLE_FIELDS = {
-        User.AppRole.ADMIN: None,  # None = todos os campos
+        User.AppRole.ADMIN: None,
         "sisae": {
             "id",
             "name",
             "registration",
             "pin",
             "user_groups",
+            "device_scope",
+            "selected_devices",
         },
-        "guarita": {"id", "name", "registration"},
+        "guarita": {"id", "name", "registration", "device_scope", "selected_devices"},
     }
 
     def to_representation(self, instance):
