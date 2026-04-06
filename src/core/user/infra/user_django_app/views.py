@@ -351,3 +351,124 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAdminOrGuaritaRole])
+    def enroll_card(self, request):
+        """
+        Executa remote_enroll para capturar valor de cartao.
+        Nao cria usuario nem salva o cartao.
+        Retorna o valor capturado da catraca.
+        """
+        enrollment_device_id = request.data.get("enrollment_device_id")
+        if not enrollment_device_id:
+            return Response(
+                {"error": "E necessario especificar uma catraca para captura do cartao"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            device = Device.objects.get(id=enrollment_device_id)
+        except Device.DoesNotExist:
+            return Response(
+                {"error": f"Catraca com ID {enrollment_device_id} nao encontrada"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        self.set_device(device)
+        response = self.remote_enroll(user_id=0, type="card", save=False, sync=True)
+
+        if response.status_code != status.HTTP_201_CREATED:
+            return response
+
+        card_data = response.data
+        captured_value = card_data.get("card_value")
+        if not captured_value:
+            return Response(
+                {"error": "Catraca nao retornou o valor do cartao", "details": card_data},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(
+            {"device_id": device.id, "device_name": device.name, "card_value": captured_value},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAdminOrGuaritaRole])
+    def create_with_card(self, request):
+        """
+        Cria um usuario visitante e seu cartao em uma unica operacao.
+        Fluxo:
+        1. remote_enroll na catraca (save=False) para capturar cartao
+        2. salva o usuario
+        3. salva o cartao vinculado
+        """
+        enrollment_device_id = request.data.get("enrollment_device_id")
+        if not enrollment_device_id:
+            return Response(
+                {"error": "E necessario especificar uma catraca para captura do cartao"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            enrollment_device = Device.objects.get(id=enrollment_device_id)
+        except Device.DoesNotExist:
+            return Response(
+                {"error": f"Catraca com ID {enrollment_device_id} nao encontrada"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 1. Remote enroll do cartao
+        self.set_device(enrollment_device)
+        response = self.remote_enroll(user_id=0, type="card", save=False, sync=True)
+
+        if response.status_code != status.HTTP_201_CREATED:
+            return response
+
+        captured_value = response.data.get("card_value")
+        if not captured_value:
+            return Response(
+                {"error": "Catraca nao retornou o valor do cartao"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # 2. Cria o usuario (remove enrollment_device_id do data)
+        user_data = {k: v for k, v in request.data.items() if k != "enrollment_device_id"}
+        # Garante que e visitante
+        user_data["user_type_id"] = 1
+
+        serializer = self.get_serializer(data=user_data)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            instance = serializer.save()
+            self._normalize_user_type(instance)
+
+            # 3. Salva o cartao no banco
+            from src.core.control_Id.infra.control_id_django_app.models import Card
+
+            card = Card.objects.create(user=instance, value=str(captured_value))
+
+            # 4. Replica usuario para catracas alvo
+            if not instance.panel_access_only:
+                devices = self._get_active_target_devices(instance)
+                try:
+                    for device in devices:
+                        self._create_user_in_device(device, instance)
+
+                        # Cria cartao na catraca
+                        self.set_device(device)
+                        self.create_objects(
+                            "cards",
+                            [{"id": card.id, "user_id": instance.id, "value": int(captured_value)}],
+                        )
+                except Exception as exc:
+                    instance.delete()
+                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "user": self.get_serializer(instance).data,
+                "card": {"id": card.id, "value": card.value},
+            },
+            status=status.HTTP_201_CREATED,
+        )

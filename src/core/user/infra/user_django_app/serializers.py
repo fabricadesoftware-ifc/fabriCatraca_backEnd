@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth.models import Group
 from rest_framework import serializers
 
@@ -5,6 +7,8 @@ from src.core.control_Id.infra.control_id_django_app.models import Device
 from src.core.uploader.models import Archive
 
 from .models import User
+
+logger = logging.getLogger(__name__)
 
 
 class DeviceBasicSerializer(serializers.ModelSerializer):
@@ -75,9 +79,17 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
     def get_picture_url(self, obj):
-        if obj.picture and obj.picture.arquivo:
+        if not obj.picture or not obj.picture.arquivo:
+            return None
+        try:
             return obj.picture.arquivo.url
-        return None
+        except (OSError, ValueError):
+            logger.warning(
+                "Failed to resolve picture URL for user %s (archive %s)",
+                obj.id,
+                obj.picture_id,
+            )
+            return None
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -190,6 +202,12 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password", "")
         selected_devices = validated_data.pop("selected_devices", [])
+        logger.info(
+            "create(): picture=%s, picture_id_raw=%s, fields=%s",
+            validated_data.get("picture"),
+            validated_data.get("picture_id"),
+            list(validated_data.keys()),
+        )
         user = User(**validated_data)
         if password:
             user.set_password(password)
