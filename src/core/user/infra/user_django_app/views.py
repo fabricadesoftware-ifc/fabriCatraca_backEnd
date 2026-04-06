@@ -12,7 +12,7 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 from .models import User
-from .permissions import IsAdminRole, IsOperationalRole
+from .permissions import IsAdminRole, IsOperationalRole, IsAdminOrGuaritaRole
 from .serializers import RoleAwareUserReadSerializer, UserSerializer
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,22 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             return [IsAuthenticated()]
         if self.action in ("list", "retrieve"):
             return [IsOperationalRole()]
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAdminOrGuaritaRole()]
         return [IsAdminRole()]
+
+    def _is_visitor(self, user):
+        return user.user_type_id == 1
+
+    def _ensure_can_modify_user(self, request, instance):
+        """Non-admin users can only create/edit/delete visitors (user_type_id=1)."""
+        if not request.user.is_superuser and request.user.effective_app_role != User.AppRole.ADMIN:
+            if not self._is_visitor(instance):
+                return Response(
+                    {"error": "Apenas administradores podem modificar usuarios nao-visitantes."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        return None
 
     def get_serializer_class(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         if self.action == "me":
@@ -176,6 +191,12 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             )
 
     def create(self, request, *args, **kwargs):
+        if not request.user.is_superuser and request.user.effective_app_role != User.AppRole.ADMIN:
+            if request.data.get("user_type_id") != 1:
+                return Response(
+                    {"error": "Apenas administradores podem criar usuarios nao-visitantes."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.id = serializer.validated_data.get("registration")
@@ -197,6 +218,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
+        guard = self._ensure_can_modify_user(request, instance)
+        if guard is not None:
+            return guard
         previous_panel_access_only = instance.panel_access_only
         previous_device_admin = self._is_device_admin_user(instance)
         previous_devices = self._get_active_target_devices(instance)
@@ -250,6 +274,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        guard = self._ensure_can_modify_user(request, instance)
+        if guard is not None:
+            return guard
 
         with transaction.atomic():
             instance.useraccessrule_set.all().delete()
