@@ -9,5 +9,5 @@ class ArchiveViewSet(viewsets.ModelViewSet):
     - list, retrieve, create, update, destroy
     """
 
-    queryset = Archive.objects.all().order_by("-criado_em")
+    queryset = Archive.objects.all().order_by("-created_at")
     serializer_class = ArchiveSerializer
