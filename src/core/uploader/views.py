@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from core.uploader.models import Archive
-from core.uploader.serializers import ArchiveSerializer
+from src.core.uploader.models import Archive
+from src.core.uploader.serializers import ArchiveSerializer
 
 
 class ArchiveViewSet(viewsets.ModelViewSet):

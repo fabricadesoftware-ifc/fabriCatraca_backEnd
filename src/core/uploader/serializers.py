@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.uploader.models import Archive
+from src.core.uploader.models import Archive
 
 
 class ArchiveSerializer(serializers.ModelSerializer):

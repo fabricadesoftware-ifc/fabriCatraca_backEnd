@@ -63,6 +63,9 @@ class UserSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             "email": {"required": False, "allow_blank": True, "allow_null": True},
+            "cpf": {"required": False, "allow_blank": True, "allow_null": True},
+            "phone": {"required": False, "allow_blank": True, "allow_null": True},
+            "registration": {"required": False, "allow_blank": True, "allow_null": True},
         }
 
     def get_user_groups(self, obj):
