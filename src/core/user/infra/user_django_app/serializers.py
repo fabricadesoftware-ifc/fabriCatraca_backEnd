@@ -202,6 +202,7 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password", "")
         selected_devices = validated_data.pop("selected_devices", [])
+        validated_data.pop("remove_picture", False)
         logger.info(
             "create(): picture=%s, picture_id_raw=%s, fields=%s",
             validated_data.get("picture"),
