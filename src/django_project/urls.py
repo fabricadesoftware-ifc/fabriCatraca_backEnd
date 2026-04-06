@@ -37,6 +37,7 @@ urlpatterns = [
     path('api/control_id/', include('src.core.control_Id.infra.control_id_django_app.urls')),
     path('api/control_id_config/', include('src.core.control_id_config.infra.control_id_config_django_app.urls')),
     path('api/control_id_monitor/', include('src.core.control_id_monitor.infra.control_id_monitor_django_app.urls')),
+    path('api/uploader/', include('src.core.uploader.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/admin/', django_admin.site.urls),
