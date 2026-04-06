@@ -9,7 +9,10 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     AccessRule,
     TemporaryUserRelease,
     UserAccessRule,
+    PortalGroup,
 )
+
+from .portal_group import PortalGroupSerializer
 from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
@@ -42,6 +45,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     requested_by = TemporaryReleaseUserSerializer(read_only=True)
     access_rule = TemporaryReleaseAccessRuleSerializer(read_only=True)
     consumed_log = TemporaryReleaseAccessLogSerializer(read_only=True)
+    portal_group = PortalGroupSerializer(read_only=True)
 
     user_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
@@ -56,6 +60,13 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     )
     valid_from = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False)
+    portal_group_id = serializers.PrimaryKeyRelatedField(
+        queryset=PortalGroup.objects.filter(is_active=True),
+        source="portal_group",
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = TemporaryUserRelease
@@ -77,6 +88,8 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "duration_minutes",
+            "portal_group",
+            "portal_group_id",
         ]
         read_only_fields = [
             "id",

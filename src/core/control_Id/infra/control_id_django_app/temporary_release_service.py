@@ -10,9 +10,19 @@ from src.core.control_Id.infra.control_id_django_app.release_audit_service impor
 
 
 class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
+    def _get_device_ids(self, release):
+        """Determina quais devices devem receber esta liberação."""
+        if release.portal_group:
+            return list(
+                release.portal_group.active_devices().values_list("id", flat=True)
+            )
+        return None  # None = todos os devices
+
     def activate_release(self, release):
         if release.status != release.Status.PENDING:
             return release
+
+        device_ids = self._get_device_ids(release)
 
         with transaction.atomic():
             existing_user_rule = UserAccessRule.objects.filter(
@@ -30,7 +40,7 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
                 access_rule=release.access_rule,
             )
 
-            response = self.create_in_catraca(user_access_rule)
+            response = self.create_in_catraca(user_access_rule, device_ids=device_ids)
             if response.status_code != status.HTTP_201_CREATED:
                 user_access_rule.delete()
                 raise RuntimeError(
@@ -62,11 +72,13 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
         consumed_log=None,
         consumed_at=None,
     ):
+        device_ids = self._get_device_ids(release)
+
         with transaction.atomic():
             user_access_rule = release.user_access_rule
 
             if user_access_rule:
-                response = self.delete_in_catraca(user_access_rule)
+                response = self.delete_in_catraca(user_access_rule, device_ids=device_ids)
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     raise RuntimeError(
                         f"Falha ao remover regra temporária: {response.data}"
@@ -104,9 +116,19 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
         return release
 
 class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
+    def _get_device_ids(self, release):
+        """Determina quais devices devem receber esta liberação."""
+        if release.portal_group:
+            return list(
+                release.portal_group.active_devices().values_list("id", flat=True)
+            )
+        return None  # None = todos os devices
+
     def activate_release(self, release):
         if release.status != release.Status.PENDING:
             return release
+
+        device_ids = self._get_device_ids(release)
 
         with transaction.atomic():
             existing_group_rule = GroupAccessRule.objects.filter(
@@ -124,7 +146,7 @@ class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
                 access_rule=release.access_rule,
             )
 
-            response = self.create_in_catraca(group_access_rule)
+            response = self.create_in_catraca(group_access_rule, device_ids=device_ids)
             if response.status_code != status.HTTP_201_CREATED:
                 group_access_rule.delete()
                 raise RuntimeError(
@@ -156,11 +178,13 @@ class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
         consumed_log=None,
         consumed_at=None,
     ):
+        device_ids = self._get_device_ids(release)
+
         with transaction.atomic():
             group_access_rule = release.group_access_rule
 
             if group_access_rule:
-                response = self.delete_in_catraca(group_access_rule)
+                response = self.delete_in_catraca(group_access_rule, device_ids=device_ids)
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     raise RuntimeError(
                         f"Falha ao remover regra temporária: {response.data}"

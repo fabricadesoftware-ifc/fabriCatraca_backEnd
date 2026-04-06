@@ -17,6 +17,8 @@ from .release_audit import ReleaseAudit
 from .temporary_user_release import TemporaryUserRelease
 from .temporary_group_release import TemporaryGroupRelease
 from .biometric_capture_session import BiometricCaptureSession
+from .portal_group import PortalGroup
+from .portal_device import PortalDevice
 
 __all__ = [
     'Template',
@@ -38,4 +40,6 @@ __all__ = [
     'TemporaryUserRelease',
     'TemporaryGroupRelease',
     'BiometricCaptureSession',
+    'PortalGroup',
+    'PortalDevice',
 ]

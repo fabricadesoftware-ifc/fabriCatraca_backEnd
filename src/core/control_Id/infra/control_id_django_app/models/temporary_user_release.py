@@ -9,6 +9,7 @@ from src.core.user.infra.user_django_app.models import User
 from .access_logs import AccessLogs
 from .access_rule import AccessRule
 from .user_access_rule import UserAccessRule
+from .portal_group import PortalGroup
 
 
 class TemporaryUserRelease(BaseModel):
@@ -34,6 +35,16 @@ class TemporaryUserRelease(BaseModel):
         AccessRule,
         on_delete=models.PROTECT,
         related_name="temporary_user_releases",
+    )
+    portal_group = models.ForeignKey(
+        PortalGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="temporary_user_releases",
+        help_text=(
+            "Se definido, a liberação se aplica apenas às catracas deste grupo."
+        ),
     )
     user_access_rule = models.ForeignKey(
         UserAccessRule,

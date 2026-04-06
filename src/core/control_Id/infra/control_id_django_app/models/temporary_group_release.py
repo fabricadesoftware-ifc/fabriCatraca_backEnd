@@ -9,6 +9,7 @@ from src.core.control_Id.infra.control_id_django_app.models import CustomGroup a
 from .access_logs import AccessLogs
 from .access_rule import AccessRule
 from .group_access_rules import GroupAccessRule
+from .portal_group import PortalGroup
 
 
 class TemporaryGroupRelease(BaseModel):
@@ -34,6 +35,16 @@ class TemporaryGroupRelease(BaseModel):
         AccessRule,
         on_delete=models.PROTECT,
         related_name="temporary_group_releases",
+    )
+    portal_group = models.ForeignKey(
+        PortalGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="temporary_group_releases",
+        help_text=(
+            "Se definido, a liberacao se aplica apenas as catracas deste grupo."
+        ),
     )
     group_access_rule = models.ForeignKey(
         GroupAccessRule,

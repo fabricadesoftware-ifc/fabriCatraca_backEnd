@@ -21,6 +21,8 @@ from .device_actions import (
 from .temporary_user_release import TemporaryUserReleaseSerializer
 from .release_audit import ReleaseAuditSerializer
 from .temporary_group_release import TemporaryGroupReleaseSerializer
+from .portal_group import PortalGroupSerializer
+from .portal_device import PortalDeviceSerializer
 
 __all__ = [
     'TemplateSerializer',
@@ -45,4 +47,6 @@ __all__ = [
     'TemporaryUserReleaseSerializer',
     'ReleaseAuditSerializer',
     'TemporaryGroupReleaseSerializer',
+    'PortalGroupSerializer',
+    'PortalDeviceSerializer',
 ]

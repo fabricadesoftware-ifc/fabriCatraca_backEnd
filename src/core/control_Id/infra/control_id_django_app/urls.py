@@ -9,11 +9,13 @@ from rest_framework import viewsets, status
 from .views import (
     TemplateViewSet, TimeZoneViewSet, TimeSpanViewSet,
     AccessRuleViewSet, UserAccessRuleViewSet, AccessRuleTimeZoneViewSet,
-    PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet, 
+    PortalViewSet, PortalAccessRuleViewSet, CardViewSet, AreaViewSet,
     GroupViewSet, UserGroupViewSet, GroupAccessRulesViewSet,
     message_to_screen, buzzer_buzz, remote_user_authorization,
     ReleaseAuditViewSet, TemporaryUserReleaseViewSet, TemporaryGroupReleaseViewSet,
 )
+from .views.portal_group import PortalGroupViewSet
+from .views.portal_device import PortalDeviceViewSet
 from .views.device import DeviceViewSet
 from .views.sync import sync_all, sync_status
 from .utils import ExportUsersView, ImportUsersView
@@ -37,6 +39,8 @@ router.register(r'access_logs', AccessLogsViewSet)
 router.register(r'temporary_user_releases', TemporaryUserReleaseViewSet)
 router.register(r'temporary_group_releases', TemporaryGroupReleaseViewSet)
 router.register(r'release_audits', ReleaseAuditViewSet, basename='releaseaudit')
+router.register(r'portal_groups', PortalGroupViewSet)
+router.register(r'portal_devices', PortalDeviceViewSet, basename='portaldevice')
 
 @api_view(['GET'])
 def control_id_root(request, format=None):

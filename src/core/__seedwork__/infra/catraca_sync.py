@@ -303,27 +303,45 @@ class ControlIDSyncMixin:
         response.raise_for_status()
         return response.json().get(f"{object_name}", [])
 
+    def _get_target_devices(
+        self, device_ids: List[int] | None = None
+    ) -> list:
+        """
+        Retorna a lista de devices alvo.
+        Se device_ids for fornecido, filtra por esses IDs.
+        Se self._device estiver definido, usa apenas aquele device.
+        Caso contrário, retorna todos os devices ativos.
+        """
+        from src.core.control_Id.infra.control_id_django_app.models.device import (
+            Device,
+        )
+
+        if self._device is not None:
+            return [self._device]
+        if device_ids:
+            return list(Device.objects.filter(id__in=device_ids, is_active=True))
+        return list(Device.objects.filter(is_active=True))
+
     def create_objects_in_all_devices(
-        self, object_name: str, values: List[Mapping[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """
-        Cria objetos em todas as catracas ativas.
+        Cria objetos em todas as catracas ativas (ou apenas nas especificadas por device_ids).
         Args:
             object_name: Nome do objeto na API da catraca
             values: Lista de valores para criar
+            device_ids: Lista opcional de device IDs para limitar o escopo
         Returns:
             Response: Resposta da API
         """
         try:
-            from src.core.control_Id.infra.control_id_django_app.models.device import (
-                Device,
-            )
+            devices = self._get_target_devices(device_ids)
 
-            # Se um device foi definido via self.set_device, aplica somente nele
-            if self._device is not None:
-                devices = [self._device]
-            else:
-                devices = list(Device.objects.filter(is_active=True))
+            if not devices:
+                return Response(
+                    {"error": "Nenhuma catraca ativa encontrada"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
                 if not devices:
                     return Response(
                         {"error": "Nenhuma catraca ativa encontrada"},
@@ -410,32 +428,24 @@ class ControlIDSyncMixin:
 
 
     def create_or_update_objects_in_all_devices(
-        self, object_name: str, values: List[Mapping[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """
-        Cria ou atualiza objetos em todas as catracas ativas com base em um campo de ID.
-        Se o objeto já existir (baseado no id_field), ele será atualizado; caso contrário, criado.
+        Cria ou atualiza objetos em todas as catracas ativas (ou apenas nas especificadas por device_ids).
         Args:
             object_name: Nome do objeto na API da catraca
             values: Lista de valores para criar ou atualizar
-            id_field: Campo que identifica unicamente o objeto (padrão é "id")
+            device_ids: Lista opcional de device IDs para limitar o escopo
         Returns:
             Response: Resposta da API
         """
         try:
-            from src.core.control_Id.infra.control_id_django_app.models.device import (
-                Device,
-            )
-
-            if self._device is not None:
-                devices = [self._device]
-            else:
-                devices = list(Device.objects.filter(is_active=True))
-                if not devices:
-                    return Response(
-                        {"error": "Nenhuma catraca ativa encontrada"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            devices = self._get_target_devices(device_ids)
+            if not devices:
+                return Response(
+                    {"error": "Nenhuma catraca ativa encontrada"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             with transaction.atomic():
                 for device in devices:
@@ -462,31 +472,25 @@ class ControlIDSyncMixin:
             )
 
     def update_objects_in_all_devices(
-        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any]
+        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """
-        Atualiza objetos em todas as catracas ativas.
+        Atualiza objetos em todas as catracas ativas (ou apenas nas especificadas por device_ids).
         Args:
             object_name: Nome do objeto na API da catraca
             values: Lista de valores para atualizar
             where: Condição para atualização
+            device_ids: Lista opcional de device IDs para limitar o escopo
         Returns:
             Response: Resposta da API
         """
         try:
-            from src.core.control_Id.infra.control_id_django_app.models.device import (
-                Device,
-            )
-
-            if self._device is not None:
-                devices = [self._device]
-            else:
-                devices = list(Device.objects.filter(is_active=True))
-                if not devices:
-                    return Response(
-                        {"error": "Nenhuma catraca ativa encontrada"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            devices = self._get_target_devices(device_ids)
+            if not devices:
+                return Response(
+                    {"error": "Nenhuma catraca ativa encontrada"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             with transaction.atomic():
                 for device in devices:
@@ -509,30 +513,24 @@ class ControlIDSyncMixin:
             )
 
     def destroy_objects_in_all_devices(
-        self, object_name: str, where: Dict[str, Any]
+        self, object_name: str, where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """
-        Remove objetos de todas as catracas ativas.
+        Remove objetos de todas as catracas ativas (ou apenas nas especificadas por device_ids).
         Args:
             object_name: Nome do objeto na API da catraca
             where: Condição para remoção
+            device_ids: Lista opcional de device IDs para limitar o escopo
         Returns:
             Response: Resposta da API
         """
         try:
-            from src.core.control_Id.infra.control_id_django_app.models.device import (
-                Device,
-            )
-
-            if self._device is not None:
-                devices = [self._device]
-            else:
-                devices = list(Device.objects.filter(is_active=True))
-                if not devices:
-                    return Response(
-                        {"error": "Nenhuma catraca ativa encontrada"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            devices = self._get_target_devices(device_ids)
+            if not devices:
+                return Response(
+                    {"error": "Nenhuma catraca ativa encontrada"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             with transaction.atomic():
                 for device in devices:
@@ -555,26 +553,28 @@ class ControlIDSyncMixin:
             )
 
     def create_objects(
-        self, object_name: str, values: List[Mapping[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """Mantido por compatibilidade, chama create_objects_in_all_devices"""
-        return self.create_objects_in_all_devices(object_name, values)
+        return self.create_objects_in_all_devices(object_name, values, device_ids=device_ids, **kwargs)
 
     def create_or_update_objects(
-        self, object_name: str, values: List[Mapping[str, Any]]
+        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """Mantido por compatibilidade, chama create_or_update_objects_in_all_devices"""
-        return self.create_or_update_objects_in_all_devices(object_name, values)
+        return self.create_or_update_objects_in_all_devices(object_name, values, device_ids=device_ids, **kwargs)
 
     def update_objects(
-        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any]
+        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
     ) -> Response:
         """Mantido por compatibilidade, chama update_objects_in_all_devices"""
-        return self.update_objects_in_all_devices(object_name, values, where)
+        return self.update_objects_in_all_devices(object_name, values, where, device_ids=device_ids, **kwargs)
 
-    def destroy_objects(self, object_name: str, where: Dict[str, Any]) -> Response:
+    def destroy_objects(
+        self, object_name: str, where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
+    ) -> Response:
         """Mantido por compatibilidade, chama destroy_objects_in_all_devices"""
-        return self.destroy_objects_in_all_devices(object_name, where)
+        return self.destroy_objects_in_all_devices(object_name, where, device_ids=device_ids, **kwargs)
 
     def remote_enroll(
         self, user_id: int, type: str, save: bool, sync: bool
