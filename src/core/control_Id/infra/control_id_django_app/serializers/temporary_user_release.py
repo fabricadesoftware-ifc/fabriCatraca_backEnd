@@ -20,9 +20,16 @@ from src.core.user.infra.user_django_app.models import User
 
 
 class TemporaryReleaseUserSerializer(serializers.ModelSerializer):
+    picture_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ["id", "name", "registration"]
+        fields = ["id", "name", "registration", "cpf", "phone", "birth_date", "picture_url"]
+
+    def get_picture_url(self, obj):
+        if obj.picture and obj.picture.arquivo:
+            return obj.picture.arquivo.url
+        return None
 
 
 class TemporaryReleaseAccessRuleSerializer(serializers.ModelSerializer):

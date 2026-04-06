@@ -2,6 +2,7 @@ from django.contrib.auth.models import Group
 from rest_framework import serializers
 
 from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.uploader.models import Archive
 
 from .models import User
 
@@ -15,6 +16,7 @@ class DeviceBasicSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     user_groups = serializers.SerializerMethodField()
     device_admin = serializers.BooleanField(source="is_staff", required=False)
+    picture_url = serializers.SerializerMethodField()
     effective_app_role = serializers.CharField(read_only=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     selected_devices = DeviceBasicSerializer(read_only=True, many=True)
@@ -25,6 +27,14 @@ class UserSerializer(serializers.ModelSerializer):
         queryset=Device.objects.all(),
         source="selected_devices",
     )
+    picture_id = serializers.PrimaryKeyRelatedField(
+        queryset=Archive.objects.all(),
+        source="picture",
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+    remove_picture = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = User
@@ -46,6 +56,10 @@ class UserSerializer(serializers.ModelSerializer):
             "password",
             "device_admin",
             "user_groups",
+            "birth_date",
+            "picture_url",
+            "picture_id",
+            "remove_picture",
         ]
         extra_kwargs = {
             "email": {"required": False, "allow_blank": True, "allow_null": True},
@@ -56,6 +70,11 @@ class UserSerializer(serializers.ModelSerializer):
             {"id": group.pk, "name": group.name}
             for group in Group.objects.filter(usergroup__user=obj)
         ]
+
+    def get_picture_url(self, obj):
+        if obj.picture and obj.picture.arquivo:
+            return obj.picture.arquivo.url
+        return None
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -181,10 +200,13 @@ class UserSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         password = validated_data.pop("password", None)
         selected_devices = validated_data.pop("selected_devices", None)
+        remove_picture = validated_data.pop("remove_picture", False)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
+        if remove_picture:
+            instance.picture = None
         instance.save()
         if selected_devices is not None:
             instance.selected_devices.set(selected_devices)
@@ -205,6 +227,8 @@ class RoleAwareUserReadSerializer(UserSerializer):
             "user_groups",
             "device_scope",
             "selected_devices",
+            "birth_date",
+            "picture_url",
         },
         "guarita": {
             "id",
