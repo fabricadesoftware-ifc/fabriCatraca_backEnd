@@ -79,15 +79,24 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
     def get_picture_url(self, obj):
-        if not obj.picture or not obj.picture.arquivo:
+        picture = getattr(obj, "picture", None)
+        if picture is None:
+            picture_id = getattr(obj, "picture_id", None)
+            if picture_id is not None:
+                try:
+                    from src.core.uploader.models import Archive
+                    picture = Archive.objects.get(pk=picture_id)
+                except Archive.DoesNotExist:
+                    picture = None
+        if picture is None or not picture.arquivo:
             return None
         try:
-            return obj.picture.arquivo.url
+            return picture.arquivo.url
         except (OSError, ValueError):
             logger.warning(
                 "Failed to resolve picture URL for user %s (archive %s)",
                 obj.id,
-                obj.picture_id,
+                getattr(obj, "picture_id", None),
             )
             return None
 

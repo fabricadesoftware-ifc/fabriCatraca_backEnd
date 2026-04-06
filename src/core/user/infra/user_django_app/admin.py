@@ -27,6 +27,7 @@ class UserAdminForm(forms.ModelForm):
             "app_role",
             "panel_access_only",
             "pin",
+            "picture",
             "is_active",
             "is_staff",
             "is_superuser",
@@ -87,6 +88,13 @@ class UserAdmin(DjangoUserAdmin):
             {
                 "classes": ("module",),
                 "fields": ("name", "email", "registration"),
+            },
+        ),
+        (
+            _("Perfil"),
+            {
+                "classes": ("module",),
+                "fields": ("picture", "cpf", "phone", "birth_date"),
             },
         ),
         (
