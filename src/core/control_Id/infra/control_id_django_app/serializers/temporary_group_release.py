@@ -179,4 +179,13 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
             **validated_data,
         )
         ReleaseAuditService.sync_from_temporary_release(release)
+
+        # Agenda tasks com eta exato
+        from src.core.control_Id.infra.control_id_django_app.tasks import (
+            activate_group_release,
+            expire_group_release,
+        )
+        activate_group_release.apply_async(kwargs={"release_id": release.id}, eta=valid_from)
+        expire_group_release.apply_async(kwargs={"release_id": release.id}, eta=valid_until)
+
         return release

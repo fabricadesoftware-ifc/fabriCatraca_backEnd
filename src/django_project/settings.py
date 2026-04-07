@@ -276,13 +276,9 @@ CELERY_RESULT_BACKEND = "rpc://"
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', BROKER_URL)
 CELERY_BEAT_SCHEDULE = {
-    "process_temporary_user_releases": {
-        "task": "src.core.control_Id.infra.control_id_django_app.tasks.process_temporary_user_releases",
-        "schedule": TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS,
-    },
-    "process_temporary_group_releases": {
-        "task": "src.core.control_Id.infra.control_id_django_app.tasks.process_temporary_group_releases",
-        "schedule": TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS,
+    "reconcile_temporary_releases": {
+        "task": "src.core.control_Id.infra.control_id_django_app.tasks.reconcile_temporary_releases",
+        "schedule": 600,  # safety net a cada 10 min
     },
     "check_monitor_heartbeats": {
         "task": "src.core.control_id_monitor.infra.control_id_monitor_django_app.tasks.check_monitor_heartbeats",

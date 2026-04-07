@@ -187,4 +187,13 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             **validated_data,
         )
         ReleaseAuditService.sync_from_temporary_release(release)
+
+        # Agenda tasks com eta exato
+        from src.core.control_Id.infra.control_id_django_app.tasks import (
+            activate_user_release,
+            expire_user_release,
+        )
+        activate_user_release.apply_async(kwargs={"release_id": release.id}, eta=valid_from)
+        expire_user_release.apply_async(kwargs={"release_id": release.id}, eta=valid_until)
+
         return release
