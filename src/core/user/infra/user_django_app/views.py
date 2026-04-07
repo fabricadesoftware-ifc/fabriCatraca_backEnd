@@ -400,11 +400,14 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         """
         Cria um usuario visitante e seu cartao em uma unica operacao.
         Fluxo:
-        1. remote_enroll na catraca (save=False) para capturar cartao
+        1. se card_value vier no payload, usa diretamente; caso contrario,
+           faz remote_enroll na catraca para capturar
         2. salva o usuario
         3. salva o cartao vinculado
         """
         enrollment_device_id = request.data.get("enrollment_device_id")
+        captured_value = request.data.get("card_value")
+
         if not enrollment_device_id:
             return Response(
                 {"error": "E necessario especificar uma catraca para captura do cartao"},
@@ -419,19 +422,20 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # 1. Remote enroll do cartao
-        self.set_device(enrollment_device)
-        response = self.remote_enroll(user_id=0, type="card", save=False, sync=True)
-
-        if response.status_code != status.HTTP_201_CREATED:
-            return response
-
-        captured_value = response.data.get("card_value")
+        # 1. Se nao veio card_value, faz remote enroll para capturar
         if not captured_value:
-            return Response(
-                {"error": "Catraca nao retornou o valor do cartao"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            self.set_device(enrollment_device)
+            response = self.remote_enroll(user_id=0, type="card", save=False, sync=True)
+
+            if response.status_code != status.HTTP_201_CREATED:
+                return response
+
+            captured_value = response.data.get("card_value")
+            if not captured_value:
+                return Response(
+                    {"error": "Catraca nao retornou o valor do cartao"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
         # 2. Cria o usuario (remove enrollment_device_id do data)
         user_data = {k: v for k, v in request.data.items() if k != "enrollment_device_id"}
