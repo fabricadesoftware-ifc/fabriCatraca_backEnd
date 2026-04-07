@@ -4,6 +4,7 @@ from django.contrib.auth.models import Group
 from rest_framework import serializers
 
 from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 from src.core.uploader.models import Archive
 
 from .models import User
@@ -82,9 +83,10 @@ class UserSerializer(serializers.ModelSerializer):
         }
 
     def get_user_groups(self, obj):
+        group_ids = UserGroup.objects.filter(user=obj).values_list("group_id", flat=True)
         return [
             {"id": group.pk, "name": group.name}
-            for group in Group.objects.filter(usergroup__user=obj)
+            for group in Group.objects.filter(id__in=group_ids)
         ]
 
     def get_picture_url(self, obj):
