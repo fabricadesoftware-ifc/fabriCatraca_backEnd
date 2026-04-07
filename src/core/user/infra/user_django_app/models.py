@@ -78,6 +78,18 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
     phone_landline = models.CharField(max_length=20, blank=True, null=True)
     phone_responsible = models.CharField(max_length=20, blank=True, null=True)
     responsible_name = models.CharField(max_length=255, blank=True, null=True)
+    start_date = models.DateField(
+        blank=True, null=True,
+        help_text="Data de inicio de vigencia do acesso.",
+    )
+    end_date = models.DateField(
+        blank=True, null=True,
+        help_text="Data de fim de vigencia do acesso.",
+    )
+    last_passage_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="Horario da ultima passagem registrada na catraca.",
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["name"]

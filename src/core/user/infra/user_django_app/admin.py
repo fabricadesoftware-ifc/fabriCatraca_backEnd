@@ -94,7 +94,7 @@ class UserAdmin(DjangoUserAdmin):
             _("Perfil"),
             {
                 "classes": ("module",),
-                "fields": ("picture", "cpf", "phone", "birth_date"),
+                "fields": ("picture", "cpf", "phone", "birth_date", "start_date", "end_date"),
             },
         ),
         (
@@ -131,7 +131,7 @@ class UserAdmin(DjangoUserAdmin):
             _("Metadados"),
             {
                 "classes": ("collapse", "module"),
-                "fields": ("last_login", "date_joined"),
+                "fields": ("last_login", "date_joined", "last_passage_at"),
             },
         ),
     )

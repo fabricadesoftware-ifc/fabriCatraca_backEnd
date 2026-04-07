@@ -341,6 +341,10 @@ class MonitorNotificationHandler:
                     f"✅ [ACCESS_LOG] {'Criado' if created else 'Já existia'} log {log_id} do device {device.name}"
                 )
 
+                # ── Atualiza ultima passagem do usuario ──
+                if created and user:
+                    User.objects.filter(id=user.id).update(last_passage_at=timestamp)  # type: ignore[attr-defined]
+
                 # ── Verificação de acesso: loga o MOTIVO no console ──
                 if created:
                     try:

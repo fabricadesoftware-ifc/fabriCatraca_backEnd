@@ -64,6 +64,9 @@ class UserSerializer(serializers.ModelSerializer):
             "picture_url",
             "picture_id",
             "remove_picture",
+            "start_date",
+            "end_date",
+            "last_passage_at",
         ]
         extra_kwargs = {
             "email": {"required": False, "allow_blank": True, "allow_null": True},
