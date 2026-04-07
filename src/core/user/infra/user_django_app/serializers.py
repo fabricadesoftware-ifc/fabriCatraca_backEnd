@@ -38,7 +38,9 @@ class UserSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
-    remove_picture = serializers.BooleanField(write_only=True, required=False, default=False)
+    remove_picture = serializers.BooleanField(
+        write_only=True, required=False, default=False
+    )
 
     class Meta:
         model = User
@@ -72,7 +74,11 @@ class UserSerializer(serializers.ModelSerializer):
             "email": {"required": False, "allow_blank": True, "allow_null": True},
             "cpf": {"required": False, "allow_blank": True, "allow_null": True},
             "phone": {"required": False, "allow_blank": True, "allow_null": True},
-            "registration": {"required": False, "allow_blank": True, "allow_null": True},
+            "registration": {
+                "required": False,
+                "allow_blank": True,
+                "allow_null": True,
+            },
         }
 
     def get_user_groups(self, obj):
@@ -88,6 +94,7 @@ class UserSerializer(serializers.ModelSerializer):
             if picture_id is not None:
                 try:
                     from src.core.uploader.models import Archive
+
                     picture = Archive.objects.get(pk=picture_id)
                 except Archive.DoesNotExist:
                     picture = None

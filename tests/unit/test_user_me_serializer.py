@@ -21,7 +21,9 @@ def test_me_uses_user_serializer_without_role_restrictions():
 
 @pytest.mark.unit
 @pytest.mark.django_db
-def test_user_serializer_requires_selected_devices_when_scope_is_selected(device_factory):
+def test_user_serializer_requires_selected_devices_when_scope_is_selected(
+    device_factory,
+):
     device = device_factory()
     serializer = UserSerializer(
         data={
