@@ -83,7 +83,9 @@ class UserSerializer(serializers.ModelSerializer):
         }
 
     def get_user_groups(self, obj):
-        group_ids = UserGroup.objects.filter(user=obj).values_list("group_id", flat=True)
+        group_ids = UserGroup.objects.filter(user=obj).values_list(
+            "group_id", flat=True
+        )
         return [
             {"id": group.pk, "name": group.name}
             for group in Group.objects.filter(id__in=group_ids)
