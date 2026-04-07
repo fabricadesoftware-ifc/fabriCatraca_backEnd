@@ -19,12 +19,13 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
 
     class UserType(models.IntegerChoices):
         VISITOR = 1
-
     class AppRole(models.TextChoices):
         NONE = "", "Sem perfil"
         ADMIN = "admin", "Administrador"
         GUARITA = "guarita", "Guarita"
         SISAE = "sisae", "SISAE"
+        ALUNO = "aluno", "Aluno"
+        SERVIDOR = "servidor", "Servidor"
 
     class DeviceScope(models.TextChoices):
         ALL_ACTIVE = "all_active", "Todas as catracas ativas"
@@ -40,7 +41,7 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
         max_length=20,
         choices=AppRole.choices,
         blank=True,
-        default=AppRole.NONE,
+        default=AppRole.ALUNO,
         help_text="Perfil de aplicacao para acesso ao painel.",
     )
     panel_access_only = models.BooleanField(
