@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -6,18 +7,52 @@ from ..serializers.portal_access_rule import PortalAccessRuleSerializer
 from src.core.__seedwork__.infra.mixins import PortalAccessRuleSyncMixin
 from drf_spectacular.utils import extend_schema
 
-@extend_schema(tags=["Portal Access Rules"])    
+
+@extend_schema(tags=["Portal Access Rules"])
 class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
     queryset = PortalAccessRule.objects.all()
     serializer_class = PortalAccessRuleSerializer
-    filterset_fields = ['portal_id', 'access_rule_id']
-    search_fields = ['portal_id', 'access_rule_id']
-    ordering_fields = ['portal_id', 'access_rule_id']
+    filterset_fields = ["portal_id", "access_rule_id"]
+    search_fields = ["portal_id", "access_rule_id"]
+    ordering_fields = ["portal_id", "access_rule_id"]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
+
+        portal = serializer.validated_data["portal"]
+        access_rule = serializer.validated_data["access_rule"]
+
+        instance = PortalAccessRule.objects.filter(
+            portal=portal,
+            access_rule=access_rule,
+        ).first()
+
+        if instance:
+            return Response(
+                self.get_serializer(instance).data, status=status.HTTP_200_OK
+            )
+
+        soft_deleted_instance = PortalAccessRule._base_manager.filter(
+            portal=portal,
+            access_rule=access_rule,
+        ).first()
+
+        if soft_deleted_instance:
+            soft_deleted_instance.undelete()
+            instance = soft_deleted_instance
+        else:
+            try:
+                instance = serializer.save()
+            except IntegrityError:
+                instance = PortalAccessRule._base_manager.filter(
+                    portal=portal,
+                    access_rule=access_rule,
+                ).first()
+                if not instance:
+                    raise
+                if getattr(instance, "deleted", None):
+                    instance.undelete()
 
         response = self.create_in_catraca(instance)
 
@@ -25,7 +60,9 @@ class PortalAccessRuleViewSet(PortalAccessRuleSyncMixin, viewsets.ModelViewSet):
             instance.delete()  # Reverte se falhar na catraca
             return response
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()

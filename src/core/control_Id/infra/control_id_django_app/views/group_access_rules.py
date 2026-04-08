@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -25,7 +26,44 @@ class GroupAccessRulesViewSet(GroupAccessRulesSyncMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
+
+        group = serializer.validated_data["group"]
+        access_rule = serializer.validated_data["access_rule"]
+        portal_group = serializer.validated_data.get("portal_group")
+
+        instance = GroupAccessRule.objects.filter(
+            group=group,
+            access_rule=access_rule,
+            portal_group=portal_group,
+        ).first()
+
+        if instance:
+            return Response(
+                self.get_serializer(instance).data, status=status.HTTP_200_OK
+            )
+
+        soft_deleted_instance = GroupAccessRule._base_manager.filter(
+            group=group,
+            access_rule=access_rule,
+            portal_group=portal_group,
+        ).first()
+
+        if soft_deleted_instance:
+            soft_deleted_instance.undelete()
+            instance = soft_deleted_instance
+        else:
+            try:
+                instance = serializer.save()
+            except IntegrityError:
+                instance = GroupAccessRule._base_manager.filter(
+                    group=group,
+                    access_rule=access_rule,
+                    portal_group=portal_group,
+                ).first()
+                if not instance:
+                    raise
+                if getattr(instance, "deleted", None):
+                    instance.undelete()
 
         device_ids = self._get_device_ids(instance.portal_group)
         response = self.create_in_catraca(instance, device_ids=device_ids)
@@ -34,7 +72,9 @@ class GroupAccessRulesViewSet(GroupAccessRulesSyncMixin, viewsets.ModelViewSet):
             instance.delete()
             return response
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()

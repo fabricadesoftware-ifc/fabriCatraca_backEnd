@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,30 +9,71 @@ from ..models.access_rule import AccessRule
 from ..models.timezone import TimeZone
 from drf_spectacular.utils import extend_schema
 
-@extend_schema(tags=["Access Rule Time Zone"])  
+
+@extend_schema(tags=["Access Rule Time Zone"])
 class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewSet):
     queryset = AccessRuleTimeZone.objects.all()
     serializer_class = AccessRuleTimeZoneSerializer
-    filterset_fields = ['access_rule_id', 'time_zone_id']
-    search_fields = ['access_rule_id', 'time_zone_id']
-    ordering_fields = ['access_rule_id', 'time_zone_id']
+    filterset_fields = ["access_rule_id", "time_zone_id"]
+    search_fields = ["access_rule_id", "time_zone_id"]
+    ordering_fields = ["access_rule_id", "time_zone_id"]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
+
+        access_rule = serializer.validated_data["access_rule"]
+        time_zone = serializer.validated_data["time_zone"]
+
+        instance = AccessRuleTimeZone.objects.filter(
+            access_rule=access_rule,
+            time_zone=time_zone,
+        ).first()
+
+        if instance:
+            return Response(
+                self.get_serializer(instance).data, status=status.HTTP_200_OK
+            )
+
+        soft_deleted_instance = AccessRuleTimeZone._base_manager.filter(
+            access_rule=access_rule,
+            time_zone=time_zone,
+        ).first()
+
+        if soft_deleted_instance:
+            soft_deleted_instance.undelete()
+            instance = soft_deleted_instance
+        else:
+            try:
+                instance = serializer.save()
+            except IntegrityError:
+                instance = AccessRuleTimeZone._base_manager.filter(
+                    access_rule=access_rule,
+                    time_zone=time_zone,
+                ).first()
+                if not instance:
+                    raise
+                if getattr(instance, "deleted", None):
+                    instance.undelete()
 
         # Criar na catraca
-        response = self.create_objects("access_rule_time_zones", [{
-            "access_rule_id": instance.access_rule.id,
-            "time_zone_id": instance.time_zone.id
-        }])
+        response = self.create_objects(
+            "access_rule_time_zones",
+            [
+                {
+                    "access_rule_id": instance.access_rule.id,
+                    "time_zone_id": instance.time_zone.id,
+                }
+            ],
+        )
 
         if response.status_code != status.HTTP_201_CREATED:
             instance.delete()  # Reverte se falhar na catraca
             return response
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -44,9 +86,14 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
             "access_rule_time_zones",
             {
                 "access_rule_id": instance.access_rule.id,
-                "time_zone_id": instance.time_zone.id
+                "time_zone_id": instance.time_zone.id,
             },
-            {"access_rule_time_zones": {"access_rule_id": instance.access_rule.id, "time_zone_id": instance.time_zone.id}}
+            {
+                "access_rule_time_zones": {
+                    "access_rule_id": instance.access_rule.id,
+                    "time_zone_id": instance.time_zone.id,
+                }
+            },
         )
 
         if response.status_code != status.HTTP_200_OK:
@@ -60,7 +107,12 @@ class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewS
         # Deletar na catraca
         response = self.destroy_objects(
             "access_rule_time_zones",
-            {"access_rule_time_zones": {"access_rule_id": instance.access_rule.id, "time_zone_id": instance.time_zone.id}}
+            {
+                "access_rule_time_zones": {
+                    "access_rule_id": instance.access_rule.id,
+                    "time_zone_id": instance.time_zone.id,
+                }
+            },
         )
 
         if response.status_code != status.HTTP_204_NO_CONTENT:

@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework import serializers
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from drf_spectacular.utils import extend_schema
 
 from src.core.control_Id.infra.control_id_django_app.models import (
@@ -29,16 +29,16 @@ class UserGroupImportSerializer(serializers.Serializer):
         help_text="ID do grupo para adicionar os usuários"
     )
 
-    def validate(self, data):
+    def validate(self, attrs):
         """Validação personalizada para o arquivo e grupo"""
         # Verifica se o grupo existe
         try:
-            group = CustomGroup.objects.get(id=data["group_id"])
+            CustomGroup.objects.get(id=attrs["group_id"])
         except CustomGroup.DoesNotExist:
             raise serializers.ValidationError({"group_id": "Grupo não encontrado"})
 
         # Verifica se o arquivo é um Excel
-        file = data.get("file")
+        file = attrs.get("file")
         if not file:
             raise serializers.ValidationError({"file": "Arquivo é obrigatório"})
 
@@ -47,7 +47,7 @@ class UserGroupImportSerializer(serializers.Serializer):
                 {"file": "Formato de arquivo inválido. Use .xlsx"}
             )
 
-        return data
+        return attrs
 
 
 class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
@@ -62,7 +62,50 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
+
+        user = serializer.validated_data["user"]
+        group = serializer.validated_data["group"]
+        instance = UserGroup.objects.filter(user=user, group=group).first()
+
+        if instance:
+            # Operação idempotente: se já existe ativo, apenas retorna o vínculo existente.
+            return Response(
+                self.get_serializer(instance).data, status=status.HTTP_200_OK
+            )
+
+        # SafeDelete pode ocultar registros já apagados logicamente; recupera via _base_manager.
+        soft_deleted_instance = UserGroup._base_manager.filter(
+            user=user, group=group
+        ).first()
+        if soft_deleted_instance:
+            if getattr(soft_deleted_instance, "deleted", None):
+                soft_deleted_instance.undelete()
+            instance = soft_deleted_instance
+            created = False
+        else:
+            try:
+                instance = serializer.save()
+                created = True
+            except IntegrityError:
+                # Corrida de concorrência: outra transação pode ter criado ao mesmo tempo.
+                existing = UserGroup._base_manager.filter(
+                    user=user, group=group
+                ).first()
+                if not existing:
+                    raise
+                if getattr(existing, "deleted", None):
+                    existing.undelete()
+                instance = existing
+                created = False
+
+        if not created:
+            # Recria na catraca quando o vínculo estava ausente localmente (ou soft-deletado).
+            response = self.create_in_catraca(instance)
+            if response.status_code != status.HTTP_201_CREATED:
+                return response
+            return Response(
+                self.get_serializer(instance).data, status=status.HTTP_200_OK
+            )
 
         response = self.create_in_catraca(instance)
 
@@ -70,7 +113,9 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
             instance.delete()  # Reverte se falhar na catraca
             return response
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
