@@ -78,8 +78,7 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
             user=user, group=group
         ).first()
         if soft_deleted_instance:
-            if getattr(soft_deleted_instance, "deleted", None):
-                soft_deleted_instance.undelete()
+            soft_deleted_instance.undelete()
             instance = soft_deleted_instance
             created = False
         else:
@@ -93,8 +92,7 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
                 ).first()
                 if not existing:
                     raise
-                if getattr(existing, "deleted", None):
-                    existing.undelete()
+                existing.undelete()
                 instance = existing
                 created = False
 

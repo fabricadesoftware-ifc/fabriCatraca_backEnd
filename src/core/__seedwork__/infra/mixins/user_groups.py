@@ -10,27 +10,40 @@ class UserGroupsSyncMixin(ControlIDSyncMixin):
     def _target_devices(self, instance: UserGroupLike):
         return list(instance.user.get_target_devices(include_inactive=False))
 
-    def _sync_to_target_devices(self, instance: UserGroupLike, *, method: str) -> Response:
+    def _sync_to_target_devices(
+        self, instance: UserGroupLike, *, method: str
+    ) -> Response:
         payload: UserGroupsData = {
             "user_id": instance.user.id,
             "group_id": instance.group.id,
         }
         devices = self._target_devices(instance)
         if not devices:
-            return Response({"success": True, "skipped": True}, status=status.HTTP_201_CREATED)
+            return Response(
+                {"success": True, "skipped": True}, status=status.HTTP_201_CREATED
+            )
 
         for device in devices:
             self.set_device(device)
             if method == "create":
-                response = self.create_objects("user_groups", [payload])
+                response = self.create_or_update_objects("user_groups", [payload])
+                if response.status_code == status.HTTP_200_OK:
+                    response.status_code = status.HTTP_201_CREATED
                 expected_status = status.HTTP_201_CREATED
             elif method == "update":
-                response = self.update_objects("user_groups", payload, {"user_groups": payload})
+                response = self.update_objects(
+                    "user_groups", payload, {"user_groups": payload}
+                )
                 expected_status = status.HTTP_200_OK
             else:
                 response = self.destroy_objects(
                     "user_groups",
-                    {"user_groups": {"user_id": instance.user.id, "group_id": instance.group.id}},
+                    {
+                        "user_groups": {
+                            "user_id": instance.user.id,
+                            "group_id": instance.group.id,
+                        }
+                    },
                 )
                 expected_status = status.HTTP_204_NO_CONTENT
 
