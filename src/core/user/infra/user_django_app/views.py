@@ -1,4 +1,5 @@
 import logging
+from typing import cast
 
 import requests
 from django.db import transaction
@@ -9,10 +10,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
+from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollCardResponse
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 from .models import User
-from .permissions import IsAdminRole, IsOperationalRole, IsAdminOrGuaritaRole, IsAdminOrSisaeRole
+from .permissions import (
+    IsAdminRole,
+    IsOperationalRole,
+    IsAdminOrGuaritaRole,
+    IsAdminOrSisaeRole,
+)
 from .serializers import RoleAwareUserReadSerializer, UserSerializer
 
 logger = logging.getLogger(__name__)
@@ -20,7 +27,11 @@ logger = logging.getLogger(__name__)
 
 @extend_schema(tags=["Users"])
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by("id").prefetch_related("usergroup_set", "selected_devices")
+    queryset = (
+        User.objects.all()
+        .order_by("id")
+        .prefetch_related("usergroup_set", "selected_devices")
+    )
     serializer_class = UserSerializer
     filterset_fields = [
         "id",
@@ -52,10 +63,15 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
     def _ensure_can_modify_user(self, request, instance):
         """Non-admin users can only create/edit/delete visitors (user_type_id=1)."""
-        if not request.user.is_superuser and request.user.effective_app_role != User.AppRole.ADMIN:
+        if (
+            not request.user.is_superuser
+            and request.user.effective_app_role != User.AppRole.ADMIN
+        ):
             if not self._is_visitor(instance):
                 return Response(
-                    {"error": "Apenas administradores podem modificar usuarios nao-visitantes."},
+                    {
+                        "error": "Apenas administradores podem modificar usuarios nao-visitantes."
+                    },
                     status=status.HTTP_403_FORBIDDEN,
                 )
         return None
@@ -132,7 +148,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 [{"user_id": instance.id, "value": instance.pin}],
             )
             if pin_resp.status_code != status.HTTP_201_CREATED:
-                logger.warning("Falha ao criar PIN na catraca %s: %s", device.name, pin_resp.data)
+                logger.warning(
+                    "Falha ao criar PIN na catraca %s: %s", device.name, pin_resp.data
+                )
 
         if self._is_device_admin_user(instance):
             self._set_user_admin_on_device(device, instance.id)
@@ -177,7 +195,10 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 "user_roles",
                 {"user_roles": {"user_id": instance.id}},
             )
-            if role_resp.status_code not in (status.HTTP_204_NO_CONTENT, status.HTTP_200_OK):
+            if role_resp.status_code not in (
+                status.HTTP_204_NO_CONTENT,
+                status.HTTP_200_OK,
+            ):
                 raise RuntimeError(
                     f"Erro ao remover papel administrativo na catraca {device.name}: {role_resp.data}"
                 )
@@ -193,10 +214,15 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             )
 
     def create(self, request, *args, **kwargs):
-        if not request.user.is_superuser and request.user.effective_app_role != User.AppRole.ADMIN:
+        if (
+            not request.user.is_superuser
+            and request.user.effective_app_role != User.AppRole.ADMIN
+        ):
             if request.data.get("user_type_id") != 1:
                 return Response(
-                    {"error": "Apenas administradores podem criar usuarios nao-visitantes."},
+                    {
+                        "error": "Apenas administradores podem criar usuarios nao-visitantes."
+                    },
                     status=status.HTTP_403_FORBIDDEN,
                 )
         serializer = self.get_serializer(data=request.data)
@@ -214,9 +240,13 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         self._create_user_in_device(device, instance)
                 except Exception as exc:
                     instance.delete()
-                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                    )
 
-        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -258,7 +288,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     common_ids = set()
 
                 for device_id in removed_ids:
-                    self._delete_user_from_device(previous_device_map[device_id], instance)
+                    self._delete_user_from_device(
+                        previous_device_map[device_id], instance
+                    )
 
                 for device_id in added_ids:
                     self._create_user_in_device(current_device_map[device_id], instance)
@@ -288,7 +320,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             instance.groups.clear()
             instance.user_permissions.clear()
 
-            from src.core.control_Id.infra.control_id_django_app.models.access_logs import AccessLogs
+            from src.core.control_Id.infra.control_id_django_app.models.access_logs import (
+                AccessLogs,
+            )
 
             AccessLogs.objects.filter(user=instance).update(user=None)
 
@@ -297,7 +331,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     try:
                         self._delete_user_from_device(device, instance)
                     except Exception as exc:
-                        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                        return Response(
+                            {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                        )
 
             instance.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
@@ -323,7 +359,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                             existing_user = User.objects.get(id=data["id"])
                             user_type = existing_user.user_type_id
                         except User.DoesNotExist:
-                            user_type = raw_type if raw_type and int(raw_type) == 1 else None
+                            user_type = (
+                                raw_type if raw_type and int(raw_type) == 1 else None
+                            )
 
                         User.objects.update_or_create(
                             id=data["id"],
@@ -341,7 +379,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     }
                 )
         except Exception as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def me(self, request):
@@ -361,15 +401,17 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         Nao cria usuario nem salva o cartao.
         Retorna o valor capturado da catraca.
         """
-        enrollment_device_id = request.data.get("enrollment_device_id")
+        enrollment_device_id: int = request.data.get("enrollment_device_id")
         if not enrollment_device_id:
             return Response(
-                {"error": "E necessario especificar uma catraca para captura do cartao"},
+                {
+                    "error": "E necessario especificar uma catraca para captura do cartao"
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            device = Device.objects.get(id=enrollment_device_id)
+            device: Device = Device.objects.get(id=enrollment_device_id)
         except Device.DoesNotExist:
             return Response(
                 {"error": f"Catraca com ID {enrollment_device_id} nao encontrada"},
@@ -377,21 +419,36 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             )
 
         self.set_device(device)
-        response = self.remote_enroll(user_id=0, type="card", save=False, sync=True)
+        response = cast(
+            Response,
+            self.remote_enroll(
+                user_id=0,
+                type="card",
+                save=False,
+                sync=True,
+            ),
+        )
 
         if response.status_code != status.HTTP_201_CREATED:
             return response
 
-        card_data = response.data
-        captured_value = card_data.get("card_value")
+        card_data = cast(RemoteEnrollCardResponse, response.data)
+        captured_value: int = card_data.get("card_value")
         if not captured_value:
             return Response(
-                {"error": "Catraca nao retornou o valor do cartao", "details": card_data},
+                {
+                    "error": "Catraca nao retornou o valor do cartao",
+                    "details": card_data,
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
         return Response(
-            {"device_id": device.id, "device_name": device.name, "card_value": captured_value},
+            {
+                "device_id": device.pk,
+                "device_name": device.name,
+                "card_value": captured_value,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -410,7 +467,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
         if not enrollment_device_id:
             return Response(
-                {"error": "E necessario especificar uma catraca para captura do cartao"},
+                {
+                    "error": "E necessario especificar uma catraca para captura do cartao"
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -425,12 +484,17 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         # 1. Se nao veio card_value, faz remote enroll para capturar
         if not captured_value:
             self.set_device(enrollment_device)
-            response = self.remote_enroll(user_id=0, type="card", save=False, sync=True)
+            response = cast(
+                Response,
+                self.remote_enroll(user_id=0, type="card", save=False, sync=True),
+            )
 
             if response.status_code != status.HTTP_201_CREATED:
                 return response
 
-            captured_value = response.data.get("card_value")
+            captured_value = cast(RemoteEnrollCardResponse, response.data).get(
+                "card_value"
+            )
             if not captured_value:
                 return Response(
                     {"error": "Catraca nao retornou o valor do cartao"},
@@ -438,7 +502,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 )
 
         # 2. Cria o usuario (remove enrollment_device_id do data)
-        user_data = {k: v for k, v in request.data.items() if k != "enrollment_device_id"}
+        user_data = {
+            k: v for k, v in request.data.items() if k != "enrollment_device_id"
+        }
         # Garante que e visitante
         user_data["user_type_id"] = 1
 
@@ -465,11 +531,19 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                         self.set_device(device)
                         self.create_objects(
                             "cards",
-                            [{"id": card.id, "user_id": instance.id, "value": int(captured_value)}],
+                            [
+                                {
+                                    "id": card.id,
+                                    "user_id": instance.id,
+                                    "value": int(captured_value),
+                                }
+                            ],
                         )
                 except Exception as exc:
                     instance.delete()
-                    return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                    )
 
         return Response(
             {

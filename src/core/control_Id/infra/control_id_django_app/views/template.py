@@ -3,6 +3,8 @@ from __future__ import annotations
 import traceback
 import requests
 
+from typing import Any, cast
+
 from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -23,6 +25,12 @@ from src.core.control_Id.infra.control_id_django_app.serializers.template import
     TemplateSerializer,
 )
 from src.core.user.infra.user_django_app.models import User
+
+from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollBioResponse
+
+
+CreateRemoteTemplatePayload = tuple[Template, dict[str, Any]]
+CompleteCaptureSessionPayload = tuple[Template, list[dict[str, Any]]]
 
 
 @extend_schema(tags=["Templates"])
@@ -80,7 +88,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 "templates",
                 [
                     {
-                        "id": instance.id,
+                        "id": instance.pk,
                         "user_id": instance.user.id,
                         "template": instance.template,
                         "finger_type": instance.finger_type,
@@ -91,7 +99,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             if create_response.status_code != status.HTTP_201_CREATED:
                 errors.append(
                     {
-                        "device_id": device.id,
+                        "device_id": device.pk,
                         "device_name": device.name,
                         "details": create_response.data,
                     }
@@ -99,17 +107,25 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
         return errors
 
-    def _create_remote_template(self, *, user_id: int, enrollment_device: Device):
+    def _create_remote_template(
+        self,
+        *,
+        user_id: int,
+        enrollment_device: Device,
+    ) -> Response | CreateRemoteTemplatePayload:
         self.set_device(enrollment_device)
-        response = self.remote_enroll(
-            user_id=user_id,
-            type="biometry",
-            save=False,
-            sync=True,
+        response = cast(
+            Response,
+            self.remote_enroll(
+                user_id=user_id,
+                type="biometry",
+                save=False,
+                sync=True,
+            ),
         )
 
         if response.status_code != status.HTTP_201_CREATED:
-            return None, Response(
+            return Response(
                 {
                     "error": "Erro no cadastro remoto da biometria",
                     "details": response.data,
@@ -117,10 +133,19 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 status=response.status_code,
             )
 
-        template_data = response.data
-        captured_template = template_data.get("template")
+        if not isinstance(response.data, dict):
+            return Response(
+                {
+                    "error": "Resposta invalida da catraca no cadastro remoto da biometria",
+                    "details": response.data,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        template_data = cast(RemoteEnrollBioResponse, response.data)
+        captured_template = str(template_data.get("template") or "").strip()
         if not captured_template:
-            return None, Response(
+            return Response(
                 {
                     "error": "Catraca nao retornou o template biometrico",
                     "details": template_data,
@@ -131,7 +156,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(
             data={
                 "user_id": user_id,
-                "enrollment_device_id": enrollment_device.id,
+                "enrollment_device_id": enrollment_device.pk,
             }
         )
         serializer.is_valid(raise_exception=True)
@@ -141,16 +166,15 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         return instance, {
             "capture_mode": "catraca",
             "enrollment_device": {
-                "id": enrollment_device.id,
+                "id": enrollment_device.pk,
                 "name": enrollment_device.name,
             },
             "replication_errors": replication_errors,
         }
 
     def _check_device_api_key(self, request):
-        sent_key = (
-            request.headers.get("X-Bio-Device-Key")
-            or request.query_params.get("api_key")
+        sent_key = request.headers.get("X-Bio-Device-Key") or request.query_params.get(
+            "api_key"
         )
         expected_key = getattr(settings, "BIOMETRIC_DEVICE_API_KEY", "")
         return bool(expected_key) and sent_key == expected_key
@@ -167,10 +191,16 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             write_index += 2
         return bytes(raw_image)
 
-    def _extract_template_from_raw_capture(self, session: BiometricCaptureSession, packed_image: bytes):
-        extractor_device = session.extractor_device or self._get_default_extractor_device()
+    def _extract_template_from_raw_capture(
+        self, session: BiometricCaptureSession, packed_image: bytes
+    ):
+        extractor_device = (
+            session.extractor_device or self._get_default_extractor_device()
+        )
         if extractor_device is None:
-            raise ValueError("Nenhuma catraca ativa disponivel para extrair o template.")
+            raise ValueError(
+                "Nenhuma catraca ativa disponivel para extrair o template."
+            )
 
         self.set_device(extractor_device)
         extractor_session = self.login()
@@ -188,7 +218,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
         template_value = str(payload.get("template") or "").strip()
         if not template_value:
-            raise ValueError("A catraca nao retornou um template valido para a captura.")
+            raise ValueError(
+                "A catraca nao retornou um template valido para a captura."
+            )
 
         return {
             "quality": int(payload.get("quality", 0) or 0),
@@ -205,7 +237,11 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     ):
         extracted = self._extract_template_from_raw_capture(session, packed_image)
         attempts = list(session.attempts or [])
-        attempts = [item for item in attempts if int(item.get("attempt", 0) or 0) != attempt_number]
+        attempts = [
+            item
+            for item in attempts
+            if int(item.get("attempt", 0) or 0) != attempt_number
+        ]
         attempts.append(
             {
                 "attempt": attempt_number,
@@ -223,7 +259,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         )
         session.attempts = attempts
         session.error_message = ""
-        session.save(update_fields=["status", "attempts", "error_message", "updated_at"])
+        session.save(
+            update_fields=["status", "attempts", "error_message", "updated_at"]
+        )
         return attempts
 
     def _serialize_capture_session(self, session: BiometricCaptureSession):
@@ -237,8 +275,8 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 }
             )
         return {
-            "id": session.id,
-            "user_id": session.user_id,
+            "id": session.pk,
+            "user_id": session.user.pk,
             "status": session.status,
             "sensor_identifier": session.sensor_identifier,
             "selected_quality": session.selected_quality,
@@ -246,13 +284,13 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             "attempts": attempts,
             "expires_at": session.expires_at,
             "finished_at": session.finished_at,
-            "template_id": session.template_id,
+            "template_id": session.template.pk,
             "extractor_device": (
                 {
-                    "id": session.extractor_device_id,
+                    "id": session.extractor_device.pk,
                     "name": session.extractor_device.name,
                 }
-                if session.extractor_device_id
+                if session.extractor_device.pk
                 else None
             ),
         }
@@ -264,12 +302,15 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         template_value: str,
         quality: int | None,
         attempts: list[dict],
-    ):
+    ) -> CompleteCaptureSessionPayload:
         with transaction.atomic():
-            serializer = self.get_serializer(data={"user_id": session.user_id})
+            serializer = self.get_serializer(data={"user_id": session.user.pk})
             serializer.is_valid(raise_exception=True)
-            instance = serializer.save(template=template_value)
-            replication_errors = self._replicate_template_to_active_devices(instance)
+            instance = cast(Template, serializer.save(template=template_value))
+            replication_errors = cast(
+                list[dict[str, Any]],
+                self._replicate_template_to_active_devices(instance),
+            )
 
             session.template = instance
             session.status = BiometricCaptureSession.STATUS_COMPLETED
@@ -289,7 +330,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 ]
             )
 
-            return instance, replication_errors
+            result: CompleteCaptureSessionPayload = (instance, replication_errors)
+
+        return result
 
     def create(self, request, *args, **kwargs):
         try:
@@ -328,27 +371,31 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             enrollment_device = get_object_or_404(Device, id=enrollment_device_id)
             user = get_object_or_404(User, id=int(user_id))
             target_device_ids = {
-                device.id for device in self._get_target_devices_for_user(user)
+                device.pk for device in self._get_target_devices_for_user(user)
             }
             if not target_device_ids:
                 return Response(
                     {"error": "Usuario nao possui catracas alvo para biometria."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if enrollment_device.id not in target_device_ids:
+            if enrollment_device.pk not in target_device_ids:
                 return Response(
-                    {"error": "A catraca escolhida nao faz parte do escopo do usuario."},
+                    {
+                        "error": "A catraca escolhida nao faz parte do escopo do usuario."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            instance, payload_or_response = self._create_remote_template(
+            remote_template_result = self._create_remote_template(
                 user_id=int(user_id),
                 enrollment_device=enrollment_device,
             )
-            if isinstance(payload_or_response, Response):
-                return payload_or_response
+            if isinstance(remote_template_result, Response):
+                return remote_template_result
+
+            instance, extra_payload = remote_template_result
 
             return Response(
-                self._serialize_instance(instance, payload_or_response),
+                self._serialize_instance(instance, extra_payload),
                 status=status.HTTP_201_CREATED,
             )
 
@@ -373,7 +420,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
 
         user = get_object_or_404(User, id=int(user_id))
         target_device_ids = {
-            device.id for device in self._get_target_devices_for_user(user)
+            device.pk for device in self._get_target_devices_for_user(user)
         }
         if not target_device_ids:
             return Response(
@@ -382,7 +429,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             )
 
         extractor_device_id = request.data.get("extractor_device_id")
-        sensor_identifier = str(request.data.get("sensor_identifier") or "local-default").strip()
+        sensor_identifier = str(
+            request.data.get("sensor_identifier") or "local-default"
+        ).strip()
         if not sensor_identifier:
             return Response(
                 {"error": "sensor_identifier e obrigatorio"},
@@ -395,14 +444,20 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
                 id=extractor_device_id,
                 is_active=True,
             )
-            if extractor_device.id not in target_device_ids:
+            if extractor_device.pk not in target_device_ids:
                 return Response(
-                    {"error": "A catraca extratora nao faz parte do escopo do usuario."},
+                    {
+                        "error": "A catraca extratora nao faz parte do escopo do usuario."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
             extractor_device = next(
-                (device for device in self._get_target_devices_for_user(user) if device.is_active),
+                (
+                    device
+                    for device in self._get_target_devices_for_user(user)
+                    if device.is_active
+                ),
                 None,
             )
 
@@ -439,7 +494,11 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=False, methods=["get"], url_path=r"local-capture/(?P<session_id>\d+)/status")
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"local-capture/(?P<session_id>\d+)/status",
+    )
     def local_capture_status(self, request, session_id=None):
         self._expire_stale_sessions()
         session = get_object_or_404(BiometricCaptureSession, id=session_id)
@@ -454,10 +513,15 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     )
     def pending_local_capture(self, request):
         if not self._check_device_api_key(request):
-            return Response({"error": "Chave do dispositivo invalida"}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "Chave do dispositivo invalida"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         self._expire_stale_sessions()
-        sensor_identifier = str(request.query_params.get("sensor_identifier") or "local-default").strip()
+        sensor_identifier = str(
+            request.query_params.get("sensor_identifier") or "local-default"
+        ).strip()
         session = (
             BiometricCaptureSession.objects.select_related("extractor_device")
             .filter(
@@ -476,12 +540,12 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         return Response(
             {
                 "capture_available": True,
-                "capture_session_id": session.id,
+                "capture_session_id": session.pk,
                 "capture_token": str(session.token),
-                "user_id": session.user_id,
+                "user_id": session.user.pk,
                 "sensor_identifier": session.sensor_identifier,
                 "extractor_device": {
-                    "id": extractor.id,
+                    "id": extractor.pk,
                     "name": extractor.name,
                     "ip": extractor.ip,
                     "username": extractor.username,
@@ -499,7 +563,10 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
     )
     def upload_local_capture_raw(self, request, session_id=None):
         if not self._check_device_api_key(request):
-            return Response({"error": "Chave do dispositivo invalida"}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "Chave do dispositivo invalida"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         self._expire_stale_sessions()
         session = get_object_or_404(BiometricCaptureSession, id=session_id)
@@ -508,7 +575,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             session.status = BiometricCaptureSession.STATUS_EXPIRED
             session.finished_at = timezone.now()
             session.error_message = "Sessao expirada antes da entrega do template."
-            session.save(update_fields=["status", "finished_at", "error_message", "updated_at"])
+            session.save(
+                update_fields=["status", "finished_at", "error_message", "updated_at"]
+            )
             return Response({"error": "Sessao expirada"}, status=status.HTTP_410_GONE)
 
         capture_token = str(
@@ -517,20 +586,35 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             or ""
         )
         if str(session.token) != capture_token:
-            return Response({"error": "Token de captura invalido"}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "Token de captura invalido"}, status=status.HTTP_403_FORBIDDEN
+            )
 
         try:
             attempt_number = int(request.query_params.get("attempt") or 0)
             total_attempts = int(request.query_params.get("total_attempts") or 3)
         except ValueError:
-            return Response({"error": "attempt e total_attempts devem ser inteiros"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "attempt e total_attempts devem ser inteiros"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if attempt_number <= 0 or total_attempts <= 0 or attempt_number > total_attempts:
-            return Response({"error": "Sequencia de tentativas invalida"}, status=status.HTTP_400_BAD_REQUEST)
+        if (
+            attempt_number <= 0
+            or total_attempts <= 0
+            or attempt_number > total_attempts
+        ):
+            return Response(
+                {"error": "Sequencia de tentativas invalida"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         packed_image = request.body or b""
         if not packed_image:
-            return Response({"error": "Corpo binario com imagem bruta e obrigatorio"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Corpo binario com imagem bruta e obrigatorio"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             attempts = self._append_capture_attempt(
@@ -543,7 +627,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             session.status = BiometricCaptureSession.STATUS_FAILED
             session.finished_at = timezone.now()
             session.error_message = str(exc)
-            session.save(update_fields=["status", "finished_at", "error_message", "updated_at"])
+            session.save(
+                update_fields=["status", "finished_at", "error_message", "updated_at"]
+            )
             traceback.print_exc()
             return Response(
                 {"error": "Falha ao processar imagem biometrica", "details": str(exc)},
@@ -576,7 +662,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             session.status = BiometricCaptureSession.STATUS_FAILED
             session.finished_at = timezone.now()
             session.error_message = str(exc)
-            session.save(update_fields=["status", "finished_at", "error_message", "updated_at"])
+            session.save(
+                update_fields=["status", "finished_at", "error_message", "updated_at"]
+            )
             traceback.print_exc()
             return Response(
                 {"error": "Falha ao concluir sessao de captura", "details": str(exc)},

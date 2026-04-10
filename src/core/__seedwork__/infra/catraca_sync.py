@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, overload, Literal, Union
 from dataclasses import dataclass
 from typing import Optional
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
@@ -8,6 +8,7 @@ from django.conf import settings
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
+from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollBioResponse, RemoteEnrollCardResponse
 
 @dataclass
 class DefaultDeviceClass:
@@ -143,7 +144,6 @@ class ControlIDSyncMixin:
             return response
 
         except requests.RequestException as e:
-            # trunk-ignore(ruff/B904)
             raise Exception(f"Erro na requisição para {endpoint}: {str(e)}")
 
     @staticmethod
@@ -164,7 +164,7 @@ class ControlIDSyncMixin:
         request_timeout: int = 10,
     ) -> requests.Response:
         """
-        Executa um endpoint remoto na catraca atualmente selecionada.
+        Executa um endpoint remoto na catraca atuallmente selecionada.
         """
         if not self.device:
             raise ValueError("Nenhum dispositivo selecionado")
@@ -342,11 +342,6 @@ class ControlIDSyncMixin:
                     {"error": "Nenhuma catraca ativa encontrada"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-                if not devices:
-                    return Response(
-                        {"error": "Nenhuma catraca ativa encontrada"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
 
             # Validação de campos obrigatórios para garantir IDs consistentes entre backend e catracas
             required_fields_by_object = {
@@ -576,9 +571,19 @@ class ControlIDSyncMixin:
         """Mantido por compatibilidade, chama destroy_objects_in_all_devices"""
         return self.destroy_objects_in_all_devices(object_name, where, device_ids=device_ids, **kwargs)
 
+    @overload
+    def remote_enroll(
+        self, user_id: int, type: Literal["biometry"], save: bool, sync: bool
+    ) -> RemoteEnrollBioResponse: ...
+
+    @overload
+    def remote_enroll(
+        self, user_id: int, type: Literal["card"], save: bool, sync: bool
+    ) -> RemoteEnrollCardResponse: ...
+
     def remote_enroll(
         self, user_id: int, type: str, save: bool, sync: bool
-    ) -> Response:
+    ) -> Union[RemoteEnrollBioResponse, RemoteEnrollCardResponse] | Response:
         """
         Realiza o cadastro remoto de um usuário na catraca.
         Args:
@@ -605,18 +610,16 @@ class ControlIDSyncMixin:
                 "type": type,
                 "save": save,
                 "sync": sync,
-                "timeout": device_timeout,
             }
 
             sess = self.login()
 
             # Timeout do request um pouco maior que o da catraca (35s)
-            request_timeout = device_timeout + 5
 
             response = requests.post(
                 self.get_url(f"remote_enroll.fcgi?session={sess}"),
                 json=payload,
-                timeout=request_timeout,
+                timeout=device_timeout,
             )
 
             if response.status_code == 200:
