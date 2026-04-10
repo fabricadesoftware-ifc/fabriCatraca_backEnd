@@ -12,7 +12,7 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
 from .models import User
-from .permissions import IsAdminRole, IsOperationalRole, IsAdminOrGuaritaRole
+from .permissions import IsAdminRole, IsOperationalRole, IsAdminOrGuaritaRole, IsAdminOrSisaeRole
 from .serializers import RoleAwareUserReadSerializer, UserSerializer
 
 logger = logging.getLogger(__name__)
@@ -42,9 +42,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         if self.action in ("list", "retrieve"):
             return [IsOperationalRole()]
         if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsAdminOrGuaritaRole()]
+            return [IsAdminOrGuaritaRole(), IsAdminOrSisaeRole()]
         if self.action in ("enroll_card", "create_with_card"):
-            return [IsAdminOrGuaritaRole()]
+            return [IsAdminOrGuaritaRole(), IsAdminOrSisaeRole()]
         return [IsAdminRole()]
 
     def _is_visitor(self, user):
