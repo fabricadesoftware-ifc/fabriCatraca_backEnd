@@ -41,3 +41,8 @@ SECRET_KEY=            django-insecure-sua-secret-key
 
 Com isso o sistema já pode ser feito deploy no servidor local.
 
+### Problemas conhecidos
+- O sistema salva o horario em UTC, porem na hora correta. Resumindo no banco ficara 09:59:51+00 e no admin iria mostrar 06:59:51, isso é um problema conhecido e não tem solução, oque fizemos foi na hora de exibir no admin convertemos para UTC de volta, ou seja, o horário mostrado no admin é o horário correto, porem com o timezone errado, isso não afeta em nada o funcionamento do sistema, apenas é um problema de exibição. Não podemos mudar o timezone do sistema para UTC porque isso afetaria outras partes do sistema, como por exemplo o horário de expiração dos tokens, que é calculado com base no horário atual do sistema.
+
+
+
