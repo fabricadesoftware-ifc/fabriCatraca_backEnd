@@ -118,5 +118,4 @@ class GeneralConfigLike(Protocol):
     denied_transaction_code: int
     send_code_when_not_identified: bool
     send_code_when_not_authorized: bool
-    screen_always_on: bool
     web_server_enabled: bool

@@ -1,20 +1,22 @@
+from datetime import timezone as dt_timezone
+
 from django.contrib import admin
 from django.utils import timezone
-from datetime import timezone as dt_timezone
+
 from .models import (
-    SystemConfig,
-    HardwareConfig,
-    SecurityConfig,
-    UIConfig,
     CatraConfig,
-    PushServerConfig,
     EasySetupLog,
+    HardwareConfig,
+    PushServerConfig,
+    SecurityConfig,
+    SystemConfig,
+    UIConfig,
 )
 
 
 def format_datetime_utc(value):
     if not value:
-        return "—"
+        return "â€”"
     return timezone.localtime(value, dt_timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
 
 
@@ -74,8 +76,7 @@ class SecurityConfigAdmin(admin.ModelAdmin):
 
 @admin.register(UIConfig)
 class UIConfigAdmin(admin.ModelAdmin):
-    list_display = ("device", "screen_always_on")
-    list_filter = ("screen_always_on",)
+    list_display = ("device",)
     search_fields = ("device__name",)
     ordering = ("device__name",)
 
@@ -116,11 +117,10 @@ class PushServerConfigAdmin(admin.ModelAdmin):
             "Configurações de Timeout e Período",
             {"fields": ("push_request_timeout", "push_request_period")},
         ),
-        ("Endereço do Servidor", {"fields": ("push_remote_address",)}),
+        ("EndereÃ§o do Servidor", {"fields": ("push_remote_address",)}),
     )
 
     def push_remote_address_display(self, obj):
-        """Exibe endereço remoto de forma amigável"""
         return obj.push_remote_address or "(não configurado)"
 
     push_remote_address_display.short_description = "Endereço Remoto"

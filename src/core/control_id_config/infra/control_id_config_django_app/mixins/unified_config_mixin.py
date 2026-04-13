@@ -310,10 +310,13 @@ class UnifiedConfigSyncMixin(ControlIDSyncMixin):
     # Métodos de configuração de UI
     def update_ui_config_in_catraca(self, instance):
         """Atualiza configurações de interface na catraca"""
-        response = self.update_objects(
-            "general", {"screen_always_on": instance.screen_always_on}
+        return Response(
+            {
+                "success": True,
+                "message": "Nenhuma configuracao de interface esta disponivel para o firmware atual.",
+            },
+            status=status.HTTP_200_OK,
         )
-        return response
 
     def sync_ui_config_from_catraca(self):
         """Sincroniza configurações de interface da catraca"""

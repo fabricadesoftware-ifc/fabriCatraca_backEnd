@@ -1,21 +1,21 @@
-from rest_framework import viewsets, status
+from drf_spectacular.utils import extend_schema
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema
 
+from ..mixins import UIConfigSyncMixin
 from ..models import UIConfig
 from ..serializers import UIConfigSerializer
-from ..mixins import UIConfigSyncMixin
 
 
 @extend_schema(tags=["UI Config"])
 class UIConfigViewSet(UIConfigSyncMixin, viewsets.ModelViewSet):
     queryset = UIConfig.objects.all()
     serializer_class = UIConfigSerializer
-    filterset_fields = ['device', 'screen_always_on']
-    search_fields = ['device__name']
-    ordering_fields = ['device__name']
-    ordering = ['device__name']
+    filterset_fields = ["device"]
+    search_fields = ["device__name"]
+    ordering_fields = ["device__name"]
+    ordering = ["device__name"]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -26,11 +26,13 @@ class UIConfigViewSet(UIConfigSyncMixin, viewsets.ModelViewSet):
         response = self.update_ui_config_in_catraca(instance)
 
         if response.status_code != status.HTTP_200_OK:
-            instance.delete()  # Reverte se falhar na catraca
+            instance.delete()
             return response
 
         readback = self.sync_ui_config_from_catraca()
-        return readback if getattr(readback, 'status_code', 200) != 200 else Response(readback.data, status=status.HTTP_201_CREATED)
+        if getattr(readback, "status_code", 200) != 200:
+            return readback
+        return Response(readback.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -44,18 +46,14 @@ class UIConfigViewSet(UIConfigSyncMixin, viewsets.ModelViewSet):
         if response.status_code != status.HTTP_200_OK:
             return response
 
-        # Retorna a configuração atualizada (como o app control_Id faz)
         return Response(serializer.data)
 
     @extend_schema(
         summary="Sincronizar configurações de UI da catraca",
-        description="Sincroniza as configurações de interface de um dispositivo específico com a catraca"
+        description="Sincroniza as configurações de interface de um dispositivo específico com a catraca",
     )
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def sync_from_catraca(self, request, pk=None):
-        """Sincroniza configurações de UI da catraca"""
         instance = self.get_object()
         self.set_device(instance.device)
-        return self.sync_ui_config_from_catraca(instance.device)
-
-
+        return self.sync_ui_config_from_catraca()

@@ -38,7 +38,6 @@ class GeneralSyncMixin(ControlIDSyncMixin):
                 "denied_transaction_code": instance.denied_transaction_code,
                 "send_code_when_not_identified": instance.send_code_when_not_identified,
                 "send_code_when_not_authorized": instance.send_code_when_not_authorized,
-                "screen_always_on": instance.screen_always_on,
                 "web_server_enabled": instance.web_server_enabled
             },
         )

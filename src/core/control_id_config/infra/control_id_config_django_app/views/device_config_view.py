@@ -69,7 +69,6 @@ class DeviceConfigView(
                     "send_code_when_not_authorized": security_config.send_code_when_not_authorized if security_config else None
                 },
                 "ui_config": {
-                    "screen_always_on": ui_config.screen_always_on if ui_config else None
                 }
             })
             
@@ -122,5 +121,4 @@ class DeviceConfigView(
                 {"error": f"Erro ao sincronizar configurações: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
