@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
+from django.utils import timezone
+from datetime import timezone as dt_timezone
 from src.core.control_Id.infra.control_id_django_app.models import (
     Template,
     TimeZone,
@@ -21,6 +23,12 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     TemporaryGroupRelease
 )
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
+
+
+def format_datetime_utc(value):
+    if not value:
+        return "—"
+    return timezone.localtime(value, dt_timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
 
 
 @admin.register(Template)
@@ -112,9 +120,13 @@ class GroupAccessRuleAdmin(admin.ModelAdmin):
 
 @admin.register(AccessLogs)
 class AccessLogsAdmin(admin.ModelAdmin):
+    @admin.display(description="Time (UTC)")
+    def time_utc(self, obj):
+        return format_datetime_utc(obj.time)
+
     list_display = (
         "id",
-        "time",
+        "time_utc",
         "user",
         "device",
         "portal",
@@ -127,30 +139,54 @@ class AccessLogsAdmin(admin.ModelAdmin):
 
 @admin.register(TemporaryUserRelease)
 class TemporaryUserReleaseAdmin(admin.ModelAdmin):
+    @admin.display(description="Valid until (UTC)")
+    def valid_until_utc(self, obj):
+        return format_datetime_utc(obj.valid_until)
+
+    @admin.display(description="Activated at (UTC)")
+    def activated_at_utc(self, obj):
+        return format_datetime_utc(obj.activated_at)
+
+    @admin.display(description="Closed at (UTC)")
+    def closed_at_utc(self, obj):
+        return format_datetime_utc(obj.closed_at)
+
     list_display = (
         "id",
         "user",
         "requested_by",
         "access_rule",
         "status",
-        "valid_until",
-        "activated_at",
-        "closed_at",
+        "valid_until_utc",
+        "activated_at_utc",
+        "closed_at_utc",
     )
     list_filter = ("status", "access_rule")
     search_fields = ("user__name", "requested_by__name", "notes", "result_message")
 
 @admin.register(TemporaryGroupRelease)
 class TemporaryGroupReleaseAdmin(admin.ModelAdmin):
+    @admin.display(description="Valid until (UTC)")
+    def valid_until_utc(self, obj):
+        return format_datetime_utc(obj.valid_until)
+
+    @admin.display(description="Activated at (UTC)")
+    def activated_at_utc(self, obj):
+        return format_datetime_utc(obj.activated_at)
+
+    @admin.display(description="Closed at (UTC)")
+    def closed_at_utc(self, obj):
+        return format_datetime_utc(obj.closed_at)
+
     list_display = (
         "id",
         "group",
         "requested_by",
         "access_rule",
         "status",
-        "valid_until",
-        "activated_at",
-        "closed_at",
+        "valid_until_utc",
+        "activated_at_utc",
+        "closed_at_utc",
     )
     list_filter = ("status", "access_rule")
     search_fields = ("group__name", "requested_by__name", "notes", "result_message")
@@ -158,6 +194,14 @@ class TemporaryGroupReleaseAdmin(admin.ModelAdmin):
 
 @admin.register(ReleaseAudit)
 class ReleaseAuditAdmin(admin.ModelAdmin):
+    @admin.display(description="Requested at (UTC)")
+    def requested_at_utc(self, obj):
+        return format_datetime_utc(obj.requested_at)
+
+    @admin.display(description="Scheduled for (UTC)")
+    def scheduled_for_utc(self, obj):
+        return format_datetime_utc(obj.scheduled_for)
+
     list_display = (
         "id",
         "release_type",
@@ -166,8 +210,8 @@ class ReleaseAuditAdmin(admin.ModelAdmin):
         "target_user_name",
         "device",
         "portal",
-        "requested_at",
-        "scheduled_for",
+        "requested_at_utc",
+        "scheduled_for_utc",
     )
     list_filter = ("release_type", "status", "requested_by_role")
     search_fields = (

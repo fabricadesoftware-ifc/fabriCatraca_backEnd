@@ -1,4 +1,6 @@
 from django.contrib import admin
+from django.utils import timezone
+from datetime import timezone as dt_timezone
 from .models import (
     SystemConfig,
     HardwareConfig,
@@ -8,6 +10,12 @@ from .models import (
     PushServerConfig,
     EasySetupLog,
 )
+
+
+def format_datetime_utc(value):
+    if not value:
+        return "—"
+    return timezone.localtime(value, dt_timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
 
 
 @admin.register(SystemConfig)
@@ -120,12 +128,20 @@ class PushServerConfigAdmin(admin.ModelAdmin):
 
 @admin.register(EasySetupLog)
 class EasySetupLogAdmin(admin.ModelAdmin):
+    @admin.display(description="Started at (UTC)")
+    def started_at_utc(self, obj):
+        return format_datetime_utc(obj.started_at)
+
+    @admin.display(description="Finished at (UTC)")
+    def finished_at_utc(self, obj):
+        return format_datetime_utc(obj.finished_at)
+
     list_display = (
         "device",
         "status",
         "task_id_short",
-        "started_at",
-        "finished_at",
+        "started_at_utc",
+        "finished_at_utc",
         "elapsed",
     )
     list_filter = ("status", "started_at")
@@ -136,8 +152,8 @@ class EasySetupLogAdmin(admin.ModelAdmin):
         "device",
         "status",
         "report",
-        "started_at",
-        "finished_at",
+        "started_at_utc",
+        "finished_at_utc",
     )
 
     def task_id_short(self, obj):

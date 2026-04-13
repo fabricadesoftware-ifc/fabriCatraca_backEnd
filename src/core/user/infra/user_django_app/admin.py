@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django import forms
+from django.utils import timezone
+from datetime import timezone as dt_timezone
 from src.core.user.infra.user_django_app.models import User
 
 
@@ -79,8 +81,29 @@ class UserAdmin(DjangoUserAdmin):
         "panel_access_only",
     )
     ordering = ("id",)
-    readonly_fields = ("last_login", "date_joined")
+    readonly_fields = (
+        "last_login_utc",
+        "date_joined_utc",
+        "last_passage_at_utc",
+    )
     save_on_top = True
+
+    @admin.display(description=_("Last login (UTC)"))
+    def last_login_utc(self, obj):
+        return self._format_datetime_utc(getattr(obj, "last_login", None))
+
+    @admin.display(description=_("Date joined (UTC)"))
+    def date_joined_utc(self, obj):
+        return self._format_datetime_utc(getattr(obj, "date_joined", None))
+
+    @admin.display(description=_("Last passage at (UTC)"))
+    def last_passage_at_utc(self, obj):
+        return self._format_datetime_utc(getattr(obj, "last_passage_at", None))
+
+    def _format_datetime_utc(self, value):
+        if not value:
+            return "—"
+        return timezone.localtime(value, dt_timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
 
     fieldsets = (
         (
@@ -131,7 +154,7 @@ class UserAdmin(DjangoUserAdmin):
             _("Metadados"),
             {
                 "classes": ("collapse", "module"),
-                "fields": ("last_login", "date_joined", "last_passage_at"),
+                "fields": ("last_login_utc", "date_joined_utc", "last_passage_at_utc"),
             },
         ),
     )
