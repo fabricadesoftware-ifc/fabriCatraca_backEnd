@@ -55,9 +55,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         if self.action in ("list", "retrieve"):
             return [IsOperationalRole()]
         if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsAdminOrGuaritaRole(), IsAdminOrSisaeRole()]
+            return [IsOperationalRole()]
         if self.action in ("enroll_card", "create_with_card"):
-            return [IsAdminOrGuaritaRole(), IsAdminOrSisaeRole()]
+            return [IsAdminOrGuaritaRole()]
         return [IsAdminRole()]
 
     def _is_visitor(self, user):

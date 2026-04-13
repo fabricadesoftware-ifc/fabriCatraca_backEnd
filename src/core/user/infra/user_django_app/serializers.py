@@ -8,6 +8,7 @@ from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 from src.core.uploader.models import Archive
 
 from .models import User
+from .validate import normalize_cpf, normalize_phone, validate_user_dates
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,22 @@ class UserSerializer(serializers.ModelSerializer):
                 {"phone": ["Telefone e obrigatorio para visitantes."]}
             )
 
+        try:
+            validate_user_dates(
+                {
+                    "start_date": attrs.get(
+                        "start_date",
+                        instance.start_date if instance else None,
+                    ),
+                    "end_date": attrs.get(
+                        "end_date",
+                        instance.end_date if instance else None,
+                    ),
+                }
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"end_date": [str(exc)]}) from exc
+
         return attrs
 
     def validate_email(self, value):
@@ -208,14 +225,16 @@ class UserSerializer(serializers.ModelSerializer):
         return value.strip()
 
     def validate_cpf(self, value):
-        if value in ("", None):
-            return None
-        return value.strip()
+        try:
+            return normalize_cpf(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     def validate_phone(self, value):
-        if value in ("", None):
-            return None
-        return value.strip()
+        try:
+            return normalize_phone(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     def validate_user_type_id(self, value):
         if value in (0, "0", "", None):
