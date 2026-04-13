@@ -1,6 +1,7 @@
 import pytest
-from datetime import date
+from datetime import datetime
 from types import SimpleNamespace
+from django.utils import timezone
 
 from src.core.user.infra.user_django_app.serializers import (
     RoleAwareUserReadSerializer,
@@ -79,15 +80,15 @@ def test_role_aware_serializer_exposes_validity_fields_for_operational_roles():
     target = User.objects.create(
         name="Visitante",
         registration="V200",
-        start_date=date(2026, 4, 10),
-        end_date=date(2026, 4, 11),
+        start_date=timezone.make_aware(datetime(2026, 4, 10, 8, 30)),
+        end_date=timezone.make_aware(datetime(2026, 4, 11, 18, 45)),
     )
     request = SimpleNamespace(user=requester)
 
     data = RoleAwareUserReadSerializer(target, context={"request": request}).data
 
-    assert data["start_date"] == "2026-04-10"
-    assert data["end_date"] == "2026-04-11"
+    assert data["start_date"] == "2026-04-10T08:30:00-03:00"
+    assert data["end_date"] == "2026-04-11T18:45:00-03:00"
 
 
 @pytest.mark.unit
@@ -96,11 +97,11 @@ def test_build_user_payload_includes_validity_timestamps():
     user = User.objects.create(
         name="Visitante",
         registration="V201",
-        start_date=date(2026, 4, 10),
-        end_date=date(2026, 4, 11),
+        start_date=timezone.make_aware(datetime(2026, 4, 10, 8, 30)),
+        end_date=timezone.make_aware(datetime(2026, 4, 11, 18, 45)),
     )
 
     payload = UserViewSet()._build_user_payload(user)
 
-    assert payload["begin_time"] == 1775790000
-    assert payload["end_time"] == 1775962799
+    assert payload["begin_time"] == int(user.start_date.timestamp())
+    assert payload["end_time"] == int(user.end_date.timestamp())

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, time, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone
 from typing import cast
 
 import requests
@@ -90,18 +90,16 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             instance.user_type_id = None
             instance.save(update_fields=["user_type_id"])
 
-    def _date_to_device_timestamp(self, value, *, end_of_day: bool) -> int:
+    def _datetime_to_device_timestamp(self, value) -> int:
         if not value:
             return 0
 
-        dt_value = datetime.combine(
-            value,
-            time.max if end_of_day else time.min,
-        )
-        aware_value = timezone.make_aware(
-            dt_value,
-            timezone.get_current_timezone(),
-        )
+        aware_value = value
+        if timezone.is_naive(aware_value):
+            aware_value = timezone.make_aware(
+                aware_value,
+                timezone.get_current_timezone(),
+            )
         return int(aware_value.timestamp())
 
     def _build_user_payload(self, instance):
@@ -109,14 +107,8 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             "id": instance.id,
             "name": instance.name,
             "registration": instance.registration or "",
-            "begin_time": self._date_to_device_timestamp(
-                instance.start_date,
-                end_of_day=False,
-            ),
-            "end_time": self._date_to_device_timestamp(
-                instance.end_date,
-                end_of_day=True,
-            ),
+            "begin_time": self._datetime_to_device_timestamp(instance.start_date),
+            "end_time": self._datetime_to_device_timestamp(instance.end_date),
         }
         if instance.user_type_id is not None:
             payload["user_type_id"] = instance.user_type_id
@@ -386,7 +378,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                                     int(raw_begin_time),
                                     tz=dt_timezone.utc,
                                 )
-                            ).date()
+                            )
 
                         if raw_end_time not in (None, "", 0, "0"):
                             end_date = timezone.localtime(
@@ -394,7 +386,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                                     int(raw_end_time),
                                     tz=dt_timezone.utc,
                                 )
-                            ).date()
+                            )
 
                         try:
                             existing_user = User.objects.get(id=data["id"])

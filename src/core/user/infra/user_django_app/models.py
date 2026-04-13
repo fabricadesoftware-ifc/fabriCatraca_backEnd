@@ -79,13 +79,13 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
     phone_landline = models.CharField(max_length=20, blank=True, null=True)
     phone_responsible = models.CharField(max_length=20, blank=True, null=True)
     responsible_name = models.CharField(max_length=255, blank=True, null=True)
-    start_date = models.DateField(
+    start_date = models.DateTimeField(
         blank=True, null=True,
-        help_text="Data de inicio de vigencia do acesso.",
+        help_text="Data e hora de inicio de vigencia do acesso.",
     )
-    end_date = models.DateField(
+    end_date = models.DateTimeField(
         blank=True, null=True,
-        help_text="Data de fim de vigencia do acesso.",
+        help_text="Data e hora de fim de vigencia do acesso.",
     )
     last_passage_at = models.DateTimeField(
         blank=True, null=True,

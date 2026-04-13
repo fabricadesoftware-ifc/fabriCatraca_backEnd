@@ -34,7 +34,7 @@ def validate_user_dates(attrs):
 
     if start_date and end_date and start_date > end_date:
         raise ValueError(
-            "A data de início de vigência não pode ser maior que a data final de vigência."
+            "A data e hora de inicio de vigencia nao pode ser maior que a data e hora final de vigencia."
         )
 
     return False
