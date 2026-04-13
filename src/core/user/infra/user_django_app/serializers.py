@@ -274,6 +274,9 @@ class RoleAwareUserReadSerializer(UserSerializer):
             "selected_devices",
             "birth_date",
             "picture_url",
+            "start_date",
+            "end_date",
+            "last_passage_at",
         },
         "guarita": {
             "id",
@@ -285,6 +288,9 @@ class RoleAwareUserReadSerializer(UserSerializer):
             "user_type_id",
             "device_scope",
             "selected_devices",
+            "start_date",
+            "end_date",
+            "last_passage_at",
         },
     }
 

@@ -1,8 +1,10 @@
 import logging
+from datetime import datetime, time, timezone as dt_timezone
 from typing import cast
 
 import requests
 from django.db import transaction
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -88,11 +90,33 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             instance.user_type_id = None
             instance.save(update_fields=["user_type_id"])
 
+    def _date_to_device_timestamp(self, value, *, end_of_day: bool) -> int:
+        if not value:
+            return 0
+
+        dt_value = datetime.combine(
+            value,
+            time.max if end_of_day else time.min,
+        )
+        aware_value = timezone.make_aware(
+            dt_value,
+            timezone.get_current_timezone(),
+        )
+        return int(aware_value.timestamp())
+
     def _build_user_payload(self, instance):
         payload = {
             "id": instance.id,
             "name": instance.name,
             "registration": instance.registration or "",
+            "begin_time": self._date_to_device_timestamp(
+                instance.start_date,
+                end_of_day=False,
+            ),
+            "end_time": self._date_to_device_timestamp(
+                instance.end_date,
+                end_of_day=True,
+            ),
         }
         if instance.user_type_id is not None:
             payload["user_type_id"] = instance.user_type_id
@@ -157,19 +181,8 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
 
     def _update_user_in_device(self, device, instance, previous_device_admin=False):
         self.set_device(device)
-        response = self.update_objects(
-            "users",
-            {
-                "name": instance.name,
-                "registration": instance.registration or "",
-                **(
-                    {"user_type_id": instance.user_type_id}
-                    if instance.user_type_id is not None
-                    else {}
-                ),
-            },
-            {"users": {"id": instance.id}},
-        )
+        payload = self._build_user_payload(instance)
+        response = self.update_objects("users", payload, {"users": {"id": instance.id}})
         if response.status_code != status.HTTP_200_OK:
             raise RuntimeError(
                 f"Erro ao atualizar usuario na catraca {device.name}: {response.data}"
@@ -348,12 +361,40 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     self.set_device(device)
                     catraca_objects = self.load_objects(
                         "users",
-                        fields=["id", "name", "registration", "user_type_id"],
+                        fields=[
+                            "id",
+                            "name",
+                            "registration",
+                            "user_type_id",
+                            "begin_time",
+                            "end_time",
+                        ],
                         order_by=["id"],
                     )
 
                     for data in catraca_objects:
                         raw_type = data.get("user_type_id")
+                        raw_begin_time = data.get("begin_time")
+                        raw_end_time = data.get("end_time")
+
+                        start_date = None
+                        end_date = None
+
+                        if raw_begin_time not in (None, "", 0, "0"):
+                            start_date = timezone.localtime(
+                                datetime.fromtimestamp(
+                                    int(raw_begin_time),
+                                    tz=dt_timezone.utc,
+                                )
+                            ).date()
+
+                        if raw_end_time not in (None, "", 0, "0"):
+                            end_date = timezone.localtime(
+                                datetime.fromtimestamp(
+                                    int(raw_end_time),
+                                    tz=dt_timezone.utc,
+                                )
+                            ).date()
 
                         try:
                             existing_user = User.objects.get(id=data["id"])
@@ -369,6 +410,8 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                                 "name": data["name"],
                                 "registration": data.get("registration", ""),
                                 "user_type_id": user_type,
+                                "start_date": start_date,
+                                "end_date": end_date,
                             },
                         )
 
