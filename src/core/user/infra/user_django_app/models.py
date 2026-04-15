@@ -71,7 +71,7 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
         default=generate_pin,
         help_text="PIN de 4 digitos para acesso na catraca (campo password na API Control iD).",
     )
-    cpf = models.CharField(max_length=14, blank=True, null=True)
+    cpf = models.CharField(max_length=14, blank=True, null=True, unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     birth_date = models.DateField(blank=True, null=True)
     picture = models.ForeignKey(Archive, on_delete=models.SET_NULL, null=True, blank=True)
@@ -141,3 +141,6 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
     class Meta(SafeDeleteModel.Meta, AbstractUser.Meta):
         verbose_name = "User"
         verbose_name_plural = "Users"
+
+
+class 

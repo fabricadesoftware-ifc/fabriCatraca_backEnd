@@ -294,15 +294,19 @@ class MonitorNotificationHandler:
 
             if change_type == "inserted":
                 # Converte timestamp Unix para datetime
-                # TODO: revisar esta conversao de timezone; hoje o timestamp da
-                # catraca esta sendo persistido explicitamente em UTC.
-                # TODO: revisar esta conversao de timezone; hoje o timestamp da
-                # catraca esta sendo persistido explicitamente em UTC.
-                timestamp = (
-                    datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
-                    if time_unix
-                    else datetime.now(tz=dt_timezone.utc)
-                )
+                # A catraca envia timestamps no fuso horário local (UTC-3),
+                # então precisamos tratá-los como tal para evitar conversão indevida
+                from django.utils import timezone
+                import pytz
+
+                local_tz = pytz.timezone('America/Sao_Paulo')
+
+                if time_unix:
+                    # Converter timestamp Unix para o fuso horário local
+                    naive_dt = datetime.fromtimestamp(int(time_unix))
+                    timestamp = local_tz.localize(naive_dt)
+                else:
+                    timestamp = timezone.now()
 
                 # Cria ou atualiza o log
                 # Lookup: device + identifier_id + time
@@ -375,11 +379,19 @@ class MonitorNotificationHandler:
                 # Atualiza log existente — ou cria se não existir
                 # A catraca pode enviar "updated" mesmo na primeira vez
                 # (ex: quando o log é gerado internamente e enviado como update)
-                timestamp = (
-                    datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
-                    if time_unix
-                    else datetime.now(tz=dt_timezone.utc)
-                )
+                # A catraca envia timestamps no fuso horário local (UTC-3),
+                # então precisamos tratá-los como tal para evitar conversão indevida
+                from django.utils import timezone
+                import pytz
+
+                local_tz = pytz.timezone('America/Sao_Paulo')
+
+                if time_unix:
+                    # Converter timestamp Unix para o fuso horário local
+                    naive_dt = datetime.fromtimestamp(int(time_unix))
+                    timestamp = local_tz.localize(naive_dt)
+                else:
+                    timestamp = timezone.now()
 
                 # Lookup: device + identifier_id + time
                 # O time no lookup evita colisão quando a catraca
