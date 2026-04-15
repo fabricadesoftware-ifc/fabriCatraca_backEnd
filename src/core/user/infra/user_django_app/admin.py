@@ -4,7 +4,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django import forms
 from django.utils import timezone
 from datetime import timezone as dt_timezone
-from src.core.user.infra.user_django_app.models import User
+from src.core.user.infra.user_django_app.models import User, Visitas
 
 
 class UserAdminForm(forms.ModelForm):
@@ -166,3 +166,9 @@ class UserAdmin(DjangoUserAdmin):
             "all": ("admin/custom.css",),
         }
         js = ("admin/custom.js",)
+
+class VisitasAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "visit_date", "purpose")
+    search_fields = ("user__name", "purpose")
+    list_filter = ("visit_date",)
+    ordering = ("-visit_date",)

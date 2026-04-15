@@ -296,15 +296,11 @@ class MonitorNotificationHandler:
                 # Converte timestamp Unix para datetime
                 # A catraca envia timestamps no fuso horário local (UTC-3),
                 # então precisamos tratá-los como tal para evitar conversão indevida
+                from datetime import datetime, timezone as dt_timezone
                 from django.utils import timezone
-                import pytz
-
-                local_tz = pytz.timezone('America/Sao_Paulo')
 
                 if time_unix:
-                    # Converter timestamp Unix para o fuso horário local
-                    naive_dt = datetime.fromtimestamp(int(time_unix))
-                    timestamp = local_tz.localize(naive_dt)
+                    timestamp = datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
                 else:
                     timestamp = timezone.now()
 
@@ -336,7 +332,7 @@ class MonitorNotificationHandler:
                             "change_type": change_type,
                             "change": deepcopy(raw_change or {}),
                             "notification": deepcopy(raw_notification or {}),
-                            
+
                         },
                     },
                 )

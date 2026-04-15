@@ -8,6 +8,7 @@ from safedelete.models import SafeDeleteModel
 from src.core.uploader.models import Archive
 
 from .managers import CustomUserManager
+from src.core.__seedwork__.domain import BaseModel
 
 
 def generate_pin():
@@ -79,6 +80,7 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
     phone_landline = models.CharField(max_length=20, blank=True, null=True)
     phone_responsible = models.CharField(max_length=20, blank=True, null=True)
     responsible_name = models.CharField(max_length=255, blank=True, null=True)
+    created_by = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="created_users")
     start_date = models.DateTimeField(
         blank=True, null=True,
         help_text="Data e hora de inicio de vigencia do acesso.",
@@ -143,4 +145,17 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
         verbose_name_plural = "Users"
 
 
-class 
+class Visitas(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="visitas")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_visitas")
+    initial_date = models.DateTimeField(auto_now_add=True)
+    visit_date = models.DateTimeField()
+
+
+    def __str__(self):
+        return f"Visita do usuário {self.user.name} em {self.visit_date.strftime('%Y-%m-%d %H:%M:%S')}"
+
+    class Meta(BaseModel.Meta):
+        verbose_name = "Visita"
+        verbose_name_plural = "Visitas"
+        ordering = ["-visit_date"]
