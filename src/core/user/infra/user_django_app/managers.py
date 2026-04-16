@@ -1,8 +1,13 @@
+from typing import Any, Mapping
+
 from django.contrib.auth.base_user import BaseUserManager
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
+from safedelete.config import FIELD_NAME
+from safedelete.managers import SafeDeleteManager
 
 
-class CustomUserManager(BaseUserManager):
+class CustomUserManager(SafeDeleteManager, BaseUserManager):
     """
     Custom user model manager where email is the unique identifiers
     for authentication instead of usernames.
@@ -33,3 +38,43 @@ class CustomUserManager(BaseUserManager):
         if extra_fields.get("is_superuser") is not True:
             raise ValueError(_("Superuser must have is_superuser=True."))
         return self.create_user(email, password, **extra_fields)
+
+    def update_or_create(
+        self,
+        defaults: Mapping[str, Any] | None = None,
+        create_defaults: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ):
+        """
+        Compatibilidade com a assinatura moderna do Django Manager.update_or_create.
+
+        Quando create_defaults nao for informado, delega ao comportamento do
+        SafeDeleteManager. Quando informado, aplica defaults em updates e
+        create_defaults na criacao/reativacao do objeto.
+        """
+        if create_defaults is None:
+            return SafeDeleteManager.update_or_create(self, defaults=defaults, **kwargs)
+
+        defaults = dict(defaults or {})
+        create_defaults = dict(create_defaults)
+
+        with transaction.atomic():
+            obj = self.filter(**kwargs).first()
+            if obj is not None:
+                for key, value in defaults.items():
+                    setattr(obj, key, value)
+                if defaults:
+                    obj.save(update_fields=list(defaults.keys()))
+                else:
+                    obj.save()
+                return obj, False
+
+            deleted_obj = self.all_with_deleted().filter(**kwargs).exclude(**{FIELD_NAME: None}).first()
+            if deleted_obj is not None:
+                for key, value in create_defaults.items():
+                    setattr(deleted_obj, key, value)
+                deleted_obj.save()
+                return deleted_obj, True
+
+            params = {**kwargs, **create_defaults}
+            return self.create(**params), True

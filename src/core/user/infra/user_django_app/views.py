@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     queryset = (
         User.objects.all()
+        .filter(deleted_at__isnull=True)
         .order_by("id")
         .prefetch_related("usergroup_set", "selected_devices")
     )
