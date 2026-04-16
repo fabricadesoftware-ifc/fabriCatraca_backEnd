@@ -167,6 +167,19 @@ class MonitorNotificationHandler:
 
         return handler(device_id, change_type, values, raw_notification=raw_notification, raw_change=change, sentido=sentido)
 
+    @staticmethod
+    def _parse_device_unix_timestamp(time_unix: Any) -> datetime:
+        from django.utils import timezone
+
+        if time_unix in (None, ""):
+            return timezone.now()
+
+        # A Control iD desta instalacao envia o "unix timestamp" no horario local
+        # da catraca (UTC-3), e nao como epoch UTC absoluto. Por isso tratamos o
+        # valor como uma data/hora local de Sao Paulo e depois a tornamos aware.
+        naive_local = datetime.utcfromtimestamp(int(time_unix))
+        return timezone.make_aware(naive_local, timezone.get_current_timezone())
+
     def _handle_access_log(
         self,
         device_id: int,
@@ -296,13 +309,7 @@ class MonitorNotificationHandler:
                 # Converte timestamp Unix para datetime
                 # A catraca envia timestamps no fuso horário local (UTC-3),
                 # então precisamos tratá-los como tal para evitar conversão indevida
-                from datetime import datetime, timezone as dt_timezone
-                from django.utils import timezone
-
-                if time_unix:
-                    timestamp = datetime.fromtimestamp(int(time_unix), tz=dt_timezone.utc)
-                else:
-                    timestamp = timezone.now()
+                timestamp = self._parse_device_unix_timestamp(time_unix)
 
                 # Cria ou atualiza o log
                 # Lookup: device + identifier_id + time
@@ -377,17 +384,7 @@ class MonitorNotificationHandler:
                 # (ex: quando o log é gerado internamente e enviado como update)
                 # A catraca envia timestamps no fuso horário local (UTC-3),
                 # então precisamos tratá-los como tal para evitar conversão indevida
-                from django.utils import timezone
-                import pytz
-
-                local_tz = pytz.timezone('America/Sao_Paulo')
-
-                if time_unix:
-                    # Converter timestamp Unix para o fuso horário local
-                    naive_dt = datetime.fromtimestamp(int(time_unix))
-                    timestamp = local_tz.localize(naive_dt)
-                else:
-                    timestamp = timezone.now()
+                timestamp = self._parse_device_unix_timestamp(time_unix)
 
                 # Lookup: device + identifier_id + time
                 # O time no lookup evita colisão quando a catraca
