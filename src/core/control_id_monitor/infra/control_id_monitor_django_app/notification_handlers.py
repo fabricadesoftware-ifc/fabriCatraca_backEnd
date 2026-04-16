@@ -13,6 +13,7 @@ Quando há inserção, alteração ou deleção dessas entidades.
 from typing import Dict, Any
 from copy import deepcopy
 from datetime import datetime, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 
 from django.db import transaction
 import logging
@@ -20,6 +21,7 @@ import logging
 from .access_verification import access_verifier
 
 logger = logging.getLogger(__name__)
+DEVICE_LOCAL_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 
 
 class MonitorNotificationHandler:
@@ -178,7 +180,7 @@ class MonitorNotificationHandler:
         # da catraca (UTC-3), e nao como epoch UTC absoluto. Por isso tratamos o
         # valor como uma data/hora local de Sao Paulo e depois a tornamos aware.
         naive_local = datetime.utcfromtimestamp(int(time_unix))
-        return timezone.make_aware(naive_local, timezone.get_current_timezone())
+        return timezone.make_aware(naive_local, DEVICE_LOCAL_TIMEZONE)
 
     def _handle_access_log(
         self,
