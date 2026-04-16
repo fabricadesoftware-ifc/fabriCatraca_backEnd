@@ -700,6 +700,8 @@ def receive_catra_event(request):
     Salva cada evento como um AccessLog para monitoramento de fluxo.
     """
     from datetime import datetime, timezone as dt_timezone
+    from django.utils import timezone
+    from .notification_handlers import DEVICE_LOCAL_TIMEZONE
     from src.core.control_Id.infra.control_id_django_app.models import (
         AccessLogs,
         Device,
@@ -745,9 +747,15 @@ def receive_catra_event(request):
         # TODO: revisar esta conversao de timezone; hoje o timestamp do
         # catra_event esta sendo persistido explicitamente em UTC.
         timestamp = (
-            datetime.fromtimestamp(int(event_time), tz=dt_timezone.utc)
+            timezone.make_aware(
+                datetime.fromtimestamp(
+                    int(event_time),
+                    tz=dt_timezone.utc,
+                ).replace(tzinfo=None),
+                DEVICE_LOCAL_TIMEZONE,
+            )
             if event_time
-            else datetime.now(tz=dt_timezone.utc)
+            else timezone.now()
         )
 
         # ── Resolve portal ──

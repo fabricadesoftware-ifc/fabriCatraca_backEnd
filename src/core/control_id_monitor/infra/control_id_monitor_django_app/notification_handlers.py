@@ -179,7 +179,10 @@ class MonitorNotificationHandler:
         # A Control iD desta instalacao envia o "unix timestamp" no horario local
         # da catraca (UTC-3), e nao como epoch UTC absoluto. Por isso tratamos o
         # valor como uma data/hora local de Sao Paulo e depois a tornamos aware.
-        naive_local = datetime.utcfromtimestamp(int(time_unix))
+        naive_local = datetime.fromtimestamp(
+            int(time_unix),
+            tz=dt_timezone.utc,
+        ).replace(tzinfo=None)
         return timezone.make_aware(naive_local, DEVICE_LOCAL_TIMEZONE)
 
     def _handle_access_log(
