@@ -9,12 +9,6 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-def _get_int_env(name: str, default=None):
-    value = os.getenv(name)
-    if value in (None, ""):
-        return default
-    return int(value)
-
 
 def show_toolbar(request):
     return DEBUG
@@ -93,7 +87,6 @@ INSTALLED_APPS = [
     "src.core.control_id_config.infra.control_id_config_django_app",
     "src.core.control_id_monitor.infra.control_id_monitor_django_app",
     "src.core.uploader",
-    # Celery results backend via django-celery-results (opcional)
     "django_celery_results",
     "debug_toolbar",
     "axes",
@@ -251,16 +244,16 @@ DEBUG_TOOLBAR_CONFIG = {
 CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
 CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')
 CATRAKA_PASS = os.getenv("CATRAKA_PASS", 'nice_pass')
-TEMPORARY_RELEASE_ACCESS_RULE_ID = _get_int_env("TEMPORARY_RELEASE_ACCESS_RULE_ID", 1)
-TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS = _get_int_env(
+TEMPORARY_RELEASE_ACCESS_RULE_ID = os.getenv("TEMPORARY_RELEASE_ACCESS_RULE_ID", 1)
+TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS = os.getenv(
     "TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS",
     15,
 )
-TEMPORARY_RELEASE_DELAY_ALERT_SECONDS = _get_int_env(
+TEMPORARY_RELEASE_DELAY_ALERT_SECONDS = os.getenv(
     "TEMPORARY_RELEASE_DELAY_ALERT_SECONDS",
     300,
 )
-MONITOR_OFFLINE_CHECK_INTERVAL_SECONDS = _get_int_env(
+MONITOR_OFFLINE_CHECK_INTERVAL_SECONDS = os.getenv(
     "MONITOR_OFFLINE_CHECK_INTERVAL_SveECONDS",
     60,
 )

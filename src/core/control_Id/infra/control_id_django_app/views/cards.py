@@ -40,8 +40,6 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
             "name": user.name,
             "registration": user.registration or "",
         }
-        if user.user_type_id is not None:
-            payload["user_type_id"] = user.user_type_id
         return payload
 
     def _ensure_user_on_device(self, device, user):
@@ -62,11 +60,6 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                 {
                     "name": user.name,
                     "registration": user.registration or "",
-                    **(
-                        {"user_type_id": user.user_type_id}
-                        if user.user_type_id is not None
-                        else {}
-                    ),
                 },
                 {"users": {"id": user.id}},
             )

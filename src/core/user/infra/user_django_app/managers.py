@@ -32,11 +32,14 @@ class CustomUserManager(SafeDeleteManager, BaseUserManager):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("app_role", self.model.AppRole.ADMIN)
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError(_("Superuser must have is_staff=True."))
         if extra_fields.get("is_superuser") is not True:
             raise ValueError(_("Superuser must have is_superuser=True."))
+        if extra_fields.get("app_role") != self.model.AppRole.ADMIN:
+            raise ValueError(_("Superuser must have app_role=ADMIN."))
         return self.create_user(email, password, **extra_fields)
 
     def update_or_create(

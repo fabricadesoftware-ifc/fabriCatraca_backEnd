@@ -98,7 +98,7 @@ without-hashes = "true"
 
 
 [tool.pdm.scripts]
-dev = "python src/manage.py runserver"
+dev = "python src/manage.py runserver 0.0.0.0:8000"
 runserver = "python src/manage.py runserver"
 createsuperuser = "python src/manage.py createsuperuser"
 migrate = "python src/manage.py migrate"
