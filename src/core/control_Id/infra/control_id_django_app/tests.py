@@ -95,6 +95,13 @@ class TemporaryUserReleaseTests(APITestCase):
 
     def test_create_temporary_release_enqueues_email_task_to_selected_server(self):
         valid_from = timezone.now() + timedelta(minutes=10)
+        custom_message = (
+            "Caro(a) professor(a),\n\n"
+            "O aluno Usuario Alvo foi liberado no dia 22/04/2026 as 14:30 pelo motivo de "
+            "Liberacao para entrada.\n\n"
+            "A liberacao permanece valida ate 22/04/2026 as 14:40.\n"
+            "Solicitado por: Operador.\n"
+        )
 
         with self.settings(
             TEMPORARY_RELEASE_ACCESS_RULE_ID=self.access_rule.id,
@@ -110,6 +117,7 @@ class TemporaryUserReleaseTests(APITestCase):
                     "notes": "Liberacao para entrada",
                     "valid_from": valid_from.isoformat(),
                     "notified_server_id": self.server_user.id,
+                    "notification_message": custom_message,
                 },
                 format="json",
             )
@@ -119,11 +127,18 @@ class TemporaryUserReleaseTests(APITestCase):
 
         release = TemporaryUserRelease.objects.get(id=response.data["id"])
         self.assertEqual(release.notified_server, self.server_user)
+        self.assertEqual(release.notification_message, custom_message)
         mock_delay.assert_called_once_with(release.id)
 
     def test_notification_task_sends_email_to_selected_server(self):
         valid_from = timezone.now() + timedelta(minutes=10)
         valid_until = valid_from + timedelta(minutes=10)
+        custom_message = (
+            "Professor(a),\n\n"
+            "O aluno Usuario Alvo recebeu liberacao em 22/04/2026 as 14:30.\n"
+            "Motivo informado: Liberacao para entrada.\n"
+            "Solicitante: Operador.\n"
+        )
 
         release = TemporaryUserRelease.objects.create(
             user=self.target_user,
@@ -132,6 +147,7 @@ class TemporaryUserReleaseTests(APITestCase):
             access_rule=self.access_rule,
             status=TemporaryUserRelease.Status.PENDING,
             notes="Liberacao para entrada",
+            notification_message=custom_message,
             valid_from=valid_from,
             valid_until=valid_until,
         )
@@ -148,16 +164,7 @@ class TemporaryUserReleaseTests(APITestCase):
 
         self.assertEqual(message.to, [self.server_user.email])
         self.assertIn(self.target_user.name, message.subject)
-        self.assertIn(self.target_user.name, message.body)
-        self.assertIn("Liberacao para entrada", message.body)
-        self.assertIn(
-            timezone.localtime(valid_from).strftime("%d/%m/%Y"),
-            message.body,
-        )
-        self.assertIn(
-            timezone.localtime(valid_from).strftime("%H:%M"),
-            message.body,
-        )
+        self.assertEqual(message.body, custom_message)
 
     def test_task_activates_pending_release(self):
         release = TemporaryUserRelease.objects.create(

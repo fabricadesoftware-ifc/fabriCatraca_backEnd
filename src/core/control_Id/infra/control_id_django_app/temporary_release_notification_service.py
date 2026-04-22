@@ -20,6 +20,8 @@ class TemporaryUserReleaseNotificationService:
         role = getattr(user, "effective_app_role", None) or getattr(user, "app_role", "")
         if role == User.AppRole.ALUNO:
             return "aluno"
+        if role == User.AppRole.SERVIDOR:
+            return "servidor"
         return "usuario"
 
     @classmethod
@@ -27,7 +29,7 @@ class TemporaryUserReleaseNotificationService:
         return f"Liberacao temporaria registrada para {release.user.name}"
 
     @classmethod
-    def build_message(cls, release):
+    def _build_fallback_message(cls, release):
         release_date, release_time = cls._format_datetime(release.valid_from)
         valid_until_date, valid_until_time = cls._format_datetime(release.valid_until)
         target_label = cls._target_label(release.user)
@@ -41,6 +43,13 @@ class TemporaryUserReleaseNotificationService:
             f"A liberacao permanece valida ate {valid_until_date} as {valid_until_time}.\n"
             f"Solicitado por: {requester_name}.\n"
         )
+
+    @classmethod
+    def build_message(cls, release):
+        message = (getattr(release, "notification_message", "") or "").strip()
+        if message:
+            return message
+        return cls._build_fallback_message(release)
 
     @classmethod
     def notify_release_created(cls, release):

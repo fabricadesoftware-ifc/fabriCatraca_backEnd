@@ -100,6 +100,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     )
     valid_from = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False)
+    notification_message = serializers.CharField(required=False, allow_blank=True)
     portal_group_id = serializers.PrimaryKeyRelatedField(
         queryset=PortalGroup.objects.filter(is_active=True),
         source="portal_group",
@@ -135,6 +136,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             "closed_at",
             "consumed_log",
             "notes",
+            "notification_message",
             "result_message",
             "created_at",
             "updated_at",

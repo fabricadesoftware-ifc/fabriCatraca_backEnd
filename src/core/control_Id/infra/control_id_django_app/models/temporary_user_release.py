@@ -87,6 +87,11 @@ class TemporaryUserRelease(BaseModel):
     consumed_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(default="Indefinido")
+    notification_message = models.TextField(
+        blank=True,
+        default="",
+        help_text="Mensagem completa do e-mail enviada ao servidor.",
+    )
     result_message = models.TextField(blank=True, default="")
 
     class Meta(BaseModel.Meta):

@@ -22,12 +22,12 @@ BROKER_URL = os.getenv("BROKER_URL", "amqp://rafaelbochi:2012@localhost/fabricap
 ALLOWED_HOSTS = ['*']
 CSRF_TRUSTED_ORIGINS = [
     "https://catraca.fabricadesoftware.ifc.edu.br",
-    "http://localhost:3000",
+    "http://localhost:3001",
 ]
 
 CORS_ALLOWED_ORIGINS = [
     "https://catraca.fabricadesoftware.ifc.edu.br",
-    "http://localhost:3000",
+    "http://localhost:3001",
 ]
 
 PASSWORD_HASHERS = [
