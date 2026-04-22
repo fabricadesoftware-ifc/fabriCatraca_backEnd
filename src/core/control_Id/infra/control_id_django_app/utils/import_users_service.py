@@ -45,8 +45,6 @@ class ImportUsersService(ControlIDSyncMixin):
             "name": user.name,
             "registration": user.registration,
         }
-        if getattr(user, "user_type_id", None) is not None:
-            payload["user_type_id"] = user.user_type_id
         return payload
 
     # ── Grupo ──

@@ -167,8 +167,9 @@ class UserAdmin(DjangoUserAdmin):
         }
         js = ("admin/custom.js",)
 
+@admin.register(Visitas)
 class VisitasAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "visit_date", "purpose")
-    search_fields = ("user__name", "purpose")
+    list_display = ("id", "user", "visit_date")
+    search_fields = ("user__name", "user__email", "user__cpf")
     list_filter = ("visit_date",)
     ordering = ("-visit_date",)

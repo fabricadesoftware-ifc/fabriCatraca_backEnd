@@ -4,7 +4,7 @@ from src.core.__seedwork__.domain import BaseModel
 from django.db.models import Q
 from django.utils import timezone
 
-from src.core.user.infra.user_django_app.models import User
+from src.core.user.infra.user_django_app.models import User, Visitas
 
 from .access_logs import AccessLogs
 from .access_rule import AccessRule
@@ -31,6 +31,14 @@ class TemporaryUserRelease(BaseModel):
         on_delete=models.PROTECT,
         related_name="requested_temporary_user_releases",
     )
+    notified_server = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notified_temporary_user_releases",
+        help_text="Servidor/professor que deve receber o e-mail desta liberacao.",
+    )
     access_rule = models.ForeignKey(
         AccessRule,
         on_delete=models.PROTECT,
@@ -45,6 +53,14 @@ class TemporaryUserRelease(BaseModel):
         help_text=(
             "Se definido, a liberação se aplica apenas às catracas deste grupo."
         ),
+    )
+    visita = models.ForeignKey(
+        Visitas,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="temporary_user_releases",
+        help_text="Visita relacionada a esta liberacao temporaria, quando aplicavel.",
     )
     user_access_rule = models.ForeignKey(
         UserAccessRule,

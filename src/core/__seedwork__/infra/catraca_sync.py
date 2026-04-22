@@ -1,22 +1,110 @@
-from typing import Any, Dict, List, Mapping, overload, Literal, Union
+# Anote aqui suas horas gastas refatorando essa bomba
+#
+# 4 Horas
+# by: oPeraza
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from typing import Any, Dict, List, Literal, Mapping, Optional, Union, overload
 
 import requests
 from django.conf import settings
-from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
-from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollBioResponse, RemoteEnrollCardResponse
 
-@dataclass
+from src.core.__seedwork__.infra.types.catraca_sync import (
+    RemoteEnrollBioResponse,
+    RemoteEnrollCardResponse,
+)
+from src.core.control_Id.infra.control_id_django_app.models.device import Device
+
+# ---------------------------------------------------------------------------
+# Aliases de tipo
+# ---------------------------------------------------------------------------
+
+JsonDict = Dict[str, Any]
+ObjectValues = List[Mapping[str, Any]]
+
+# Campos obrigatórios por objeto na API da catraca.
+# Centralizado aqui para facilitar manutenção sem tocar nos métodos.
+REQUIRED_FIELDS_BY_OBJECT: Dict[str, List[str]] = {
+    # Entidades com ID controlado pelo backend
+    "users": ["id", "name"],
+    "groups": ["id", "name"],
+    "access_rules": ["id", "name", "type", "priority"],
+    "time_zones": ["id", "name"],
+    "time_spans": [
+        "id",
+        "time_zone_id",
+        "start",
+        "end",
+        "sun",
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "hol1",
+        "hol2",
+        "hol3",
+    ],
+    "areas": ["id", "name"],
+    "portals": ["id", "name", "area_from_id", "area_to_id"],
+    "templates": ["id", "user_id", "template"],
+    "cards": ["id", "user_id", "value"],
+    # Relações (pares únicos)
+    "user_groups": ["user_id", "group_id"],
+    "user_access_rules": ["user_id", "access_rule_id"],
+    "portal_access_rules": ["portal_id", "access_rule_id"],
+    "group_access_rules": ["group_id", "access_rule_id"],
+    "access_rule_time_zones": ["access_rule_id", "time_zone_id"],
+}
+
+# Seções de nível raiz reconhecidas pela API de configuração da catraca.
+_CONFIG_TOP_LEVEL_KEYS = frozenset(
+    {"general", "monitor", "catra", "online_client", "push_server"}
+)
+
+
+# ---------------------------------------------------------------------------
+# Exceção customizada
+# ---------------------------------------------------------------------------
+
+
+class CatracaSyncError(Exception):
+    """
+    Levantada quando uma operação de sincronização com a catraca falha.
+
+    Carrega o ``status_code`` HTTP original (quando disponível) para que a
+    camada superior possa decidir como responder sem precisar inspecionar a
+    mensagem de texto.
+
+    Exemplo de uso no ViewSet::
+
+        with transaction.atomic():
+            instance = serializer.save()          # banco
+            self.create_in_catraca(instance)      # catraca — CatracaSyncError → rollback
+    """
+
+    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# ---------------------------------------------------------------------------
+# Dataclasses de configuração de dispositivo
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True) #TORNAR IMUTÁVEL PARA EVITAR BUGS DE SESSÃO INVÁLIDA HELP
 class DefaultDeviceClass:
     ip: str
     username: str
     password: str
 
-@dataclass
+
+@dataclass(frozen=True)
 class DeviceClass:
     pk: int
     ip: str
@@ -24,67 +112,122 @@ class DeviceClass:
     password: str
 
 
+# ---------------------------------------------------------------------------
+# Helpers internos (funções puras, fora da classe)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_config_value(value: Any) -> Any:
+    """
+    Normaliza recursivamente um valor para o formato esperado pela API da
+    catraca (todas as folhas devem ser strings).
+    """
+    if isinstance(value, dict):
+        return {k: _normalize_config_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_config_value(v) for v in value]
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _validate_object_fields(object_name: str, values: ObjectValues) -> None:
+    """
+    Valida se todos os campos obrigatórios estão presentes em *values*.
+
+    Raises:
+        CatracaSyncError: Se algum campo obrigatório estiver ausente.
+    """
+    required = REQUIRED_FIELDS_BY_OBJECT.get(object_name)
+    if not required:
+        return
+
+    for idx, entry in enumerate(values):
+        missing = [f for f in required if entry.get(f) in (None, "")]
+        if missing:
+            raise CatracaSyncError(
+                f"Campos obrigatórios ausentes para '{object_name}' "
+                f"(índice {idx}): {missing}",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Mixin principal
+# ---------------------------------------------------------------------------
+
+
 class ControlIDSyncMixin:
     """
-    Mixin para sincronização com a catraca.
-    Fornece funcionalidades básicas de comunicação com a API da catraca.
+    Mixin de comunicação com a API da catraca (ControlID).
+
+    Responsabilidade única: HTTP confiável com a catraca.
+    Controle de transação de banco é responsabilidade de quem chama.
+
+    Em caso de falha de comunicação ou resposta inesperada da catraca,
+    levanta ``CatracaSyncError`` para que a camada superior possa decidir
+    como tratar (ex: rollback via ``transaction.atomic()`` no ViewSet).
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.session = None
+        self.session: Optional[str] = None
         self._device: Optional[Device] = None
-        self._use_default_config = False
+        self._use_default_config: bool = False
+
+    # ------------------------------------------------------------------
+    # Propriedades e configuração de dispositivo
+    # ------------------------------------------------------------------
 
     @property
-    def device(self) -> DefaultDeviceClass | Device:
-        """Retorna o dispositivo atual ou busca o dispositivo padrão"""
+    def device(self) -> Union[DefaultDeviceClass, Device]:
+        """Retorna o dispositivo atual ou o dispositivo padrão via settings."""
         if self._device is None and self._use_default_config:
-            # Usa configurações do settings.py como fallback
             return DefaultDeviceClass(
                 ip=settings.CATRAKA_URL,
                 username=settings.CATRAKA_USER,
                 password=settings.CATRAKA_PASS,
             )
-
         if self._device is None:
-            raise ValueError("Device não definido")
-
-
+            raise CatracaSyncError("Device não definido")
         return self._device
 
-    def set_device(self, device: Device):
-        """Define o dispositivo para usar nas operações"""
+    def set_device(self, device: Device) -> "ControlIDSyncMixin":
+        """Define o dispositivo para usar nas operações e invalida a sessão atual."""
         self._device = device
         self._use_default_config = False
         self.session = None  # Força novo login
         return self
 
+    # ------------------------------------------------------------------
+    # Comunicação HTTP
+    # ------------------------------------------------------------------
+
     def get_url(self, endpoint: str) -> str:
-        """Constrói a URL para a API"""
-        base_url = (
-            f"http://{self.device.ip}"
-            if not self.device.ip.startswith(("http://", "https://"))
-            else self.device.ip
-        )
+        """Constrói a URL completa para um endpoint da API."""
+        ip = self.device.ip
+        base_url = ip if ip.startswith(("http://", "https://")) else f"http://{ip}"
         return f"{base_url}/{endpoint}"
 
     def login(self, force_new: bool = False) -> str:
         """
         Realiza login na API da catraca com gerenciamento inteligente de sessão.
+
         Args:
-            force_new: Força um novo login mesmo se já houver sessão
+            force_new: Força um novo login mesmo se já houver sessão ativa.
+
         Returns:
-            str: Token de sessão
+            Token de sessão.
+
+        Raises:
+            CatracaSyncError: Se o login falhar.
         """
-        # Se já tem sessão válida e não está forçando novo login, reutiliza
         if self.session and not force_new:
             return self.session
-
-        if not self.device:
-            raise ValueError(
-                "Nenhum dispositivo configurado e nenhum dispositivo padrão encontrado"
-            )
 
         try:
             response = requests.post(
@@ -94,81 +237,90 @@ class ControlIDSyncMixin:
             )
             response.raise_for_status()
             self.session = response.json().get("session")
-            return self.session
-        except requests.RequestException as e:
-            self.session = None  # Limpa sessão inválida
-            # trunk-ignore(ruff/B904)
-            raise Exception(f"Falha no login: {str(e)}")
+            return self.session  # type: ignore[return-value]
+        except requests.RequestException as exc:
+            self.session = None
+            raise CatracaSyncError(
+                f"Falha no login: {exc}",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            ) from exc
 
     def _make_request(
         self,
         endpoint: str,
         method: str = "POST",
-        json_data: Optional[Dict[str, Any]] = None,
+        json_data: Optional[JsonDict] = None,
         retry_on_auth_fail: bool = True,
         request_timeout: int = 10,
     ) -> requests.Response:
         """
-        Helper para fazer requests com retry automático em caso de sessão expirada.
+        Executa um request HTTP com retry automático em caso de sessão expirada.
+
         Args:
-            endpoint: Endpoint da API (ex: "set_configuration.fcgi")
-            method: Método HTTP (POST, GET, etc)
-            json_data: Dados JSON para enviar
-            retry_on_auth_fail: Se deve tentar novamente com novo login em caso de erro de autenticação
+            endpoint: Endpoint da API (ex: ``"set_configuration.fcgi"``).
+            method: Método HTTP.
+            json_data: Corpo JSON da requisição.
+            retry_on_auth_fail: Tenta novamente com nova sessão em caso de 401.
+            request_timeout: Timeout em segundos.
+
         Returns:
-            requests.Response: Resposta da API
+            Objeto ``requests.Response``.
+
+        Raises:
+            CatracaSyncError: Se a requisição falhar por erro de rede.
         """
         sess = self.login()
-        url = self.get_url(f"{endpoint}?session={sess}")
+        request_kwargs: JsonDict = {
+            "method": method,
+            "url": self.get_url(f"{endpoint}?session={sess}"),
+            "json": json_data,
+            "headers": {"Content-Type": "application/json"},
+            "timeout": request_timeout,
+        }
 
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                json=json_data,
-                headers={"Content-Type": "application/json"},
-                timeout=request_timeout,
-            )
+            response = requests.request(**request_kwargs)
 
             if response.status_code == 401 and retry_on_auth_fail:
                 sess = self.login(force_new=True)
-                url = self.get_url(f"{endpoint}?session={sess}")
-                response = requests.request(
-                    method=method,
-                    url=url,
-                    json=json_data,
-                    headers={"Content-Type": "application/json"},
-                    timeout=request_timeout,
-                )
+                request_kwargs["url"] = self.get_url(f"{endpoint}?session={sess}")
+                response = requests.request(**request_kwargs)
 
             return response
 
-        except requests.RequestException as e:
-            raise Exception(f"Erro na requisição para {endpoint}: {str(e)}")
+        except requests.RequestException as exc:
+            raise CatracaSyncError(
+                f"Erro na requisição para '{endpoint}': {exc}",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            ) from exc
 
     @staticmethod
     def _extract_response_data(response: requests.Response) -> Any:
+        """Extrai o corpo da resposta como JSON ou texto bruto."""
         if not response.text:
             return None
-
         try:
             return response.json()
         except ValueError:
             return response.text
 
+    # ------------------------------------------------------------------
+    # Execução de endpoints remotos
+    # ------------------------------------------------------------------
+
     def execute_remote_endpoint(
         self,
         endpoint: str,
-        payload: Dict[str, Any] | None = None,
+        payload: Optional[JsonDict] = None,
         method: str = "POST",
         request_timeout: int = 10,
     ) -> requests.Response:
         """
-        Executa um endpoint remoto na catraca atuallmente selecionada.
-        """
-        if not self.device:
-            raise ValueError("Nenhum dispositivo selecionado")
+        Executa um endpoint remoto na catraca atualmente selecionada.
 
+        Raises:
+            CatracaSyncError: Se a requisição falhar.
+        """
         return self._make_request(
             endpoint=endpoint,
             method=method,
@@ -179,397 +331,339 @@ class ControlIDSyncMixin:
     def execute_remote_endpoint_in_devices(
         self,
         endpoint: str,
-        payload: Dict[str, Any] | None,
+        payload: Optional[JsonDict],
         device_ids: List[int],
         method: str = "POST",
         request_timeout: int = 10,
     ) -> Response:
         """
         Executa o mesmo endpoint remoto em uma lista de catracas.
+
+        Diferente dos demais métodos, este não levanta ``CatracaSyncError`` —
+        erros por device são acumulados no campo ``results`` da resposta.
         """
-        try:
+        devices: List[Device] = list(
+            Device.objects.filter(id__in=device_ids).order_by("id")
+        )
+        found_ids = {device.pk for device in devices}
+        missing_ids = sorted(set(device_ids) - found_ids)
 
-            devices: List[Device] = list(
-                Device.objects.filter(id__in=device_ids).order_by("id")
+        if missing_ids:
+            return Response(
+                {"error": f"Devices não encontrados: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            found_ids = {device.pk for device in devices}
-            missing_ids = sorted(set(device_ids) - found_ids)
 
-            if missing_ids:
-                return Response(
-                    {"error": f"Devices não encontrados: {missing_ids}"},
-                    status=status.HTTP_400_BAD_REQUEST,
+        if not devices:
+            return Response(
+                {"error": "Nenhuma catraca encontrada para a operação"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        results: List[JsonDict] = []
+        success_count = 0
+
+        for device in devices:
+            self.set_device(device)
+            try:
+                raw = self.execute_remote_endpoint(
+                    endpoint=endpoint,
+                    payload=payload,
+                    method=method,
+                    request_timeout=request_timeout,
+                )
+                ok = 200 <= raw.status_code < 300
+                results.append(
+                    {
+                        "device_id": device.pk,
+                        "device_name": device.name,
+                        "success": ok,
+                        "status_code": raw.status_code,
+                        "response": self._extract_response_data(raw),
+                    }
+                )
+                if ok:
+                    success_count += 1
+            except CatracaSyncError as exc:
+                results.append(
+                    {
+                        "device_id": device.pk,
+                        "device_name": device.name,
+                        "success": False,
+                        "status_code": exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "error": str(exc),
+                    }
                 )
 
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca encontrada para a operação"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            results = []
-            success_count = 0
-
-            for device in devices:
-                self.set_device(device)
-
-                try:
-                    response = self.execute_remote_endpoint(
-                        endpoint=endpoint,
-                        payload=payload,
-                        method=method,
-                        request_timeout=request_timeout,
-                    )
-                    response_data = self._extract_response_data(response)
-                    ok = 200 <= response.status_code < 300
-
-                    results.append(
-                        {
-                            "device_id": device.pk,
-                            "device_name": device.name,
-                            "success": ok,
-                            "status_code": response.status_code,
-                            "response": response_data,
-                        }
-                    )
-
-                    if ok:
-                        success_count += 1
-                except Exception as exc:
-                    results.append(
-                        {
-                            "device_id": device.pk,
-                            "device_name": device.name,
-                            "success": False,
-                            "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            "error": str(exc),
-                        }
-                    )
-
-            failed_count = len(results) - success_count
-            response_status = (
-                status.HTTP_200_OK
-                if failed_count == 0
-                else status.HTTP_502_BAD_GATEWAY
-            )
-
-            return Response(
-                {
-                    "success": failed_count == 0,
-                    "endpoint": endpoint,
-                    "requested_devices": device_ids,
-                    "processed_devices": len(results),
-                    "successful_devices": success_count,
-                    "failed_devices": failed_count,
-                    "results": results,
-                },
-                status=response_status,
-            )
-
-        except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    def load_objects(
-        self,
-        object_name: str,
-        fields: list[str] | None = None,
-        order_by: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Carrega objetos da catraca.
-        Args:
-            object_name: Nome do objeto na API da catraca
-            fields: Lista de campos para retornar
-            order_by: Lista de campos para ordenação
-        Returns:
-            list[dict[str, Any]]: Lista de objetos carregados
-        """
-        sess = self.login()
-        payload: dict[str, Any] = {"object": object_name}
-
-        if fields:
-            payload["fields"] = fields
-        if order_by:
-            payload["order_by"] = order_by
-
-        response = requests.post(
-            self.get_url(f"load_objects.fcgi?session={sess}"), json=payload, timeout=30
-        )
-        if response.status_code != 200:
-            raise Exception(response.json())
-        response.raise_for_status()
-        return response.json().get(f"{object_name}", [])
-
-    def _get_target_devices(
-        self, device_ids: List[int] | None = None
-    ) -> list:
-        """
-        Retorna a lista de devices alvo.
-        Se device_ids for fornecido, filtra por esses IDs.
-        Se self._device estiver definido, usa apenas aquele device.
-        Caso contrário, retorna todos os devices ativos.
-        """
-        from src.core.control_Id.infra.control_id_django_app.models.device import (
-            Device,
+        failed_count = len(results) - success_count
+        return Response(
+            {
+                "success": failed_count == 0,
+                "endpoint": endpoint,
+                "requested_devices": device_ids,
+                "processed_devices": len(results),
+                "successful_devices": success_count,
+                "failed_devices": failed_count,
+                "results": results,
+            },
+            status=status.HTTP_200_OK if failed_count == 0 else status.HTTP_502_BAD_GATEWAY,
         )
 
+    # ------------------------------------------------------------------
+    # Utilitários de seleção de dispositivos
+    # ------------------------------------------------------------------
+
+    def _get_target_devices(self, device_ids: Optional[List[int]] = None) -> List[Device]:
+        """
+        Resolve a lista de devices alvo com a seguinte prioridade:
+
+        1. Se ``self._device`` estiver definido, usa apenas ele.
+        2. Se ``device_ids`` for fornecido, filtra devices ativos por esses IDs.
+        3. Caso contrário, retorna todos os devices ativos.
+        """
         if self._device is not None:
             return [self._device]
         if device_ids:
             return list(Device.objects.filter(id__in=device_ids, is_active=True))
         return list(Device.objects.filter(is_active=True))
 
-    def create_objects_in_all_devices(
-        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
-    ) -> Response:
+    # ------------------------------------------------------------------
+    # CRUD de objetos na API da catraca
+    # ------------------------------------------------------------------
+
+    def load_objects(
+        self,
+        object_name: str,
+        fields: Optional[List[str]] = None,
+        order_by: Optional[List[str]] = None,
+    ) -> List[JsonDict]:
         """
-        Cria objetos em todas as catracas ativas (ou apenas nas especificadas por device_ids).
+        Carrega objetos da catraca.
+
         Args:
-            object_name: Nome do objeto na API da catraca
-            values: Lista de valores para criar
-            device_ids: Lista opcional de device IDs para limitar o escopo
+            object_name: Nome do objeto na API da catraca.
+            fields: Campos a retornar (``None`` = todos).
+            order_by: Campos de ordenação.
+
         Returns:
-            Response: Resposta da API
+            Lista de objetos carregados.
+
+        Raises:
+            CatracaSyncError: Se a resposta não for 200.
         """
-        try:
-            devices = self._get_target_devices(device_ids)
+        payload: JsonDict = {"object": object_name}
+        if fields:
+            payload["fields"] = fields
+        if order_by:
+            payload["order_by"] = order_by
 
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        response = self._make_request(
+            "load_objects.fcgi", json_data=payload, request_timeout=30
+        )
 
-            # Validação de campos obrigatórios para garantir IDs consistentes entre backend e catracas
-            required_fields_by_object = {
-                # Entidades com ID controlado pelo backend
-                "users": ["id", "name"],
-                "groups": ["id", "name"],
-                "access_rules": ["id", "name", "type", "priority"],
-                "time_zones": ["id", "name"],
-                "time_spans": [
-                    "id",
-                    "time_zone_id",
-                    "start",
-                    "end",
-                    "sun",
-                    "mon",
-                    "tue",
-                    "wed",
-                    "thu",
-                    "fri",
-                    "sat",
-                    "hol1",
-                    "hol2",
-                    "hol3",
-                ],
-                "areas": ["id", "name"],
-                "portals": ["id", "name", "area_from_id", "area_to_id"],
-                "templates": ["id", "user_id", "template"],
-                "cards": ["id", "user_id", "value"],
-                # Relações (pares únicos)
-                "user_groups": ["user_id", "group_id"],
-                "user_access_rules": ["user_id", "access_rule_id"],
-                "portal_access_rules": ["portal_id", "access_rule_id"],
-                "group_access_rules": ["group_id", "access_rule_id"],
-                "access_rule_time_zones": ["access_rule_id", "time_zone_id"],
-            }
-
-            if object_name in required_fields_by_object:
-                req_fields = required_fields_by_object[object_name]
-                for idx, v in enumerate(values):
-                    missing = [f for f in req_fields if v.get(f) in (None, "")]
-                    if missing:
-                        return Response(
-                            {
-                                "error": f"Campos obrigatórios ausentes para {object_name}",
-                                "index": idx,
-                                "missing": missing,
-                            },
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-
-            first_response_data = None
-            with transaction.atomic():
-                for idx, device in enumerate(devices):
-                    self.set_device(device)
-                    sess = self.login()
-                    response = requests.post(
-                        self.get_url(f"create_objects.fcgi?session={sess}"),
-                        json={"object": object_name, "values": values},
-                        timeout=30,
-                    )
-                    if response.status_code != 200:
-                        raise Exception(response.json())
-                    response.raise_for_status()
-                    if idx == 0:
-                        try:
-                            first_response_data = response.json()
-                        except Exception:
-                            first_response_data = {"success": True}
-
-                return Response(
-                    first_response_data or {"success": True},
-                    status=status.HTTP_201_CREATED,
-                )
-
-        except requests.RequestException as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        if response.status_code != 200:
+            raise CatracaSyncError(
+                f"Falha ao carregar '{object_name}': {self._extract_response_data(response)}",
+                status_code=response.status_code,
             )
 
+        return response.json().get(object_name, [])
+
+    def create_objects_in_all_devices(
+        self,
+        object_name: str,
+        values: ObjectValues,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
+    ) -> Response:
+        """
+        Cria objetos em todas as catracas ativas (ou apenas nas indicadas por *device_ids*).
+
+        Raises:
+            CatracaSyncError: Propagada para a camada superior em caso de falha,
+                permitindo rollback de transação Django via ``transaction.atomic()``.
+        """
+        devices = self._get_target_devices(device_ids)
+        if not devices:
+            return Response(
+                {"error": "Nenhuma catraca ativa encontrada"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        _validate_object_fields(object_name, values)
+
+        first_response_data: Optional[JsonDict] = None
+
+        for idx, device in enumerate(devices):
+            self.set_device(device)
+            response = self._make_request(
+                "create_objects.fcgi",
+                json_data={"object": object_name, "values": values},
+                request_timeout=30,
+            )
+            if response.status_code != 200:
+                raise CatracaSyncError(
+                    f"Falha ao criar '{object_name}' no device '{device.name}': "
+                    f"{self._extract_response_data(response)}",
+                    status_code=response.status_code,
+                )
+            if idx == 0:
+                try:
+                    first_response_data = response.json()
+                except Exception:
+                    first_response_data = {"success": True}
+
+        return Response(
+            first_response_data or {"success": True},
+            status=status.HTTP_201_CREATED,
+        )
 
     def create_or_update_objects_in_all_devices(
-        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
+        self,
+        object_name: str,
+        values: ObjectValues,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
         """
-        Cria ou atualiza objetos em todas as catracas ativas (ou apenas nas especificadas por device_ids).
-        Args:
-            object_name: Nome do objeto na API da catraca
-            values: Lista de valores para criar ou atualizar
-            device_ids: Lista opcional de device IDs para limitar o escopo
-        Returns:
-            Response: Resposta da API
+        Cria ou atualiza objetos em todas as catracas ativas.
+
+        Raises:
+            CatracaSyncError: Propagada para a camada superior em caso de falha.
         """
-        try:
-            devices = self._get_target_devices(device_ids)
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
+        devices = self._get_target_devices(device_ids)
+        if not devices:
+            return Response(
+                {"error": "Nenhuma catraca ativa encontrada"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for device in devices:
+            self.set_device(device)
+            response = self._make_request(
+                "create_or_modify_objects.fcgi",
+                json_data={"object": object_name, "values": values},
+                request_timeout=30,
+            )
+            if response.status_code != 200:
+                raise CatracaSyncError(
+                    f"Falha ao criar/atualizar '{object_name}' no device '{device.name}': "
+                    f"{self._extract_response_data(response)}",
+                    status_code=response.status_code,
                 )
 
-            with transaction.atomic():
-                for device in devices:
-                    self.set_device(device)
-                    sess = self.login()
-                    response = requests.post(
-                        self.get_url(f"create_or_modify_objects.fcgi?session={sess}"),
-                        json={"object": object_name, "values": values},
-                        timeout=30,
-                    )
-                    if response.status_code != 200:
-                        try:
-                            error_data = response.json()
-                        except Exception:
-                            error_data = {"error": response.text}
-                        return Response(error_data, status=status.HTTP_400_BAD_REQUEST)
-                    response.raise_for_status()
-
-                return Response({"success": True}, status=status.HTTP_200_OK)
-
-        except requests.RequestException as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({"success": True}, status=status.HTTP_200_OK)
 
     def update_objects_in_all_devices(
-        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
+        self,
+        object_name: str,
+        values: Mapping[str, Any],
+        where: JsonDict,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
         """
-        Atualiza objetos em todas as catracas ativas (ou apenas nas especificadas por device_ids).
-        Args:
-            object_name: Nome do objeto na API da catraca
-            values: Lista de valores para atualizar
-            where: Condição para atualização
-            device_ids: Lista opcional de device IDs para limitar o escopo
-        Returns:
-            Response: Resposta da API
+        Atualiza objetos em todas as catracas ativas.
+
+        Raises:
+            CatracaSyncError: Propagada para a camada superior em caso de falha.
         """
-        try:
-            devices = self._get_target_devices(device_ids)
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
+        devices = self._get_target_devices(device_ids)
+        if not devices:
+            return Response(
+                {"error": "Nenhuma catraca ativa encontrada"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for device in devices:
+            self.set_device(device)
+            response = self._make_request(
+                "modify_objects.fcgi",
+                json_data={"object": object_name, "values": values, "where": where},
+                request_timeout=30,
+            )
+            if response.status_code != 200:
+                raise CatracaSyncError(
+                    f"Falha ao atualizar '{object_name}' no device '{device.name}': "
+                    f"{self._extract_response_data(response)}",
+                    status_code=response.status_code,
                 )
 
-            with transaction.atomic():
-                for device in devices:
-                    self.set_device(device)
-                    sess = self.login()
-                    response = requests.post(
-                        self.get_url(f"modify_objects.fcgi?session={sess}"),
-                        json={"object": object_name, "values": values, "where": where},
-                        timeout=30,
-                    )
-                    if response.status_code != 200:
-                        raise Exception(response.json())
-                    response.raise_for_status()
-
-                return Response({"success": True})
-
-        except requests.RequestException as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({"success": True})
 
     def destroy_objects_in_all_devices(
-        self, object_name: str, where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
+        self,
+        object_name: str,
+        where: JsonDict,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
         """
-        Remove objetos de todas as catracas ativas (ou apenas nas especificadas por device_ids).
-        Args:
-            object_name: Nome do objeto na API da catraca
-            where: Condição para remoção
-            device_ids: Lista opcional de device IDs para limitar o escopo
-        Returns:
-            Response: Resposta da API
+        Remove objetos de todas as catracas ativas.
+
+        Raises:
+            CatracaSyncError: Propagada para a camada superior em caso de falha.
         """
-        try:
-            devices = self._get_target_devices(device_ids)
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            with transaction.atomic():
-                for device in devices:
-                    self.set_device(device)
-                    sess = self.login()
-                    response = requests.post(
-                        self.get_url(f"destroy_objects.fcgi?session={sess}"),
-                        json={"object": object_name, "where": where},
-                        timeout=30,
-                    )
-                    # Alguns firmwares retornam 200 com JSON; outros 204 sem corpo.
-                    if response.status_code not in (200, 204):
-                        raise Exception(response.json() if response.content else response.text)
-
-                return Response({"success": True}, status=status.HTTP_204_NO_CONTENT)
-
-        except requests.RequestException as e:
+        devices = self._get_target_devices(device_ids)
+        if not devices:
             return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": "Nenhuma catraca ativa encontrada"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
+        for device in devices:
+            self.set_device(device)
+            response = self._make_request(
+                "destroy_objects.fcgi",
+                json_data={"object": object_name, "where": where},
+                request_timeout=30,
+            )
+            # Alguns firmwares retornam 200 com JSON; outros 204 sem corpo.
+            if response.status_code not in (200, 204):
+                raise CatracaSyncError(
+                    f"Falha ao remover '{object_name}' no device '{device.name}': "
+                    f"{self._extract_response_data(response) or response.text}",
+                    status_code=response.status_code,
+                )
+
+        return Response({"success": True}, status=status.HTTP_204_NO_CONTENT)
+
+    # ------------------------------------------------------------------
+    # Aliases de compatibilidade (delegates diretos)
+    # ------------------------------------------------------------------
+
     def create_objects(
-        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
+        self, object_name: str, values: ObjectValues, device_ids: Optional[List[int]] = None, **kwargs: Any
     ) -> Response:
-        """Mantido por compatibilidade, chama create_objects_in_all_devices"""
+        """Alias de compatibilidade → :meth:`create_objects_in_all_devices`."""
         return self.create_objects_in_all_devices(object_name, values, device_ids=device_ids, **kwargs)
 
     def create_or_update_objects(
-        self, object_name: str, values: List[Mapping[str, Any]], device_ids: List[int] | None = None, **kwargs
+        self, object_name: str, values: ObjectValues, device_ids: Optional[List[int]] = None, **kwargs: Any
     ) -> Response:
-        """Mantido por compatibilidade, chama create_or_update_objects_in_all_devices"""
+        """Alias de compatibilidade → :meth:`create_or_update_objects_in_all_devices`."""
         return self.create_or_update_objects_in_all_devices(object_name, values, device_ids=device_ids, **kwargs)
 
     def update_objects(
-        self, object_name: str, values: Mapping[str, Any], where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
+        self,
+        object_name: str,
+        values: Mapping[str, Any],
+        where: JsonDict,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
-        """Mantido por compatibilidade, chama update_objects_in_all_devices"""
+        """Alias de compatibilidade → :meth:`update_objects_in_all_devices`."""
         return self.update_objects_in_all_devices(object_name, values, where, device_ids=device_ids, **kwargs)
 
     def destroy_objects(
-        self, object_name: str, where: Dict[str, Any], device_ids: List[int] | None = None, **kwargs
+        self, object_name: str, where: JsonDict, device_ids: Optional[List[int]] = None, **kwargs: Any
     ) -> Response:
-        """Mantido por compatibilidade, chama destroy_objects_in_all_devices"""
+        """Alias de compatibilidade → :meth:`destroy_objects_in_all_devices`."""
         return self.destroy_objects_in_all_devices(object_name, where, device_ids=device_ids, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Enroll remoto
+    # ------------------------------------------------------------------
 
     @overload
     def remote_enroll(
@@ -582,56 +676,59 @@ class ControlIDSyncMixin:
     ) -> RemoteEnrollCardResponse: ...
 
     def remote_enroll(
-        self, user_id: int, type: str, save: bool, sync: bool
-    ) -> Union[RemoteEnrollBioResponse, RemoteEnrollCardResponse] | Response:
+        self,
+        user_id: int,
+        type: str,
+        save: bool,
+        sync: bool,
+    ) -> Union[RemoteEnrollBioResponse, RemoteEnrollCardResponse, Response]:
         """
         Realiza o cadastro remoto de um usuário na catraca.
+
         Args:
-            user_id: ID do usuário
-            type: Tipo de cadastro (biometric, face, etc.)
-            save: Se deve salvar o cadastro
-            sync: Se deve sincronizar com o banco de dados
+            user_id: ID do usuário.
+            type: Tipo de cadastro (``"biometry"`` ou ``"card"``).
+            save: Se deve persistir o cadastro na catraca.
+            sync: Se deve sincronizar com o banco de dados.
+
         Returns:
-            Response: Resposta da API
+            Dados do enroll ou ``Response`` de erro.
+
+        Note:
+            Este método não levanta ``CatracaSyncError`` pois o enroll é uma
+            operação interativa — a resposta de erro já é suficientemente
+            descritiva para o frontend tratar (ex: timeout do usuário).
         """
+        if not self.device:
+            return Response(
+                {"error": "Nenhum dispositivo selecionado para cadastro"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload: JsonDict = {
+            "user_id": user_id,
+            "type": type,
+            "save": save,
+            "sync": sync,
+        }
+
         try:
-            if not self.device:
-                return Response(
-                    {"error": "Nenhum dispositivo selecionado para cadastro"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # Timeout da catraca (30s)
-            device_timeout = 30
-
-            # Payload
-            payload = {
-                "user_id": user_id,
-                "type": type,
-                "save": save,
-                "sync": sync,
-            }
-
             sess = self.login()
-
-            # Timeout do request um pouco maior que o da catraca (35s)
-
             response = requests.post(
                 self.get_url(f"remote_enroll.fcgi?session={sess}"),
                 json=payload,
-                timeout=device_timeout,
+                timeout=40,  # Aguarda o usuário passar o dedo/cartão na catraca
             )
 
             if response.status_code == 200:
-                response_data = response.json()
-                return Response(response_data, status=status.HTTP_201_CREATED)
+                return Response(response.json(), status=status.HTTP_201_CREATED)
 
             return Response(
                 {
                     "error": "Falha ao cadastrar na catraca",
                     "details": {
                         "status_code": response.status_code,
-                        "content": response.text if response.text else "No content",
+                        "content": response.text or "No content",
                     },
                 },
                 status=response.status_code,
@@ -645,90 +742,56 @@ class ControlIDSyncMixin:
                 },
                 status=status.HTTP_408_REQUEST_TIMEOUT,
             )
-
-        except Exception as e:
+        except CatracaSyncError as exc:
             return Response(
-                {"error": "Erro ao processar cadastro", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                {"error": "Erro ao processar cadastro", "details": str(exc)},
+                status=exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def set_configuration(self, config: Dict[str, Any]) -> Response:
+    # ------------------------------------------------------------------
+    # Configuração da catraca
+    # ------------------------------------------------------------------
+
+    def set_configuration(self, config: JsonDict) -> Response:
         """
-        Define configurações na catraca.
+        Aplica configurações em todas as catracas ativas.
+
+        Os valores do dicionário são normalizados para string antes do envio,
+        conforme esperado pela API da catraca.
+
         Args:
-            config: Dicionário com as configurações a serem definidas
-        Returns:
-            Response: Resposta da API
+            config: Dicionário com as configurações a serem definidas.
+
+        Raises:
+            CatracaSyncError: Propagada para a camada superior em caso de falha.
         """
-        try:
-            from src.core.control_Id.infra.control_id_django_app.models.device import (
-                Device,
+        devices = list(Device.objects.filter(is_active=True))
+        if not devices:
+            return Response(
+                {"error": "Nenhuma catraca ativa encontrada"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-            devices = Device.objects.filter(is_active=True)
-            if not devices:
-                return Response(
-                    {"error": "Nenhuma catraca ativa encontrada"},
-                    status=status.HTTP_400_BAD_REQUEST,
+        normalized = _normalize_config_value(config or {})
+        # Envolve em {"general": ...} se nenhuma seção de nível raiz foi fornecida.
+        final_payload: JsonDict = (
+            normalized
+            if any(k in normalized for k in _CONFIG_TOP_LEVEL_KEYS)
+            else {"general": normalized}
+        )
+
+        for device in devices:
+            self.set_device(device)
+            response = self._make_request(
+                "set_configuration.fcgi",
+                json_data=final_payload,
+                request_timeout=30,
+            )
+            if response.status_code != 200:
+                raise CatracaSyncError(
+                    f"Falha ao configurar device '{device.name}': "
+                    f"{self._extract_response_data(response)}",
+                    status_code=response.status_code,
                 )
 
-            # Normaliza payload: API espera strings. Converte bool -> "1"/"0", números -> str, None -> ""
-            def normalize_values(value: Any) -> Any:
-                if isinstance(value, dict):
-                    return {k: normalize_values(v) for k, v in value.items()}
-                if isinstance(value, list):
-                    return [normalize_values(v) for v in value]
-                if isinstance(value, str):
-                    return value  # Já é string, não modifica
-                if isinstance(value, bool):
-                    return "1" if value else "0"
-                if value is None:
-                    return ""
-                if isinstance(value, (int, float)):
-                    return str(value)
-                return str(value)
-
-            normalized_config = normalize_values(config or {})
-
-            with transaction.atomic():
-                for device in devices:
-                    self.set_device(device)
-                    sess = self.login()
-
-                    # Determina o payload final
-                    final_payload = (
-                        normalized_config
-                        if any(
-                            key in normalized_config
-                            for key in (
-                                "general",
-                                "monitor",
-                                "catra",
-                                "online_client",
-                                "push_server",
-                            )
-                        )
-                        else {"general": normalized_config}
-                    )
-
-                    response = requests.post(
-                        self.get_url(f"set_configuration.fcgi?session={sess}"),
-                        json=final_payload,
-                        headers={"Content-Type": "application/json"},
-                        timeout=30,
-                    )
-
-                    if response.status_code != 200:
-                        raise Exception(response.json())
-                    response.raise_for_status()
-
-                return Response({"success": True})
-
-        except requests.RequestException as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        except Exception as e:
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({"success": True})

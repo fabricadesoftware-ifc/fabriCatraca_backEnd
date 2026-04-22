@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
+from django.core import mail
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -16,6 +17,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
 )
 from src.core.control_Id.infra.control_id_django_app.tasks import (
     process_temporary_user_releases,
+    send_temporary_user_release_notification,
 )
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import (
     MonitorAlert,
@@ -29,11 +31,18 @@ class TemporaryUserReleaseTests(APITestCase):
             email="operador@example.com",
             name="Operador",
             password="123456",
+            app_role=User.AppRole.ADMIN,
         )
         self.target_user = User.objects.create_user(
             email="alvo@example.com",
             name="Usuario Alvo",
             password="123456",
+        )
+        self.server_user = User.objects.create_user(
+            email="professor@example.com",
+            name="Professor Responsavel",
+            password="123456",
+            app_role=User.AppRole.SERVIDOR,
         )
         self.access_rule = AccessRule.objects.create(
             name="Regra Temporaria Global",
@@ -83,6 +92,72 @@ class TemporaryUserReleaseTests(APITestCase):
         self.assertEqual(release.requested_by, self.operator)
         self.assertEqual(release.user, self.target_user)
         self.assertEqual(release.access_rule, self.access_rule)
+
+    def test_create_temporary_release_enqueues_email_task_to_selected_server(self):
+        valid_from = timezone.now() + timedelta(minutes=10)
+
+        with self.settings(
+            TEMPORARY_RELEASE_ACCESS_RULE_ID=self.access_rule.id,
+        ), patch(
+            "src.core.control_Id.infra.control_id_django_app.tasks."
+            "send_temporary_user_release_notification.delay"
+        ) as mock_delay:
+            response = self.client.post(
+                reverse("temporaryuserrelease-list"),
+                {
+                    "user_id": self.target_user.id,
+                    "duration_minutes": 10,
+                    "notes": "Liberacao para entrada",
+                    "valid_from": valid_from.isoformat(),
+                    "notified_server_id": self.server_user.id,
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["notification_status"], "queued")
+
+        release = TemporaryUserRelease.objects.get(id=response.data["id"])
+        self.assertEqual(release.notified_server, self.server_user)
+        mock_delay.assert_called_once_with(release.id)
+
+    def test_notification_task_sends_email_to_selected_server(self):
+        valid_from = timezone.now() + timedelta(minutes=10)
+        valid_until = valid_from + timedelta(minutes=10)
+
+        release = TemporaryUserRelease.objects.create(
+            user=self.target_user,
+            requested_by=self.operator,
+            notified_server=self.server_user,
+            access_rule=self.access_rule,
+            status=TemporaryUserRelease.Status.PENDING,
+            notes="Liberacao para entrada",
+            valid_from=valid_from,
+            valid_until=valid_until,
+        )
+
+        with self.settings(
+            EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+            DEFAULT_FROM_EMAIL="nao-responda@example.com",
+        ):
+            result = send_temporary_user_release_notification.run(release.id)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+
+        self.assertEqual(message.to, [self.server_user.email])
+        self.assertIn(self.target_user.name, message.subject)
+        self.assertIn(self.target_user.name, message.body)
+        self.assertIn("Liberacao para entrada", message.body)
+        self.assertIn(
+            timezone.localtime(valid_from).strftime("%d/%m/%Y"),
+            message.body,
+        )
+        self.assertIn(
+            timezone.localtime(valid_from).strftime("%H:%M"),
+            message.body,
+        )
 
     def test_task_activates_pending_release(self):
         release = TemporaryUserRelease.objects.create(

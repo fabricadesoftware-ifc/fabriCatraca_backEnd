@@ -20,10 +20,47 @@ from src.core.control_Id.infra.control_id_django_app.temporary_release_service i
 from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
+from src.core.control_Id.infra.control_id_django_app.temporary_release_notification_service import (
+    TemporaryUserReleaseNotificationService,
+)
 
 logger = logging.getLogger(__name__)
 GRANTED_EVENT_TYPES = [7, 11, 12, 15]
 DESISTANCE_EVENT_TYPE = 13
+
+
+@shared_task(bind=True)
+def send_temporary_user_release_notification(self, release_id: int) -> dict:
+    try:
+        release = TemporaryUserRelease.objects.select_related(
+            "user",
+            "requested_by",
+            "notified_server",
+        ).get(pk=release_id)
+    except TemporaryUserRelease.DoesNotExist:
+        logger.warning(
+            "[RELEASE] User release %d nao encontrado ao enviar notificacao por e-mail.",
+            release_id,
+        )
+        return {"success": False, "error": "Release not found"}
+
+    if not release.notified_server_id:
+        logger.info(
+            "[RELEASE] User release %d nao possui servidor para notificacao.",
+            release_id,
+        )
+        return {"success": False, "skipped": True, "reason": "no_notified_server"}
+
+    try:
+        TemporaryUserReleaseNotificationService.notify_release_created(release)
+        return {"success": True}
+    except Exception as exc:
+        logger.exception(
+            "Erro ao enviar e-mail da liberacao temporaria %d: %s",
+            release_id,
+            exc,
+        )
+        return {"success": False, "error": str(exc)}
 
 
 # ============================================================================

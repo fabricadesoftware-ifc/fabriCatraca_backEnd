@@ -23,13 +23,16 @@ class TemporaryUserReleaseViewSet(
     queryset = TemporaryUserRelease.objects.select_related(
         "user",
         "requested_by",
+        "notified_server",
         "access_rule",
+        "visita",
+        "visita__created_by",
         "consumed_log__device",
         "consumed_log__portal",
     ).all()
     serializer_class = TemporaryUserReleaseSerializer
     permission_classes = [IsAdminOrSisaeRole]
-    filterset_fields = ["user", "status", "requested_by"]
+    filterset_fields = ["user", "status", "requested_by", "visita"]
     search_fields = ["user__name", "requested_by__name", "notes", "result_message"]
     ordering_fields = [
         "created_at",
@@ -51,6 +54,27 @@ class TemporaryUserReleaseViewSet(
         context = super().get_serializer_context()
         context["request"] = self.request
         return context
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+
+        response_data = dict(serializer.data)
+        notification_status = getattr(serializer, "notification_status", None)
+        notification_warning = getattr(serializer, "notification_warning", "")
+
+        if notification_status:
+            response_data["notification_status"] = notification_status
+        if notification_warning:
+            response_data["notification_warning"] = notification_warning
+
+        return Response(
+            response_data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):

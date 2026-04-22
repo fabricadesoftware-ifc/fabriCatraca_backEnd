@@ -7,8 +7,8 @@ from src.core.control_Id.infra.control_id_django_app.models import Device
 from src.core.control_Id.infra.control_id_django_app.models import UserGroup
 from src.core.uploader.models import Archive
 
-from .models import User
-from .validate import normalize_cpf, normalize_phone, validate_user_dates
+from ..models import User
+from ..validate import normalize_cpf, normalize_phone, validate_user_dates
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
         many=True,
         write_only=True,
         required=False,
+        allow_null=True,
         queryset=Device.objects.all(),
         source="selected_devices",
     )
@@ -92,6 +93,17 @@ class UserSerializer(serializers.ModelSerializer):
             for group in Group.objects.filter(id__in=group_ids)
         ]
 
+    def to_internal_value(self, data):
+        if hasattr(data, "copy"):
+            mutable_data = data.copy()
+        else:
+            mutable_data = dict(data)
+
+        if mutable_data.get("selected_device_ids", serializers.empty) is None:
+            mutable_data["selected_device_ids"] = []
+
+        return super().to_internal_value(mutable_data)
+
     def get_picture_url(self, obj):
         picture = getattr(obj, "picture", None)
         if picture is None:
@@ -133,6 +145,9 @@ class UserSerializer(serializers.ModelSerializer):
             "selected_devices",
             instance.selected_devices.all() if instance else [],
         )
+        if selected_devices is None:
+            selected_devices = []
+            attrs["selected_devices"] = []
 
         current_role = instance.app_role if instance else User.AppRole.NONE
         current_email = instance.email if instance else None

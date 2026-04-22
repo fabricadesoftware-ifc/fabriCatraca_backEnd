@@ -909,10 +909,6 @@ class _EasySetupEngine(ControlIDSyncMixin):
             if registration:
                 payload["registration"] = registration
 
-            if u.user_type_id in {
-                choice.value for choice in User.UserType
-            }:
-                payload["user_type_id"] = u.user_type_id
             users_list.append(payload)
             eligible_user_ids.add(u.id)
 

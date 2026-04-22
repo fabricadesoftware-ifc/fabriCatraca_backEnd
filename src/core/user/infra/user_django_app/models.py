@@ -149,7 +149,17 @@ class Visitas(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="visitas")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_visitas")
     initial_date = models.DateTimeField(auto_now_add=True)
+    end_date = models.DateTimeField(blank=True, null=True)
     visit_date = models.DateTimeField()
+    card = models.ForeignKey(
+        "control_id_django_app.Card",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visitas",
+    )
+    finished_at = models.DateTimeField(blank=True, null=True)
+    card_removed_at = models.DateTimeField(blank=True, null=True)
 
 
     def __str__(self):

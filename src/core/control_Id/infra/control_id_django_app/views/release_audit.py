@@ -19,7 +19,6 @@ class ReleaseAuditViewSet(
         "target_user",
         "device",
         "portal",
-        "temporary_release",
         "access_log",
     ).all()
     serializer_class = ReleaseAuditSerializer

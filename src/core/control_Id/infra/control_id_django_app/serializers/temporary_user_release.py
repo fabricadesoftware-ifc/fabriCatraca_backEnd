@@ -1,4 +1,5 @@
 from datetime import timedelta
+import logging
 
 from django.conf import settings
 from django.utils import timezone
@@ -16,7 +17,9 @@ from .portal_group import PortalGroupSerializer
 from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
-from src.core.user.infra.user_django_app.models import User
+from src.core.user.infra.user_django_app.models import User, Visitas
+
+logger = logging.getLogger(__name__)
 
 
 class TemporaryReleaseUserSerializer(serializers.ModelSerializer):
@@ -47,18 +50,48 @@ class TemporaryReleaseAccessLogSerializer(serializers.ModelSerializer):
         fields = ["id", "time", "event_type", "device_name", "portal_name"]
 
 
+class TemporaryReleaseVisitSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.name", read_only=True)
+    created_by_name = serializers.CharField(source="created_by.name", read_only=True)
+
+    class Meta:
+        model = Visitas
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "created_by",
+            "created_by_name",
+            "initial_date",
+            "visit_date",
+            "end_date",
+        ]
+
+
 class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     user = TemporaryReleaseUserSerializer(read_only=True)
     requested_by = TemporaryReleaseUserSerializer(read_only=True)
+    notified_server = TemporaryReleaseUserSerializer(read_only=True)
     access_rule = TemporaryReleaseAccessRuleSerializer(read_only=True)
     consumed_log = TemporaryReleaseAccessLogSerializer(read_only=True)
     portal_group = PortalGroupSerializer(read_only=True)
+    visita = TemporaryReleaseVisitSerializer(read_only=True)
 
     user_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         source="user",
         write_only=True,
         required=True,
+    )
+    notified_server_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(
+            app_role=User.AppRole.SERVIDOR,
+            deleted_at__isnull=True,
+        ),
+        source="notified_server",
+        write_only=True,
+        required=False,
+        allow_null=True,
     )
     duration_minutes = serializers.IntegerField(
         min_value=1,
@@ -74,6 +107,13 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    visita_id = serializers.PrimaryKeyRelatedField(
+        queryset=Visitas.objects.filter(deleted_at__isnull=True),
+        source="visita",
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = TemporaryUserRelease
@@ -82,8 +122,12 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             "user",
             "user_id",
             "requested_by",
+            "notified_server",
+            "notified_server_id",
             "access_rule",
             "status",
+            "visita",
+            "visita_id",
             "valid_from",
             "valid_until",
             "activated_at",
@@ -138,6 +182,8 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         user = attrs["user"]
+        visita = attrs.get("visita")
+        notified_server = attrs.get("notified_server")
         access_rule = self._get_temporary_access_rule()
 
         if self.instance is None:  # CREATE
@@ -165,10 +211,35 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
                 }
             )
 
+        if visita and visita.user_id != user.id:
+            raise serializers.ValidationError(
+                {"visita_id": ["A visita selecionada nao pertence ao usuario informado."]}
+            )
+
+        if notified_server and notified_server.app_role != User.AppRole.SERVIDOR:
+            raise serializers.ValidationError(
+                {
+                    "notified_server_id": [
+                        "Selecione um usuario com perfil de servidor para a notificacao."
+                    ]
+                }
+            )
+
+        if notified_server and not notified_server.email:
+            raise serializers.ValidationError(
+                {
+                    "notified_server_id": [
+                        "O servidor selecionado precisa ter um e-mail cadastrado."
+                    ]
+                }
+            )
+
         attrs["resolved_access_rule"] = access_rule
         return attrs
 
     def create(self, validated_data):
+        self.notification_status = None
+        self.notification_warning = ""
         user = validated_data.pop("user")
         duration_minutes = validated_data.pop("duration_minutes")
         access_rule = validated_data.pop("resolved_access_rule")
@@ -187,6 +258,25 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             **validated_data,
         )
         ReleaseAuditService.sync_from_temporary_release(release)
+
+        if release.notified_server_id:
+            try:
+                from src.core.control_Id.infra.control_id_django_app.tasks import (
+                    send_temporary_user_release_notification,
+                )
+
+                send_temporary_user_release_notification.delay(release.id)
+                self.notification_status = "queued"
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue temporary release notification for release %s",
+                    release.id,
+                )
+                self.notification_status = "failed"
+                self.notification_warning = (
+                    "Liberacao criada, mas nao foi possivel enfileirar o e-mail para o "
+                    "servidor selecionado."
+                )
 
         # Agenda tasks com eta exato
         from src.core.control_Id.infra.control_id_django_app.tasks import (

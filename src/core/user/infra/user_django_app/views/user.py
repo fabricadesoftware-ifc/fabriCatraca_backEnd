@@ -15,14 +15,13 @@ from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollCardResponse
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 
-from .models import User
-from .permissions import (
+from ..models import User, Visitas
+from ..permissions import (
     IsAdminRole,
     IsOperationalRole,
     IsAdminOrGuaritaRole,
-    IsAdminOrSisaeRole,
 )
-from .serializers import RoleAwareUserReadSerializer, UserSerializer
+from ..serializers import RoleAwareUserReadSerializer, UserSerializer, VisitasSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -111,16 +110,85 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             "begin_time": self._datetime_to_device_timestamp(instance.start_date),
             "end_time": self._datetime_to_device_timestamp(instance.end_date),
         }
-        if instance.user_type_id is not None:
-            payload["user_type_id"] = instance.user_type_id
         return payload
 
     def _get_active_target_devices(self, user: User):
         return list(user.get_target_devices(include_inactive=False))
 
     @staticmethod
+    def _is_visitor_payload(data) -> bool:
+        return data.get("user_type_id") == 1
+
+    def _find_existing_visitor(self, validated_data):
+        visitors = User.objects.filter(deleted_at__isnull=True, user_type_id=1)
+
+        cpf = validated_data.get("cpf")
+        if cpf:
+            existing = visitors.filter(cpf=cpf).first()
+            if existing:
+                return existing
+
+        registration = validated_data.get("registration")
+        if registration:
+            existing = visitors.filter(registration=registration).first()
+            if existing:
+                return existing
+
+        phone = validated_data.get("phone")
+        if phone:
+            phone_matches = visitors.filter(phone=phone)
+            if phone_matches.count() == 1:
+                return phone_matches.first()
+
+            name = validated_data.get("name")
+            if name:
+                name_matches = phone_matches.filter(name__iexact=name)
+                if name_matches.count() == 1:
+                    return name_matches.first()
+
+        email = validated_data.get("email")
+        if email:
+            email_matches = visitors.filter(email=email)
+            if email_matches.count() == 1:
+                return email_matches.first()
+
+        return None
+
+    def _create_visit_record(self, user: User, request_user: User, card=None):
+        visit_date = user.start_date or timezone.now()
+        visit = Visitas.objects.create(
+            user=user,
+            created_by=request_user,
+            visit_date=visit_date,
+            end_date=user.end_date,
+            card=card,
+        )
+        if visit.end_date and visit.end_date > timezone.now():
+            from ..tasks import expire_visit
+
+            expire_visit.apply_async(kwargs={"visit_id": visit.id}, eta=visit.end_date)
+        return visit
+
+    def _build_visitor_response(self, instance: User, visit: Visitas, reused_existing: bool):
+        payload = self.get_serializer(instance).data
+        payload["visit"] = VisitasSerializer(visit, context={"request": self.request}).data
+        payload["reused_existing_user"] = reused_existing
+        return payload
+
+    @staticmethod
     def _is_device_admin_user(user: User) -> bool:
         return bool(user.is_staff or user.is_superuser)
+
+    @staticmethod
+    def _is_duplicate_user_error(response) -> bool:
+        data = getattr(response, "data", None)
+        if isinstance(data, dict):
+            raw_text = " ".join(str(value) for value in data.values())
+        else:
+            raw_text = str(data)
+
+        normalized = raw_text.lower()
+        return "unique constraint failed" in normalized and "users.id" in normalized
 
     def _set_user_admin_on_device(self, device, user_id: int):
         self.set_device(device)
@@ -154,23 +222,43 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
     def _create_user_in_device(self, device, instance):
         self.set_device(device)
         response = self.create_objects("users", [self._build_user_payload(instance)])
+        if response.status_code == status.HTTP_201_CREATED:
+            if instance.pin:
+                pin_resp = self.create_objects(
+                    "pins",
+                    [{"user_id": instance.id, "value": instance.pin}],
+                )
+                if pin_resp.status_code != status.HTTP_201_CREATED:
+                    logger.warning(
+                        "Falha ao criar PIN na catraca %s: %s", device.name, pin_resp.data
+                    )
+
+            if self._is_device_admin_user(instance):
+                self._set_user_admin_on_device(device, instance.id)
+            return
+
+        if self._is_duplicate_user_error(response):
+            self._update_user_in_device(
+                device,
+                instance,
+                previous_device_admin=self._is_device_admin_user(instance),
+            )
+            return
+
         if response.status_code != status.HTTP_201_CREATED:
             raise RuntimeError(
                 f"Erro ao criar usuario na catraca {device.name}: {response.data}"
             )
 
-        if instance.pin:
-            pin_resp = self.create_objects(
-                "pins",
-                [{"user_id": instance.id, "value": instance.pin}],
+    def _upsert_user_in_device(self, device, instance, previous_device_admin=False):
+        try:
+            self._update_user_in_device(
+                device,
+                instance,
+                previous_device_admin=previous_device_admin,
             )
-            if pin_resp.status_code != status.HTTP_201_CREATED:
-                logger.warning(
-                    "Falha ao criar PIN na catraca %s: %s", device.name, pin_resp.data
-                )
-
-        if self._is_device_admin_user(instance):
-            self._set_user_admin_on_device(device, instance.id)
+        except Exception:
+            self._create_user_in_device(device, instance)
 
     def _update_user_in_device(self, device, instance, previous_device_admin=False):
         self.set_device(device)
@@ -236,23 +324,52 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         serializer.id = serializer.validated_data.get("registration")
 
         with transaction.atomic():
-            instance = serializer.save()
+            reused_existing = False
+            created_new_user = False
+
+            if self._is_visitor_payload(serializer.validated_data):
+                existing_visitor = self._find_existing_visitor(serializer.validated_data)
+                if existing_visitor:
+                    update_serializer = self.get_serializer(
+                        existing_visitor,
+                        data=request.data,
+                        partial=True,
+                    )
+                    update_serializer.is_valid(raise_exception=True)
+                    instance = update_serializer.save()
+                    reused_existing = True
+                else:
+                    instance = serializer.save()
+                    created_new_user = True
+            else:
+                instance = serializer.save()
+                created_new_user = True
+
             self._normalize_user_type(instance)
 
             if not instance.panel_access_only:
                 devices = self._get_active_target_devices(instance)
                 try:
                     for device in devices:
-                        self._create_user_in_device(device, instance)
+                        if created_new_user:
+                            self._create_user_in_device(device, instance)
+                        else:
+                            self._upsert_user_in_device(device, instance)
                 except Exception as exc:
-                    instance.delete()
+                    if created_new_user:
+                        instance.delete()
                     return Response(
                         {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
                     )
 
-        return Response(
-            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
-        )
+            if self._is_visitor(instance):
+                visit = self._create_visit_record(instance, request.user)
+                return Response(
+                    self._build_visitor_response(instance, visit, reused_existing),
+                    status=status.HTTP_201_CREATED,
+                )
+
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -548,7 +665,23 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            instance = serializer.save()
+            reused_existing = False
+            created_new_user = False
+
+            existing_visitor = self._find_existing_visitor(serializer.validated_data)
+            if existing_visitor:
+                update_serializer = self.get_serializer(
+                    existing_visitor,
+                    data=user_data,
+                    partial=True,
+                )
+                update_serializer.is_valid(raise_exception=True)
+                instance = update_serializer.save()
+                reused_existing = True
+            else:
+                instance = serializer.save()
+                created_new_user = True
+
             self._normalize_user_type(instance)
 
             # 3. Salva o cartao no banco
@@ -561,7 +694,10 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 devices = self._get_active_target_devices(instance)
                 try:
                     for device in devices:
-                        self._create_user_in_device(device, instance)
+                        if created_new_user:
+                            self._create_user_in_device(device, instance)
+                        else:
+                            self._upsert_user_in_device(device, instance)
 
                         # Cria cartao na catraca
                         self.set_device(device)
@@ -576,15 +712,20 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                             ],
                         )
                 except Exception as exc:
-                    instance.delete()
+                    if created_new_user:
+                        instance.delete()
                     return Response(
                         {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
                     )
+
+            visit = self._create_visit_record(instance, request.user, card=card)
 
         return Response(
             {
                 "user": self.get_serializer(instance).data,
                 "card": {"id": card.id, "value": card.value},
+                "visit": VisitasSerializer(visit, context={"request": request}).data,
+                "reused_existing_user": reused_existing,
             },
             status=status.HTTP_201_CREATED,
         )
