@@ -53,20 +53,22 @@ class TemporaryUserReleaseNotificationService:
 
     @classmethod
     def notify_release_created(cls, release):
-        notified_server = release.notified_server
-        if not notified_server or not notified_server.email:
+        recipient_email = (getattr(release, "notification_email", "") or "").strip()
+        if not recipient_email and release.notified_server:
+            recipient_email = release.notified_server.email or ""
+        if not recipient_email:
             return
 
         send_mail(
             subject=cls.build_subject(release),
             message=cls.build_message(release),
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[notified_server.email],
+            recipient_list=[recipient_email],
             fail_silently=False,
         )
 
         logger.info(
             "Temporary release notification sent to %s for release %s",
-            notified_server.email,
+            recipient_email,
             release.id,
         )

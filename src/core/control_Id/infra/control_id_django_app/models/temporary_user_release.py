@@ -92,6 +92,11 @@ class TemporaryUserRelease(BaseModel):
         default="",
         help_text="Mensagem completa do e-mail enviada ao servidor.",
     )
+    notification_email = models.EmailField(
+        blank=True,
+        default="",
+        help_text="E-mail que deve receber a notificacao desta liberacao.",
+    )
     result_message = models.TextField(blank=True, default="")
 
     class Meta(BaseModel.Meta):

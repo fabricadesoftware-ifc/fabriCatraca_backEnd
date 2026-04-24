@@ -101,6 +101,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     valid_from = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False)
     notification_message = serializers.CharField(required=False, allow_blank=True)
+    notification_email = serializers.EmailField(required=False, allow_blank=True)
     portal_group_id = serializers.PrimaryKeyRelatedField(
         queryset=PortalGroup.objects.filter(is_active=True),
         source="portal_group",
@@ -137,6 +138,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             "consumed_log",
             "notes",
             "notification_message",
+            "notification_email",
             "result_message",
             "created_at",
             "updated_at",
@@ -186,6 +188,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         user = attrs["user"]
         visita = attrs.get("visita")
         notified_server = attrs.get("notified_server")
+        notification_email = (attrs.get("notification_email") or "").strip().lower()
         access_rule = self._get_temporary_access_rule()
 
         if self.instance is None:  # CREATE
@@ -236,6 +239,11 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
                 }
             )
 
+        if notified_server and not notification_email:
+            attrs["notification_email"] = notified_server.email
+        elif notification_email:
+            attrs["notification_email"] = notification_email
+
         attrs["resolved_access_rule"] = access_rule
         return attrs
 
@@ -261,7 +269,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         )
         ReleaseAuditService.sync_from_temporary_release(release)
 
-        if release.notified_server_id:
+        if release.notification_email:
             try:
                 from src.core.control_Id.infra.control_id_django_app.tasks import (
                     send_temporary_user_release_notification,
@@ -277,7 +285,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
                 self.notification_status = "failed"
                 self.notification_warning = (
                     "Liberacao criada, mas nao foi possivel enfileirar o e-mail para o "
-                    "servidor selecionado."
+                    "destinatario informado."
                 )
 
         # Agenda tasks com eta exato

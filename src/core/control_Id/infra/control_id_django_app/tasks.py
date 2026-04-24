@@ -44,12 +44,12 @@ def send_temporary_user_release_notification(self, release_id: int) -> dict:
         )
         return {"success": False, "error": "Release not found"}
 
-    if not release.notified_server_id:
+    if not release.notification_email and not release.notified_server_id:
         logger.info(
-            "[RELEASE] User release %d nao possui servidor para notificacao.",
+            "[RELEASE] User release %d nao possui e-mail para notificacao.",
             release_id,
         )
-        return {"success": False, "skipped": True, "reason": "no_notified_server"}
+        return {"success": False, "skipped": True, "reason": "no_notification_email"}
 
     try:
         TemporaryUserReleaseNotificationService.notify_release_created(release)

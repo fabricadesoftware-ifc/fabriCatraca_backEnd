@@ -12,6 +12,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
 )
 from src.core.control_Id.infra.control_id_django_app.models.device import Device
 from src.core.user.infra.user_django_app.models import User
+from src.core.user.infra.user_django_app.validate import normalize_phone
 from .excel_parser import ParsedRow
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,29 @@ class ImportUsersService(ControlIDSyncMixin):
             "registration": user.registration,
         }
         return payload
+
+    def _normalize_phone_or_none(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        try:
+            return normalize_phone(value)
+        except ValueError:
+            logger.warning("[USER] Telefone ignorado por formato invalido: %s", value)
+            return None
+
+    def _get_available_email(self, email: str | None, user: User | None = None) -> str | None:
+        if not email:
+            return None
+
+        email = email.strip().lower()
+        queryset = User.objects.filter(email=email)
+        if user and user.pk:
+            queryset = queryset.exclude(pk=user.pk)
+
+        if queryset.exists():
+            logger.warning("[USER] E-mail '%s' ignorado porque ja esta em uso", email)
+            return None
+        return email
 
     # ── Grupo ──
 
@@ -112,7 +136,7 @@ class ImportUsersService(ControlIDSyncMixin):
     # ── Usuários ──
 
     def upsert_users(
-        self, rows: list[ParsedRow]
+        self, rows: list[ParsedRow], app_role: str | None = None
     ) -> tuple[list[User], list[User], int, int]:
         """
         Cria ou atualiza usuários no Django.
@@ -123,18 +147,20 @@ class ImportUsersService(ControlIDSyncMixin):
 
         for row in rows:
             user = User.objects.filter(registration=row.registration).first()
+            phone = self._normalize_phone_or_none(row.phone)
+            phone_landline = self._normalize_phone_or_none(row.phone_landline)
 
             if not user:
-                email = (
-                    f"{row.name.split(' ')[0].lower()}"
-                    f"{row.name.split(' ')[-1].lower()}"
-                    f"@estudantes.ifc.edu.br"
-                )
+                email = self._get_available_email(row.email)
                 user = User.objects.create(
                     id=row.registration,
                     name=row.name,
                     registration=row.registration,
                     email=email,
+                    birth_date=row.birth_date,
+                    phone=phone,
+                    phone_landline=phone_landline,
+                    app_role=app_role or User.AppRole.ALUNO,
                     is_active=True,
                 )
                 logger.info(
@@ -143,17 +169,37 @@ class ImportUsersService(ControlIDSyncMixin):
                 )
                 users_new.append(user)
             else:
-                needs_update = (
-                    user.name != row.name
-                    or user.registration != row.registration
-                    or not user.is_active
-                )
-                if needs_update:
-                    logger.info(f"[USER] Atualizado: id={user.pk} '{user.name}' → '{row.name}'")
+                update_fields = []
+
+                if user.name != row.name:
                     user.name = row.name
+                    update_fields.append("name")
+                if user.registration != row.registration:
                     user.registration = row.registration
+                    update_fields.append("registration")
+                if not user.is_active:
                     user.is_active = True
-                    user.save(update_fields=["name", "registration", "is_active"])
+                    update_fields.append("is_active")
+                if app_role and user.app_role != app_role:
+                    user.app_role = app_role
+                    update_fields.append("app_role")
+                if row.birth_date and user.birth_date != row.birth_date:
+                    user.birth_date = row.birth_date
+                    update_fields.append("birth_date")
+                if phone and user.phone != phone:
+                    user.phone = phone
+                    update_fields.append("phone")
+                if phone_landline and user.phone_landline != phone_landline:
+                    user.phone_landline = phone_landline
+                    update_fields.append("phone_landline")
+
+                email = self._get_available_email(row.email, user)
+                if email and user.email != email:
+                    user.email = email
+                    update_fields.append("email")
+                if update_fields:
+                    logger.info(f"[USER] Atualizado: id={user.pk} '{user.name}' → '{row.name}'")
+                    user.save(update_fields=update_fields)
                 else:
                     logger.info(f"[USER] Sem alterações: id={user.pk} name='{user.name}'")
                 users_existing.append(user)
