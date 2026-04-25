@@ -28,6 +28,20 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 AXES_ENABLED = False
 
+
+class DisableMigrations(dict):
+    def __contains__(self, app_label):
+        return True
+
+    def __getitem__(self, app_label):
+        return None
+
+    def get(self, app_label, default=None):
+        return None
+
+
+MIGRATION_MODULES = DisableMigrations()
+
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,
     "DEFAULT_AUTHENTICATION_CLASSES": (
