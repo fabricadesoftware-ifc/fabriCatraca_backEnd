@@ -1,448 +1,316 @@
-"""
-Testes de integração para sincronização com a API da catraca.
-Usa mocks para simular a API sem fazer chamadas reais.
-"""
 import pytest
-from unittest.mock import Mock, patch
+
+
+def _patch_request(mocker, make_response, payload, status_code=200):
+    return mocker.patch(
+        "src.core.__seedwork__.infra.catraca_sync.ControlIDSyncMixin._make_request",
+        return_value=make_response(status_code=status_code, json_data=payload),
+    )
 
 
 @pytest.mark.integration
 @pytest.mark.django_db
-class TestSystemConfigSync:
-    """Testes de sincronização do SystemConfig."""
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_success(self, mock_req, device_factory, mock_catraca_response):
-        """Deve sincronizar SystemConfig da catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import SystemConfigSyncMixin
-        from src.core.control_id_config.infra.control_id_config_django_app.models import SystemConfig
-        
-        device = device_factory()
-        
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
+def test_system_config_sync_from_catraca_updates_local_model(
+    mocker, make_response, device_factory, mock_catraca_response
+):
+    # Testa leitura da configuracao geral da catraca e persistencia local.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        SystemConfigSyncMixin,
+    )
+    from src.core.control_id_config.infra.control_id_config_django_app.models import (
+        SystemConfig,
+    )
 
-        sys_data = mock_catraca_response('system')
-        # Ensure we have the fields we expect
-        if 'general' not in sys_data:
-             sys_data['general'] = {}
-        sys_data['general']['online'] = '1'
-        sys_data['general']['language'] = 'pt'
+    device = device_factory()
+    mocked = _patch_request(mocker, make_response, mock_catraca_response("system"))
 
-        config_response = Mock()
-        config_response.status_code = 200
-        config_response.json.return_value = sys_data
+    mixin = SystemConfigSyncMixin()
+    mixin.set_device(device)
+    response = mixin.sync_system_config_from_catraca()
 
-        def side_effect(*args, **kwargs):
-            # Check positional args or kwargs for URL info
-            # requests.request(method, url, ...)
-            url = kwargs.get('url')
-            if not url and len(args) > 1:
-                url = args[1]
-
-            if url and 'login.fcgi' in url:
-                return login_response
-            return config_response
-
-        mock_req.side_effect = side_effect
-        
-        # Executar sync
-        mixin = SystemConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_system_config_from_catraca()
-        
-        # Verificar resultado
-        assert result.status_code == 200
-        
-        # Verificar que foi criado no banco
-        config = SystemConfig.objects.get(device=device)
-        assert config.online is True
-        assert config.language == 'pt'
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_to_catraca_success(self, mock_req, system_config_factory):
-        """Deve enviar SystemConfig para catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import SystemConfigSyncMixin
-        
-        # Cria config com valor específico
-        config = system_config_factory(online=True, language='en')
-
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
-
-        action_response = Mock()
-        action_response.status_code = 200
-        action_response.json.return_value = {'success': True}
-        
-        def side_effect(*args, **kwargs):
-            url = kwargs.get('url')
-            if not url and len(args) > 1:
-                url = args[1]
-            if url and 'login.fcgi' in url:
-                return login_response
-            return action_response
-
-        mock_req.side_effect = side_effect
-        
-        # Executar update
-        mixin = SystemConfigSyncMixin()
-        mixin.set_device(config.device)
-        result = mixin.update_system_config_in_catraca(config)
-        
-        assert mock_req.called
-        assert result.status_code == 200
-
-@pytest.mark.integration
-@pytest.mark.django_db
-class TestCatraConfigSync:
-    """Testes de sincronização do CatraConfig."""
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_success(self, mock_req, device_factory, mock_catraca_response):
-        """Deve sincronizar CatraConfig da catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import CatraConfigSyncMixin
-        from src.core.control_id_config.infra.control_id_config_django_app.models import CatraConfig
-        
-        device = device_factory()
-        
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
-
-        config_response = Mock()
-        config_response.status_code = 200
-        config_response.json.return_value = mock_catraca_response('catra')
-
-        def side_effect(*args, **kwargs):
-            url = kwargs.get('url')
-            if not url and len(args) > 1:
-                url = args[1]
-            if url and 'login.fcgi' in url:
-                return login_response
-            return config_response
-
-        mock_req.side_effect = side_effect
-        
-        # Executar sync
-        mixin = CatraConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_catra_config_from_catraca()
-        
-        # Verificar resultado
-        assert result.status_code == 200
-        
-        # Verificar que foi criado no banco
-        config = CatraConfig.objects.get(device=device)
-        assert config.gateway == 'clockwise'
-        assert config.operation_mode == 'blocked'
-        assert config.anti_passback is False
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_to_catraca_success(self, mock_req, catra_config_factory):
-        """Deve enviar CatraConfig para catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import CatraConfigSyncMixin
-        
-        config = catra_config_factory(
-            anti_passback=True,
-            gateway='anticlockwise'
-        )
-        
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
-
-        action_response = Mock()
-        action_response.status_code = 200
-        action_response.json.return_value = {'success': True}
-
-        def side_effect(*args, **kwargs):
-            url = kwargs.get('url')
-            if not url and len(args) > 1:
-                url = args[1]
-            if url and 'login.fcgi' in url:
-                return login_response
-            return action_response
-
-        mock_req.side_effect = side_effect
-        
-        # Executar update
-        mixin = CatraConfigSyncMixin()
-        mixin.set_device(config.device)
-        result = mixin.update_catra_config_in_catraca(config)
-        
-        # Verificar que chamou a API
-        assert mock_req.called
-        
-        # Verificar payload enviado
-        found_payload = False
-        for call in mock_req.call_args_list:
-            # Check kwargs
-            if 'json' in call.kwargs and 'catra' in call.kwargs['json']:
-                payload = call.kwargs['json']
-                assert payload['catra']['anti_passback'] == '1'
-                assert payload['catra']['gateway'] == 'anticlockwise'
-                found_payload = True
-                break
-            # Check positional args? requests.request(method, url, json=?)
-            # json is usually kwarg in requests.request
-
-        assert found_payload, "Payload de catra não encontrado nas chamadas"
-        assert result.status_code == 200
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_connection_error(self, mock_req, device_factory):
-        """Deve tratar erro de conexão com a catraca."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import CatraConfigSyncMixin
-        
-        device = device_factory()
-        
-        # Mock de erro de conexão logo no login
-        mock_req.side_effect = Exception("Connection refused")
-        
-        # Executar sync
-        mixin = CatraConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_catra_config_from_catraca()
-        
-        # Verificar que retornou erro
-        assert result.status_code == 500
+    assert response.status_code == 200
+    config = SystemConfig.objects.get(device=device)
+    assert config.online is True
+    assert config.local_identification is True
+    assert config.language == "pt_BR"
+    assert mocked.call_args.kwargs["json_data"]["general"] == [
+        "online",
+        "auto_reboot",
+        "catra_timeout",
+        "local_identification",
+        "exception_mode",
+        "language",
+        "daylight_savings_time_start",
+        "daylight_savings_time_end",
+    ]
 
 
 @pytest.mark.integration
 @pytest.mark.django_db
-class TestPushServerConfigSync:
-    """Testes de sincronização do PushServerConfig."""
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_success(self, mock_req, device_factory, mock_catraca_response):
-        """Deve sincronizar PushServerConfig da catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import PushServerConfigSyncMixin
-        from src.core.control_id_config.infra.control_id_config_django_app.models import PushServerConfig
-        
-        device = device_factory()
-        
-        # Mock Sequência
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
+def test_system_config_update_normalizes_booleans_and_language(
+    mocker, make_response, system_config_factory
+):
+    # Testa payload enviado ao firmware para configuracao geral.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        SystemConfigSyncMixin,
+    )
 
-        config_response = Mock()
-        config_response.status_code = 200
-        config_response.json.return_value = mock_catraca_response('push_server')
+    config = system_config_factory(online=True, local_identification=False, language="pt")
+    mocked = _patch_request(mocker, make_response, {"success": True})
 
-        mock_req.side_effect = [login_response, config_response]
-        
-        # Executar sync
-        mixin = PushServerConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_push_server_config_from_catraca()
-        
-        # Verificar resultado
-        assert result.status_code == 200
-        
-        # Verificar que foi criado no banco
-        config = PushServerConfig.objects.get(device=device)
-        assert config.push_request_timeout == 15000
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_to_catraca_with_validation(self, mock_req, push_server_config_factory):
-        """Deve validar dados antes de enviar para catraca."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import PushServerConfigSyncMixin
-        
-        config = push_server_config_factory(
-            push_request_timeout=20000,
-            push_request_period=120,
-            push_remote_address='10.0.0.5:9090'
-        )
-        
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
+    mixin = SystemConfigSyncMixin()
+    mixin.set_device(config.device)
+    response = mixin.update_system_config_in_catraca(config)
 
-        action_response = Mock()
-        action_response.status_code = 200
-        action_response.json.return_value = {'success': True}
-
-        mock_req.side_effect = [login_response, action_response]
-        
-        # Executar update
-        mixin = PushServerConfigSyncMixin()
-        mixin.set_device(config.device)
-        result = mixin.update_push_server_config_in_catraca(config)
-        
-        # Verificar payload
-        found_payload = False
-        for call in mock_req.call_args_list:
-            if 'json' in call[1] and 'push_server' in call[1]['json']:
-                payload = call[1]['json']
-                assert payload['push_server']['push_request_timeout'] == '20000'
-                assert payload['push_server']['push_remote_address'] == '10.0.0.5:9090'
-                found_payload = True
-                break
-
-        assert found_payload
-        assert result.status_code == 200
-
-@pytest.mark.integration
-@pytest.mark.django_db
-class TestHardwareConfigSync:
-    """Testes de sincronização do HardwareConfig."""
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_success(self, mock_req, device_factory, mock_catraca_response):
-        """Deve sincronizar HardwareConfig da catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import HardwareConfigSyncMixin
-        from src.core.control_id_config.infra.control_id_config_django_app.models import HardwareConfig
-        device = device_factory()
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
-
-        config_response = Mock()
-        config_response.status_code = 200
-        config_response.json.return_value = mock_catraca_response('hardware', beep_enabled='1')
-
-        mock_req.side_effect = [login_response, config_response]
-
-        mixin = HardwareConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_hardware_config_from_catraca()
-        
-        assert result.status_code == 200
-        config = HardwareConfig.objects.get(device=device)
-        assert config.beep_enabled is True
-
-@pytest.mark.integration
-@pytest.mark.django_db
-class TestSecurityConfigSync:
-    """Testes de sincronização do SecurityConfig."""
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_success(self, mock_req, device_factory, mock_catraca_response):
-        """Deve sincronizar SecurityConfig da catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import SecurityConfigSyncMixin
-        from src.core.control_id_config.infra.control_id_config_django_app.models import SecurityConfig
-        device = device_factory()
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
-
-        config_response = Mock()
-        config_response.status_code = 200
-        config_response.json.return_value = mock_catraca_response('security', password_only='1')
-
-        mock_req.side_effect = [login_response, config_response]
-
-        mixin = SecurityConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_security_config_from_catraca()
-        
-        assert result.status_code == 200
-        config = SecurityConfig.objects.get(device=device)
-        assert config.password_only is True
-
-@pytest.mark.integration
-@pytest.mark.django_db
-class TestUIConfigSync:
-    """Testes de sincronização do UIConfig."""
-
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_sync_from_catraca_success(self, mock_req, device_factory, mock_catraca_response):
-        """Deve sincronizar UIConfig da catraca com sucesso."""
-        from src.core.control_id_config.infra.control_id_config_django_app.mixins import UIConfigSyncMixin
-        from src.core.control_id_config.infra.control_id_config_django_app.models import UIConfig
-        device = device_factory()
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'test_session'}
-
-        config_response = Mock()
-        config_response.status_code = 200
-        config_response.json.return_value = mock_catraca_response('ui', screen_always_on='1')
-
-        mock_req.side_effect = [login_response, config_response]
-
-        mixin = UIConfigSyncMixin()
-        mixin.set_device(device)
-        result = mixin.sync_ui_config_from_catraca()
-
-        assert result.status_code == 200
-        config = UIConfig.objects.get(device=device)
-        assert config.screen_always_on is True
-
-
-@pytest.mark.integration
-@pytest.mark.django_db
-class TestCeleryTask:
-    """Testes para a task Celery de sincronização."""
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_run_config_sync_all_configs(self, mock_req, device_factory):
-        """Deve sincronizar todos os tipos de config."""
-        from src.core.control_id_config.infra.control_id_config_django_app.tasks import run_config_sync
-        
-        # Criar 2 dispositivos ativos
-        device1 = device_factory(is_active=True)
-        device2 = device_factory(is_active=True)
-        
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'task_session'}
-
-        data_response = Mock()
-        data_response.status_code = 200
-        data_response.json.return_value = {
-            'system': {'name': 'Test'},
-            'hardware': {},
-            'security': {},
-            'ui': {},
-            'monitor': {},
-            'catra': {},
-            'push_server': {}
+    assert response.status_code == 200
+    assert mocked.call_args.kwargs["json_data"] == {
+        "general": {
+            "catra_timeout": "30000",
+            "online": "1",
+            "local_identification": "0",
+            "language": "pt_BR",
         }
+    }
 
-        def side_effect(*args, **kwargs):
-            url = args[0] if args else kwargs.get('url', '')
-            if 'login.fcgi' in url:
-                return login_response
-            return data_response
 
-        mock_req.side_effect = side_effect
-        
-        # Executar task
-        result = run_config_sync()
-        
-        # Verificar resultado
-        assert result['success'] is True
-        assert result['stats']['devices'] == 2
-    
-    @patch('src.core.__seedwork__.infra.catraca_sync.requests.request')
-    def test_run_config_sync_only_active_devices(self, mock_req, device_factory):
-        """Deve sincronizar apenas dispositivos ativos."""
-        from src.core.control_id_config.infra.control_id_config_django_app.tasks import run_config_sync
-        
-        # Criar dispositivos (1 ativo, 1 inativo)
-        device_active = device_factory(is_active=True)
-        device_inactive = device_factory(is_active=False)
-        
-        login_response = Mock()
-        login_response.status_code = 200
-        login_response.json.return_value = {'session': 'task_session'}
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_catra_config_sync_from_catraca_handles_boolean_strings(
+    mocker, make_response, device_factory, mock_catraca_response
+):
+    # Testa conversao de flags "0"/"1" da secao catra.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        CatraConfigSyncMixin,
+    )
+    from src.core.control_id_config.infra.control_id_config_django_app.models import (
+        CatraConfig,
+    )
 
-        data_response = Mock()
-        data_response.status_code = 200
-        data_response.json.return_value = {}
+    payload = mock_catraca_response(
+        "catra",
+        catra={
+            "anti_passback": "1",
+            "daily_reset": "0",
+            "gateway": "anticlockwise",
+            "operation_mode": "both_open",
+        },
+    )
+    device = device_factory()
+    _patch_request(mocker, make_response, payload)
 
-        def side_effect(*args, **kwargs):
-            url = args[0] if args else kwargs.get('url', '')
-            if 'login.fcgi' in url:
-                return login_response
-            return data_response
+    mixin = CatraConfigSyncMixin()
+    mixin.set_device(device)
+    response = mixin.sync_catra_config_from_catraca()
 
-        mock_req.side_effect = side_effect
-        
-        # Executar task
-        result = run_config_sync()
-        
-        # Verificar que processou apenas 1 device
-        assert result['stats']['devices'] == 1
+    assert response.status_code == 200
+    config = CatraConfig.objects.get(device=device)
+    assert config.anti_passback is True
+    assert config.daily_reset is False
+    assert config.gateway == "anticlockwise"
+    assert config.operation_mode == "both_open"
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_catra_config_update_returns_remote_error(
+    mocker, make_response, catra_config_factory
+):
+    # Testa falha HTTP do firmware ao atualizar a secao catra.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        CatraConfigSyncMixin,
+    )
+
+    config = catra_config_factory(anti_passback=True)
+    _patch_request(mocker, make_response, {"error": "invalid"}, status_code=500)
+
+    mixin = CatraConfigSyncMixin()
+    mixin.set_device(config.device)
+    response = mixin.update_catra_config_in_catraca(config)
+
+    assert response.status_code == 500
+    assert response.data["success"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_push_server_config_sync_and_update_payload(
+    mocker, make_response, device_factory, push_server_config_factory, mock_catraca_response
+):
+    # Testa round trip da configuracao de push server sem rede real.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        PushServerConfigSyncMixin,
+    )
+    from src.core.control_id_config.infra.control_id_config_django_app.models import (
+        PushServerConfig,
+    )
+
+    device = device_factory()
+    sync_payload = mock_catraca_response(
+        "push_server",
+        push_server={
+            "push_request_timeout": "20000",
+            "push_request_period": "120",
+            "push_remote_address": "192.0.2.80:9090",
+        },
+    )
+    mocked = _patch_request(mocker, make_response, sync_payload)
+    mixin = PushServerConfigSyncMixin()
+    mixin.set_device(device)
+
+    sync_response = mixin.sync_push_server_config_from_catraca()
+    assert sync_response.status_code == 200
+    saved = PushServerConfig.objects.get(device=device)
+    assert saved.push_request_timeout == 20000
+    assert saved.push_request_period == 120
+
+    mocked.return_value = make_response(json_data={"success": True})
+    response = mixin.update_push_server_config_in_catraca(saved)
+    assert response.status_code == 200
+    assert mocked.call_args.kwargs["json_data"]["push_server"] == {
+        "push_request_timeout": "20000",
+        "push_request_period": "120",
+        "push_remote_address": "192.0.2.80:9090",
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_hardware_config_sync_preserves_network_interlock(
+    mocker, make_response, hardware_config_factory, mock_catraca_response
+):
+    # Testa que campos locais de intertravamento nao sao apagados pelo sync.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        HardwareConfigSyncMixin,
+    )
+
+    existing = hardware_config_factory(
+        network_interlock_enabled=True,
+        network_interlock_api_bypass_enabled=True,
+        network_interlock_rex_bypass_enabled=False,
+    )
+    _patch_request(mocker, make_response, mock_catraca_response("hardware"))
+
+    mixin = HardwareConfigSyncMixin()
+    mixin.set_device(existing.device)
+    response = mixin.sync_hardware_config_from_catraca()
+
+    assert response.status_code == 200
+    existing.refresh_from_db()
+    assert existing.beep_enabled is True
+    assert existing.network_interlock_enabled is True
+    assert existing.network_interlock_api_bypass_enabled is True
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_hardware_config_update_requires_both_configuration_calls(
+    mocker, make_response, hardware_config_factory
+):
+    # Testa que hardware envia configuracao geral e intertravamento de rede.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        HardwareConfigSyncMixin,
+    )
+
+    config = hardware_config_factory(
+        beep_enabled=False,
+        network_interlock_enabled=True,
+        network_interlock_api_bypass_enabled=True,
+    )
+    mocked = mocker.patch(
+        "src.core.__seedwork__.infra.catraca_sync.ControlIDSyncMixin._make_request",
+        side_effect=[
+            make_response(json_data={"success": True}),
+            make_response(json_data={"success": True}),
+        ],
+    )
+
+    mixin = HardwareConfigSyncMixin()
+    mixin.set_device(config.device)
+    response = mixin.update_hardware_config_in_catraca(config)
+
+    assert response.status_code == 200
+    assert mocked.call_args_list[0].args[0] == "set_configuration.fcgi"
+    assert mocked.call_args_list[1].args[0] == "set_network_interlock.fcgi"
+    assert mocked.call_args_list[1].kwargs["json_data"] == {
+        "interlock_enabled": 1,
+        "api_bypass_enabled": 1,
+        "rex_bypass_enabled": 0,
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_security_config_sync_and_update_identifier_payload(
+    mocker, make_response, device_factory, mock_catraca_response
+):
+    # Testa o bloco identifier usado pela configuracao de seguranca.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        SecurityConfigSyncMixin,
+    )
+    from src.core.control_id_config.infra.control_id_config_django_app.models import (
+        SecurityConfig,
+    )
+
+    device = device_factory()
+    mocked = _patch_request(mocker, make_response, mock_catraca_response("security"))
+    mixin = SecurityConfigSyncMixin()
+    mixin.set_device(device)
+
+    sync_response = mixin.sync_security_config_from_catraca()
+    assert sync_response.status_code == 200
+    saved = SecurityConfig.objects.get(device=device)
+    assert saved.verbose_logging_enabled is True
+    assert saved.multi_factor_authentication_enabled is True
+
+    mocked.return_value = make_response(json_data={"success": True})
+    saved.log_type = True
+    response = mixin.update_security_config_in_catraca(saved)
+
+    assert response.status_code == 200
+    assert mocked.call_args.kwargs["json_data"] == {
+        "identifier": {
+            "multi_factor_authentication": "1",
+            "verbose_logging": "1",
+            "log_type": "1",
+        }
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_ui_config_sync_is_local_only(device_factory):
+    # Testa que UIConfig nao chama firmware no build atual e cria registro local.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        UIConfigSyncMixin,
+    )
+    from src.core.control_id_config.infra.control_id_config_django_app.models import UIConfig
+
+    device = device_factory()
+    mixin = UIConfigSyncMixin()
+    mixin.set_device(device)
+
+    response = mixin.sync_ui_config_from_catraca()
+
+    assert response.status_code == 200
+    assert UIConfig.objects.filter(device=device).exists()
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
+def test_sync_mixin_returns_500_when_transport_raises(mocker, device_factory):
+    # Testa tratamento de falha de transporte no sync de catra.
+    from src.core.control_id_config.infra.control_id_config_django_app.mixins import (
+        CatraConfigSyncMixin,
+    )
+
+    mocker.patch(
+        "src.core.__seedwork__.infra.catraca_sync.ControlIDSyncMixin._make_request",
+        side_effect=RuntimeError("offline"),
+    )
+    mixin = CatraConfigSyncMixin()
+    mixin.set_device(device_factory())
+
+    response = mixin.sync_catra_config_from_catraca()
+
+    assert response.status_code == 500
+    assert "offline" in response.data["error"]

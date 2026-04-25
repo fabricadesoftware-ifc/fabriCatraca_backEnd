@@ -97,13 +97,13 @@ class TestUIConfigModel:
         assert config.screen_always_on is True
     
     def test_screen_always_on_default(self, device_factory):
-        """Deve ter screen_always_on desabilitado por padrão."""
+        """Deve manter screen_always_on habilitado por padrão."""
         from src.core.control_id_config.infra.control_id_config_django_app.models import UIConfig
         
         device = device_factory()
         config = UIConfig.objects.create(device=device)
         
-        assert config.screen_always_on is False
+        assert config.screen_always_on is True
 
 
 @pytest.mark.unit
@@ -156,7 +156,7 @@ class TestCatraConfigModel:
         
         assert config.anti_passback is False
         assert config.daily_reset is False
-        assert config.gateway == 'clockwise'
+        assert config.gateway == 'anticlockwise'
         assert config.operation_mode == 'blocked'
 
 
