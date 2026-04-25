@@ -284,13 +284,13 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             "attempts": attempts,
             "expires_at": session.expires_at,
             "finished_at": session.finished_at,
-            "template_id": session.template.pk,
+            "template_id": session.template.pk if session.template_id else None,
             "extractor_device": (
                 {
                     "id": session.extractor_device.pk,
                     "name": session.extractor_device.name,
                 }
-                if session.extractor_device.pk
+                if session.extractor_device_id
                 else None
             ),
         }

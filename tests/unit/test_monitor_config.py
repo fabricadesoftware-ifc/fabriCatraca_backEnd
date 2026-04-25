@@ -1,6 +1,8 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
+from django.utils import timezone
+from freezegun import freeze_time
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import MonitorConfig
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.mixins import MonitorConfigSyncMixin
 
@@ -108,3 +110,22 @@ class TestMonitorConfigSync:
         assert monitor_payload['port'] == "8080"
         assert monitor_payload['path'] == "/events"
         assert monitor_payload['request_timeout'] == "5000"
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+@freeze_time("2026-04-24 10:30:00", tz_offset=-3)
+def test_monitor_config_full_url_and_status_are_stable_with_frozen_time(
+    monitor_config_factory,
+):
+    """Testa URL/status do monitor com tempo congelado para evitar flake de timezone."""
+    config = monitor_config_factory(
+        hostname="catraca-api.example.test",
+        port="443",
+        path="events",
+        last_seen_at=timezone.now(),
+    )
+
+    assert config.full_url == "https://catraca-api.example.test/events"
+    assert config.status == "configured"
+    assert config.last_seen_at.isoformat().startswith("2026-04-24T07:30:00")
