@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import time
 
 import pandas as pd
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -58,6 +59,21 @@ class ImportUsersView(APIView):
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = FileUploadSerializer
 
+    def _finalize_response(self, response: Response, start_time: float) -> Response:
+        """Anexa a duracao total da importacao e registra o desfecho."""
+        elapsed_s = round(time.perf_counter() - start_time, 2)
+
+        if isinstance(getattr(response, "data", None), dict):
+            response.data["elapsed_s"] = elapsed_s
+
+        log_fn = logger.warning if response.status_code >= 400 else logger.info
+        log_fn(
+            "[IMPORT] Requisicao finalizada status=%s elapsed_s=%.2f",
+            response.status_code,
+            elapsed_s,
+        )
+        return response
+
     def get(self, request, *args, **kwargs):
         return Response({
             "message": "Upload de arquivo Excel para importação de usuários",
@@ -77,34 +93,45 @@ class ImportUsersView(APIView):
         })
 
     def post(self, request, *args, **kwargs):
+        start_time = time.perf_counter()
         tmp_path = None
         try:
             upload_info = self._save_upload(request)
             if isinstance(upload_info, Response):
-                return upload_info
+                return self._finalize_response(upload_info, start_time)
 
             tmp_path, file_kind = upload_info
             import_profile = self._get_import_profile(request)
             if isinstance(import_profile, Response):
-                return import_profile
+                return self._finalize_response(import_profile, start_time)
 
             if file_kind == "csv":
-                return self._process_csv(tmp_path, import_profile)
+                return self._finalize_response(
+                    self._process_csv(tmp_path, import_profile), start_time
+                )
 
             sheet_names = self._read_sheet_names(tmp_path)
             if isinstance(sheet_names, Response):
-                return sheet_names
+                return self._finalize_response(sheet_names, start_time)
 
             if import_profile == TURMA_PROFILE:
-                return self._process_sheets(tmp_path, sheet_names)
+                return self._finalize_response(
+                    self._process_sheets(tmp_path, sheet_names), start_time
+                )
 
-            return self._process_generic_excel(tmp_path, sheet_names, import_profile)
+            return self._finalize_response(
+                self._process_generic_excel(tmp_path, sheet_names, import_profile),
+                start_time,
+            )
 
         except Exception as e:
             logger.exception(f"[IMPORT] Exceção não tratada: {e}")
-            return Response(
-                {"error": f"Erro ao processar arquivo: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            return self._finalize_response(
+                Response(
+                    {"error": f"Erro ao processar arquivo: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ),
+                start_time,
             )
 
         finally:
