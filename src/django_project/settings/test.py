@@ -2,7 +2,14 @@ from .base import *  # noqa: F401,F403
 
 DEBUG = False
 ROOT_URLCONF = "src.django_project.urls"
-INSTALLED_APPS = [app for app in INSTALLED_APPS if app != "minio_storage"]
+INSTALLED_APPS = [
+    app for app in INSTALLED_APPS if app not in {"minio_storage", "debug_toolbar"}
+]
+MIDDLEWARE = [
+    middleware
+    for middleware in MIDDLEWARE
+    if middleware != "debug_toolbar.middleware.DebugToolbarMiddleware"
+]
 
 DATABASES = {
     "default": {
