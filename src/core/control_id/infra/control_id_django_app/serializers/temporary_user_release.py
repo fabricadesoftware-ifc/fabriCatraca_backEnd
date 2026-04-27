@@ -17,6 +17,9 @@ from .portal_group import PortalGroupSerializer
 from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
+from src.core.control_id.infra.control_id_django_app.temporary_release_notification_service import (
+    TemporaryUserReleaseNotificationService,
+)
 from src.core.user.infra.user_django_app.models import User, Visitas
 
 logger = logging.getLogger(__name__)
@@ -109,7 +112,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
     valid_from = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False)
     notification_message = serializers.CharField(required=False, allow_blank=True)
-    notification_email = serializers.EmailField(required=False, allow_blank=True)
+    notification_email = serializers.CharField(required=False, allow_blank=True)
     portal_group_id = serializers.PrimaryKeyRelatedField(
         queryset=PortalGroup.objects.filter(is_active=True),
         source="portal_group",
@@ -196,7 +199,12 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         user = attrs["user"]
         visita = attrs.get("visita")
         notified_server = attrs.get("notified_server")
-        notification_email = (attrs.get("notification_email") or "").strip().lower()
+        try:
+            notification_email = TemporaryUserReleaseNotificationService.normalize_email_list(
+                attrs.get("notification_email") or ""
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"notification_email": [str(exc)]}) from exc
         access_rule = self._get_temporary_access_rule()
 
         if self.instance is None:  # CREATE
@@ -254,7 +262,11 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
             )
 
         if notified_server and not notification_email:
-            attrs["notification_email"] = notified_server.email
+            attrs["notification_email"] = (
+                TemporaryUserReleaseNotificationService.normalize_email_list(
+                    notified_server.email
+                )
+            )
         elif notification_email:
             attrs["notification_email"] = notification_email
 
