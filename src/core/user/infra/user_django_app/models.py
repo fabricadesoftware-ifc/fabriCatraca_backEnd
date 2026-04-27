@@ -20,6 +20,7 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
 
     class UserType(models.IntegerChoices):
         VISITOR = 1
+
     class AppRole(models.TextChoices):
         NONE = "", "Sem perfil"
         ADMIN = "admin", "Administrador"
@@ -75,22 +76,33 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
     cpf = models.CharField(max_length=14, blank=True, null=True, unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     birth_date = models.DateField(blank=True, null=True)
-    picture = models.ForeignKey(Archive, on_delete=models.SET_NULL, null=True, blank=True)
+    picture = models.ForeignKey(
+        Archive, on_delete=models.SET_NULL, null=True, blank=True
+    )
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     phone_landline = models.CharField(max_length=20, blank=True, null=True)
     phone_responsible = models.CharField(max_length=20, blank=True, null=True)
     responsible_name = models.CharField(max_length=255, blank=True, null=True)
-    created_by = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="created_users")
+    created_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_users",
+    )
     start_date = models.DateTimeField(
-        blank=True, null=True,
+        blank=True,
+        null=True,
         help_text="Data e hora de inicio de vigencia do acesso.",
     )
     end_date = models.DateTimeField(
-        blank=True, null=True,
+        blank=True,
+        null=True,
         help_text="Data e hora de fim de vigencia do acesso.",
     )
     last_passage_at = models.DateTimeField(
-        blank=True, null=True,
+        blank=True,
+        null=True,
         help_text="Horario da ultima passagem registrada na catraca.",
     )
 
@@ -121,7 +133,7 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
         return self.effective_app_role == self.AppRole.SISAE
 
     def get_target_devices(self, include_inactive: bool = False):
-        from src.core.control_Id.infra.control_id_django_app.models import Device
+        from src.core.control_id.infra.control_id_django_app.models import Device
 
         if self.panel_access_only or self.device_scope == self.DeviceScope.NONE:
             return Device.objects.none()
@@ -147,7 +159,13 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
 
 class Visitas(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="visitas")
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_visitas")
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_visitas",
+    )
     initial_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField(blank=True, null=True)
     visit_date = models.DateTimeField()
@@ -160,7 +178,6 @@ class Visitas(BaseModel):
     )
     finished_at = models.DateTimeField(blank=True, null=True)
     card_removed_at = models.DateTimeField(blank=True, null=True)
-
 
     def __str__(self):
         return f"Visita do usuário {self.user.name} em {self.visit_date.strftime('%Y-%m-%d %H:%M:%S')}"

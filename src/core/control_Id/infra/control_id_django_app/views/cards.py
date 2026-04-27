@@ -4,9 +4,9 @@ from rest_framework import status, viewsets
 from rest_framework.response import Response
 
 from src.core.__seedwork__.infra.mixins import CardSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models.cards import Card
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
-from src.core.control_Id.infra.control_id_django_app.serializers.cards import (
+from src.core.control_id.infra.control_id_django_app.models.cards import Card
+from src.core.control_id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.serializers.cards import (
     CardSerializer,
 )
 from src.core.user.infra.user_django_app.models import User
@@ -128,7 +128,9 @@ class CardViewSet(CardSyncMixin, viewsets.ModelViewSet):
                 )
             if enrollment_device.id not in target_device_ids:
                 return Response(
-                    {"error": "A catraca escolhida nao faz parte do escopo do usuario."},
+                    {
+                        "error": "A catraca escolhida nao faz parte do escopo do usuario."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 

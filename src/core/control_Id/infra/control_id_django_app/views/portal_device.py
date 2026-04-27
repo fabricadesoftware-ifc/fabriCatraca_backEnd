@@ -1,8 +1,8 @@
 from rest_framework.viewsets import ModelViewSet
 from django_filters.rest_framework import DjangoFilterBackend
 
-from src.core.control_Id.infra.control_id_django_app.models import PortalDevice
-from src.core.control_Id.infra.control_id_django_app.serializers.portal_device import (
+from src.core.control_id.infra.control_id_django_app.models import PortalDevice
+from src.core.control_id.infra.control_id_django_app.serializers.portal_device import (
     PortalDeviceSerializer,
 )
 

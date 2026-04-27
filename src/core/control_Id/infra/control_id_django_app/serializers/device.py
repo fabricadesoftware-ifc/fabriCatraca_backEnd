@@ -1,21 +1,24 @@
 from rest_framework import serializers
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
+
 
 class DeviceSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
 
     class Meta:
         model = Device
-        fields = ['id', 'name', 'ip', 'username', 'password', 'is_active', 'is_default']
+        fields = ["id", "name", "ip", "username", "password", "is_active", "is_default"]
         extra_kwargs = {
-            'password': {'write_only': True}  # Senha nunca é retornada nas respostas
-        } 
+            "password": {"write_only": True}  # Senha nunca é retornada nas respostas
+        }
 
     def validate_id(self, value):
-        if value in (None, ''):
+        if value in (None, ""):
             return None
         if int(value) <= 0:
-            raise serializers.ValidationError("O ID da catraca deve ser maior que zero.")
+            raise serializers.ValidationError(
+                "O ID da catraca deve ser maior que zero."
+            )
         return int(value)
 
     def validate(self, attrs):

@@ -4,29 +4,44 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from datetime import datetime, timedelta
 from django.utils import timezone
-from src.core.control_Id.infra.control_id_django_app.models import AccessLogs
-from src.core.control_Id.infra.control_id_django_app.serializers import AccessLogsSerializer
+from src.core.control_id.infra.control_id_django_app.models import AccessLogs
+from src.core.control_id.infra.control_id_django_app.serializers import (
+    AccessLogsSerializer,
+)
 
 from rest_framework.pagination import PageNumberPagination
 
+
 class AccessLogsPagination(PageNumberPagination):
     page_size = 50
-    page_size_query_param = 'page_size'
+    page_size_query_param = "page_size"
     max_page_size = 1000
+
 
 @extend_schema(tags=["Access Logs"])
 class AccessLogsViewSet(viewsets.ModelViewSet):
-    queryset = AccessLogs.objects.select_related('device', 'user', 'portal', 'access_rule').all()
+    queryset = AccessLogs.objects.select_related(
+        "device", "user", "portal", "access_rule"
+    ).all()
     serializer_class = AccessLogsSerializer
     pagination_class = AccessLogsPagination
-    filterset_fields = ['id', 'time', 'event_type', 'device', 'identifier_id', 'user', 'portal', 'access_rule']
-    search_fields = ['device__name', 'user__name', 'portal__name', 'identifier_id']
-    ordering_fields = ['id', 'time', 'event_type']
-    http_method_names = ['get']
+    filterset_fields = [
+        "id",
+        "time",
+        "event_type",
+        "device",
+        "identifier_id",
+        "user",
+        "portal",
+        "access_rule",
+    ]
+    search_fields = ["device__name", "user__name", "portal__name", "identifier_id"]
+    ordering_fields = ["id", "time", "event_type"]
+    http_method_names = ["get"]
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=["get"])
     def list_all_by_type(self, request):
-        event_type = request.query_params.get('event_type', None)
+        event_type = request.query_params.get("event_type", None)
 
         # Usa o queryset base que já tem select_related
         logs = self.get_queryset()
@@ -43,7 +58,7 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(logs, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=["get"])
     @extend_schema(
         parameters=[
             {
@@ -51,17 +66,17 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
                 "in": "query",
                 "required": True,
                 "schema": {"type": "integer", "minimum": 1},
-                "description": "Número de dias para filtrar os logs (ex: 15, 30, 60)"
+                "description": "Número de dias para filtrar os logs (ex: 15, 30, 60)",
             },
             {
                 "name": "event_type",
                 "in": "query",
                 "required": False,
                 "schema": {"type": "integer"},
-                "description": "Tipo de evento opcional para filtrar"
-            }
+                "description": "Tipo de evento opcional para filtrar",
+            },
         ],
-        responses={200: AccessLogsSerializer(many=True)}
+        responses={200: AccessLogsSerializer(many=True)},
     )
     def logs_by_days(self, request):
         """
@@ -69,11 +84,11 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
         Exemplo: /api/access-logs/logs_by_days/?days=15
         """
         try:
-            days = int(request.query_params.get('days', 30))
+            days = int(request.query_params.get("days", 30))
             if days <= 0:
                 return Response(
                     {"error": "O parâmetro 'days' deve ser um número positivo"},
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             # Calcular a data de início (hoje - N dias)
@@ -81,13 +96,10 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
             start_date = end_date - timedelta(days=days)
 
             # Usa o queryset base que já tem select_related
-            logs = self.get_queryset().filter(
-                time__gte=start_date,
-                time__lte=end_date
-            )
+            logs = self.get_queryset().filter(time__gte=start_date, time__lte=end_date)
 
             # Filtro opcional por tipo de evento
-            event_type = request.query_params.get('event_type', None)
+            event_type = request.query_params.get("event_type", None)
             if event_type is not None:
                 try:
                     event_type = int(event_type)
@@ -95,7 +107,7 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
                 except ValueError:
                     return Response(
                         {"error": "O parâmetro 'event_type' deve ser um número válido"},
-                        status=status.HTTP_400_BAD_REQUEST
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
 
             serializer = self.get_serializer(logs, many=True)
@@ -104,10 +116,10 @@ class AccessLogsViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response(
                 {"error": "O parâmetro 'days' deve ser um número válido"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
             return Response(
                 {"error": f"Erro interno: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

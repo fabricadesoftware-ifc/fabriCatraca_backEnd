@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from src.core.control_Id.infra.control_id_django_app.models import PortalGroup, Device
+from src.core.control_id.infra.control_id_django_app.models import PortalGroup, Device
 from .device import DeviceSerializer
 
 

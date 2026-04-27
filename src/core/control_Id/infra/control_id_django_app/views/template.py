@@ -16,12 +16,12 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from src.core.__seedwork__.infra.mixins import TemplateSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     BiometricCaptureSession,
     Device,
     Template,
 )
-from src.core.control_Id.infra.control_id_django_app.serializers.template import (
+from src.core.control_id.infra.control_id_django_app.serializers.template import (
     TemplateSerializer,
 )
 from src.core.user.infra.user_django_app.models import User

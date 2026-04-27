@@ -1,8 +1,8 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, viewsets
 
-from src.core.control_Id.infra.control_id_django_app.models import ReleaseAudit
-from src.core.control_Id.infra.control_id_django_app.serializers.release_audit import (
+from src.core.control_id.infra.control_id_django_app.models import ReleaseAudit
+from src.core.control_id.infra.control_id_django_app.serializers.release_audit import (
     ReleaseAuditSerializer,
 )
 from src.core.user.infra.user_django_app.permissions import IsOperationalRole
@@ -51,7 +51,9 @@ class ReleaseAuditViewSet(
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
-        if getattr(user, "is_superuser", False) or getattr(user, "is_admin_role", False):
+        if getattr(user, "is_superuser", False) or getattr(
+            user, "is_admin_role", False
+        ):
             return queryset
         if getattr(user, "is_guarita_role", False):
             return queryset.filter(requested_by=user)

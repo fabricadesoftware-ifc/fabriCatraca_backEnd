@@ -17,8 +17,11 @@ def test_set_configuration_normalizes_payloads_and_reports_errors(
     mocker, make_response, device_factory
 ):
     # Testa normalizacao, deteccao de secao raiz e falha por device.
-    from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError, ControlIDSyncMixin
-    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from src.core.__seedwork__.infra.catraca_sync import (
+        CatracaSyncError,
+        ControlIDSyncMixin,
+    )
+    from src.core.control_id.infra.control_id_django_app.models import Device
 
     Device.objects.all().delete()
     mixin = ControlIDSyncMixin()

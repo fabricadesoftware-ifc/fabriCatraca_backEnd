@@ -6,11 +6,11 @@ from django.db import transaction
 from rest_framework import status
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     CustomGroup as Group,
     UserGroup,
 )
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.models.device import Device
 from src.core.user.infra.user_django_app.models import User
 from src.core.user.infra.user_django_app.validate import normalize_phone
 from .excel_parser import ParsedRow
@@ -57,7 +57,9 @@ class ImportUsersService(ControlIDSyncMixin):
             logger.warning("[USER] Telefone ignorado por formato invalido: %s", value)
             return None
 
-    def _get_available_email(self, email: str | None, user: User | None = None) -> str | None:
+    def _get_available_email(
+        self, email: str | None, user: User | None = None
+    ) -> str | None:
         if not email:
             return None
 
@@ -92,7 +94,9 @@ class ImportUsersService(ControlIDSyncMixin):
 
             if response.status_code != status.HTTP_200_OK:
                 error_detail = getattr(response, "data", str(response))
-                logger.error(f"[GRUPO] Falha id={group.pk} name='{group.name}': {error_detail}")
+                logger.error(
+                    f"[GRUPO] Falha id={group.pk} name='{group.name}': {error_detail}"
+                )
                 return False, f"Erro ao sincronizar grupo na catraca: {error_detail}"
 
             logger.info(f"[GRUPO] OK id={group.pk} name='{group.name}'")
@@ -118,7 +122,9 @@ class ImportUsersService(ControlIDSyncMixin):
                 logger.info(f"[GRUPO] Criado localmente: id={grupo.pk}")
             except Exception as e:
                 transaction.savepoint_rollback(sp)
-                logger.exception(f"[GRUPO] Falha ao criar '{group_name}' localmente: {e}")
+                logger.exception(
+                    f"[GRUPO] Falha ao criar '{group_name}' localmente: {e}"
+                )
                 return None, str(e)
         else:
             logger.info(f"[GRUPO] '{group_name}' já existe localmente (id={grupo.pk})")
@@ -127,7 +133,9 @@ class ImportUsersService(ControlIDSyncMixin):
         success, err = self._sync_group_to_devices(grupo)
         if not success:
             transaction.savepoint_rollback(sp)
-            logger.error(f"[GRUPO] Rollback de '{group_name}' após falha na catraca: {err}")
+            logger.error(
+                f"[GRUPO] Rollback de '{group_name}' após falha na catraca: {err}"
+            )
             return None, err
 
         transaction.savepoint_commit(sp)
@@ -198,17 +206,19 @@ class ImportUsersService(ControlIDSyncMixin):
                     user.email = email
                     update_fields.append("email")
                 if update_fields:
-                    logger.info(f"[USER] Atualizado: id={user.pk} '{user.name}' → '{row.name}'")
+                    logger.info(
+                        f"[USER] Atualizado: id={user.pk} '{user.name}' → '{row.name}'"
+                    )
                     user.save(update_fields=update_fields)
                 else:
-                    logger.info(f"[USER] Sem alterações: id={user.pk} name='{user.name}'")
+                    logger.info(
+                        f"[USER] Sem alterações: id={user.pk} name='{user.name}'"
+                    )
                 users_existing.append(user)
 
         return users_new, users_existing, len(users_new), len(users_existing)
 
-    def sync_users_to_devices(
-        self, users: list[User], sheet_name: str
-    ) -> list[User]:
+    def sync_users_to_devices(self, users: list[User], sheet_name: str) -> list[User]:
         """Upsert em batch dos usuários em todas as catracas."""
         if not users:
             return []
@@ -262,9 +272,7 @@ class ImportUsersService(ControlIDSyncMixin):
             return True
 
         self._device = None
-        relations_payload = [
-            {"user_id": u.pk, "group_id": grupo.pk} for u in users
-        ]
+        relations_payload = [{"user_id": u.pk, "group_id": grupo.pk} for u in users]
 
         logger.info(
             f"[RELACAO] Batch upsert de {len(relations_payload)} relação(ões) "

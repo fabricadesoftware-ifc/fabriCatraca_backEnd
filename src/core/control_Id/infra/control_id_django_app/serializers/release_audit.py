@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from src.core.control_Id.infra.control_id_django_app.models import ReleaseAudit
+from src.core.control_id.infra.control_id_django_app.models import ReleaseAudit
 
 
 class ReleaseAuditActorSerializer(serializers.Serializer):
@@ -16,7 +16,9 @@ class ReleaseAuditSerializer(serializers.ModelSerializer):
     target_user_data = serializers.SerializerMethodField()
     device_name = serializers.CharField(source="device.name", read_only=True)
     portal_name = serializers.CharField(source="portal.name", read_only=True)
-    access_log_time = serializers.DateTimeField(source="access_log.time", read_only=True)
+    access_log_time = serializers.DateTimeField(
+        source="access_log.time", read_only=True
+    )
 
     class Meta:
         model = ReleaseAudit

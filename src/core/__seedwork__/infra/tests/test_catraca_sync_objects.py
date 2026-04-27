@@ -7,7 +7,10 @@ def test_execute_remote_endpoint_in_devices_reports_missing_empty_success_and_fa
     mocker, make_response, device_factory
 ):
     # Testa agregacao multi-device sem vazar excecoes para a API.
-    from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError, ControlIDSyncMixin
+    from src.core.__seedwork__.infra.catraca_sync import (
+        CatracaSyncError,
+        ControlIDSyncMixin,
+    )
 
     mixin = ControlIDSyncMixin()
     missing = mixin.execute_remote_endpoint_in_devices("x.fcgi", {}, [9999])
@@ -43,7 +46,9 @@ def test_execute_remote_endpoint_in_devices_reports_missing_empty_success_and_fa
 
 @pytest.mark.integration
 @pytest.mark.django_db
-def test_get_target_devices_prioritizes_explicit_device_and_active_filters(device_factory):
+def test_get_target_devices_prioritizes_explicit_device_and_active_filters(
+    device_factory,
+):
     # Testa resolucao de alvo: device fixo, ids ativos e todos ativos.
     from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
 
@@ -62,7 +67,10 @@ def test_get_target_devices_prioritizes_explicit_device_and_active_filters(devic
 @pytest.mark.django_db
 def test_load_objects_success_and_error(mocker, make_response):
     # Testa load_objects com filtros opcionais e erro remoto.
-    from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError, ControlIDSyncMixin
+    from src.core.__seedwork__.infra.catraca_sync import (
+        CatracaSyncError,
+        ControlIDSyncMixin,
+    )
 
     mixin = ControlIDSyncMixin()
     mocked = mocker.patch.object(
@@ -90,8 +98,11 @@ def test_create_objects_validates_targets_required_fields_and_remote_errors(
     mocker, make_response, device_factory
 ):
     # Testa criacao multi-device, validacao obrigatoria e falha da catraca.
-    from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError, ControlIDSyncMixin
-    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from src.core.__seedwork__.infra.catraca_sync import (
+        CatracaSyncError,
+        ControlIDSyncMixin,
+    )
+    from src.core.control_id.infra.control_id_django_app.models import Device
 
     Device.objects.all().delete()
     mixin = ControlIDSyncMixin()
@@ -110,7 +121,9 @@ def test_create_objects_validates_targets_required_fields_and_remote_errors(
     assert success.status_code == 201
     assert success.data == {"success": True}
 
-    mocked.return_value = make_response(status_code=409, json_data={"error": "duplicate"})
+    mocked.return_value = make_response(
+        status_code=409, json_data={"error": "duplicate"}
+    )
     with pytest.raises(CatracaSyncError) as remote:
         mixin.create_objects("users", [{"id": 2, "name": "B"}], device_ids=[device.id])
     assert remote.value.status_code == 409
@@ -122,7 +135,10 @@ def test_create_or_update_update_and_destroy_objects_cover_success_and_errors(
     mocker, make_response, device_factory
 ):
     # Testa create_or_update, update, destroy e aliases em sucesso/falha.
-    from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError, ControlIDSyncMixin
+    from src.core.__seedwork__.infra.catraca_sync import (
+        CatracaSyncError,
+        ControlIDSyncMixin,
+    )
 
     device = device_factory()
     mixin = ControlIDSyncMixin()
@@ -130,7 +146,10 @@ def test_create_or_update_update_and_destroy_objects_cover_success_and_errors(
         mixin, "_make_request", return_value=make_response(json_data={"ok": True})
     )
 
-    assert mixin.create_or_update_objects("groups", [{"id": 1, "name": "G"}]).status_code == 200
+    assert (
+        mixin.create_or_update_objects("groups", [{"id": 1, "name": "G"}]).status_code
+        == 200
+    )
     assert mocked.call_args.args[0] == "create_or_modify_objects.fcgi"
 
     assert mixin.update_objects("groups", {"name": "G2"}, {"id": 1}).status_code == 200
@@ -142,7 +161,9 @@ def test_create_or_update_update_and_destroy_objects_cover_success_and_errors(
 
     mocked.return_value = make_response(status_code=500, json_data={"error": "bad"})
     with pytest.raises(CatracaSyncError):
-        mixin.create_or_update_objects("groups", [{"id": 2, "name": "G"}], device_ids=[device.id])
+        mixin.create_or_update_objects(
+            "groups", [{"id": 2, "name": "G"}], device_ids=[device.id]
+        )
     with pytest.raises(CatracaSyncError):
         mixin.update_objects("groups", {"name": "G"}, {"id": 2}, device_ids=[device.id])
     with pytest.raises(CatracaSyncError):
@@ -154,11 +175,14 @@ def test_create_or_update_update_and_destroy_objects_cover_success_and_errors(
 def test_object_mutations_return_400_without_active_devices(mocker):
     # Testa protecao contra mutacao quando nao ha catracas ativas.
     from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
-    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from src.core.control_id.infra.control_id_django_app.models import Device
 
     Device.objects.all().delete()
     mixin = ControlIDSyncMixin()
 
-    assert mixin.create_or_update_objects("groups", [{"id": 1, "name": "G"}]).status_code == 400
+    assert (
+        mixin.create_or_update_objects("groups", [{"id": 1, "name": "G"}]).status_code
+        == 400
+    )
     assert mixin.update_objects("groups", {"name": "G"}, {"id": 1}).status_code == 400
     assert mixin.destroy_objects("groups", {"id": 1}).status_code == 400

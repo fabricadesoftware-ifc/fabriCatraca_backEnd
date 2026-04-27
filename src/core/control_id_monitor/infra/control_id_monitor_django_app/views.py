@@ -12,7 +12,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExampl
 from drf_spectacular.types import OpenApiTypes
 
 from .models import MonitorAlert, MonitorAlertRead, MonitorConfig
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 from .monitoring import resolve_monitor_device, touch_device_heartbeat
 from .serializers import MonitorAlertSerializer, MonitorConfigSerializer
 from .mixins import MonitorConfigSyncMixin
@@ -388,7 +388,9 @@ class MonitorAlertViewSet(viewsets.ReadOnlyModelViewSet):
                 if alert_id not in existing_ids
             ]
         )
-        return Response({"success": True, "marked_count": len(alert_ids) - len(existing_ids)})
+        return Response(
+            {"success": True, "marked_count": len(alert_ids) - len(existing_ids)}
+        )
 
 
 # ============================================================================
@@ -630,7 +632,9 @@ def receive_auxiliary_notification(request):
     logger.info(
         f"📥 [MONITOR] Notificação auxiliar recebida: {request.path} — {request.data}"
     )
-    device_id = request.data.get("device_id") if isinstance(request.data, dict) else None
+    device_id = (
+        request.data.get("device_id") if isinstance(request.data, dict) else None
+    )
     source = request.path.rstrip("/").split("/")[-1] or "auxiliary"
     if device_id not in (None, ""):
         touch_device_heartbeat(device_id, source=source)
@@ -702,11 +706,12 @@ def receive_catra_event(request):
     from datetime import datetime, timezone as dt_timezone
     from django.utils import timezone
     from .notification_handlers import DEVICE_LOCAL_TIMEZONE
-    from src.core.control_Id.infra.control_id_django_app.models import (
+    from src.core.control_id.infra.control_id_django_app.models import (
         AccessLogs,
         Device,
         Portal,
     )
+
     try:
         payload = request.data
         logger.info(f"📥 [CATRA_EVENT] Payload recebido: {payload}")
@@ -735,7 +740,9 @@ def receive_catra_event(request):
         access_event_id = payload.get("access_event_id")
 
         monitor_cfg = touch_device_heartbeat(device_id, source="catra_event")
-        device = monitor_cfg.device if monitor_cfg else resolve_monitor_device(device_id)
+        device = (
+            monitor_cfg.device if monitor_cfg else resolve_monitor_device(device_id)
+        )
         if not device:
             logger.error(f"❌ [CATRA_EVENT] Nenhum device para device_id={device_id}")
             return Response(

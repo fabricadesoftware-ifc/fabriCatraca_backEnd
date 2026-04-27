@@ -235,7 +235,7 @@ class AccessVerificationService:
             str: Diagnóstico completo do acesso
         """
         from src.core.user.infra.user_django_app.models import User
-        from src.core.control_Id.infra.control_id_django_app.models import (
+        from src.core.control_id.infra.control_id_django_app.models import (
             Portal,
             AccessRule,
         )
@@ -375,16 +375,16 @@ class AccessVerificationService:
         Analisa todas as regras de acesso e preenche o AccessVerdict
         com dados estruturados para diagnóstico preciso.
         """
-        from src.core.control_Id.infra.control_id_django_app.models.portal_access_rule import (
+        from src.core.control_id.infra.control_id_django_app.models.portal_access_rule import (
             PortalAccessRule,
         )
-        from src.core.control_Id.infra.control_id_django_app.models.user_access_rule import (
+        from src.core.control_id.infra.control_id_django_app.models.user_access_rule import (
             UserAccessRule,
         )
-        from src.core.control_Id.infra.control_id_django_app.models.group_access_rules import (
+        from src.core.control_id.infra.control_id_django_app.models.group_access_rules import (
             GroupAccessRule,
         )
-        from src.core.control_Id.infra.control_id_django_app.models.user_groups import (
+        from src.core.control_id.infra.control_id_django_app.models.user_groups import (
             UserGroup,
         )
 
@@ -528,10 +528,10 @@ class AccessVerificationService:
         Returns:
             (dentro_horario, lista_de_detalhes, resumo_horario)
         """
-        from src.core.control_Id.infra.control_id_django_app.models.access_rule_timezone import (
+        from src.core.control_id.infra.control_id_django_app.models.access_rule_timezone import (
             AccessRuleTimeZone,
         )
-        from src.core.control_Id.infra.control_id_django_app.models.timespan import (
+        from src.core.control_id.infra.control_id_django_app.models.timespan import (
             TimeSpan,
         )
 

@@ -5,7 +5,7 @@ from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     AccessLogs,
     AccessRule,
     TemporaryUserRelease,
@@ -14,7 +14,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
 )
 
 from .portal_group import PortalGroupSerializer
-from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
 from src.core.user.infra.user_django_app.models import User, Visitas
@@ -27,7 +27,15 @@ class TemporaryReleaseUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "name", "registration", "cpf", "phone", "birth_date", "picture_url"]
+        fields = [
+            "id",
+            "name",
+            "registration",
+            "cpf",
+            "phone",
+            "birth_date",
+            "picture_url",
+        ]
 
     def get_picture_url(self, obj):
         if obj.picture and obj.picture.arquivo:
@@ -194,7 +202,9 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
         if self.instance is None:  # CREATE
             notes = attrs.get("notes")
             if not notes or not str(notes).strip():
-                raise serializers.ValidationError({"notes": ["Este campo é obrigatório na criação."]})
+                raise serializers.ValidationError(
+                    {"notes": ["Este campo é obrigatório na criação."]}
+                )
 
         if TemporaryUserRelease.objects.filter(
             user=user,
@@ -218,7 +228,11 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
 
         if visita and visita.user_id != user.id:
             raise serializers.ValidationError(
-                {"visita_id": ["A visita selecionada nao pertence ao usuario informado."]}
+                {
+                    "visita_id": [
+                        "A visita selecionada nao pertence ao usuario informado."
+                    ]
+                }
             )
 
         if notified_server and notified_server.app_role != User.AppRole.SERVIDOR:
@@ -271,7 +285,7 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
 
         if release.notification_email:
             try:
-                from src.core.control_Id.infra.control_id_django_app.tasks import (
+                from src.core.control_id.infra.control_id_django_app.tasks import (
                     send_temporary_user_release_notification,
                 )
 
@@ -289,11 +303,16 @@ class TemporaryUserReleaseSerializer(serializers.ModelSerializer):
                 )
 
         # Agenda tasks com eta exato
-        from src.core.control_Id.infra.control_id_django_app.tasks import (
+        from src.core.control_id.infra.control_id_django_app.tasks import (
             activate_user_release,
             expire_user_release,
         )
-        activate_user_release.apply_async(kwargs={"release_id": release.id}, eta=valid_from)
-        expire_user_release.apply_async(kwargs={"release_id": release.id}, eta=valid_until)
+
+        activate_user_release.apply_async(
+            kwargs={"release_id": release.id}, eta=valid_from
+        )
+        expire_user_release.apply_async(
+            kwargs={"release_id": release.id}, eta=valid_until
+        )
 
         return release

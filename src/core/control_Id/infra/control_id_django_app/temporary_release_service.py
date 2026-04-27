@@ -2,9 +2,15 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 
-from src.core.__seedwork__.infra.mixins import GroupAccessRulesSyncMixin, UserAccessRuleSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models import GroupAccessRule, UserAccessRule
-from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+from src.core.__seedwork__.infra.mixins import (
+    GroupAccessRulesSyncMixin,
+    UserAccessRuleSyncMixin,
+)
+from src.core.control_id.infra.control_id_django_app.models import (
+    GroupAccessRule,
+    UserAccessRule,
+)
+from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
 
@@ -78,7 +84,9 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
             user_access_rule = release.user_access_rule
 
             if user_access_rule:
-                response = self.delete_in_catraca(user_access_rule, device_ids=device_ids)
+                response = self.delete_in_catraca(
+                    user_access_rule, device_ids=device_ids
+                )
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     raise RuntimeError(
                         f"Falha ao remover regra temporária: {response.data}"
@@ -111,9 +119,12 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
         release.status = release.Status.FAILED
         release.closed_at = timezone.now()
         release.result_message = result_message
-        release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+        release.save(
+            update_fields=["status", "closed_at", "result_message", "updated_at"]
+        )
         ReleaseAuditService.sync_from_temporary_release(release)
         return release
+
 
 class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
     def _get_device_ids(self, release):
@@ -184,7 +195,9 @@ class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
             group_access_rule = release.group_access_rule
 
             if group_access_rule:
-                response = self.delete_in_catraca(group_access_rule, device_ids=device_ids)
+                response = self.delete_in_catraca(
+                    group_access_rule, device_ids=device_ids
+                )
                 if response.status_code != status.HTTP_204_NO_CONTENT:
                     raise RuntimeError(
                         f"Falha ao remover regra temporária: {response.data}"

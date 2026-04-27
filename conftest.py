@@ -9,7 +9,7 @@ from faker import Faker
 from rest_framework.test import APIClient
 
 from src.core.user.infra.user_django_app.models import User
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 from src.core.control_id_config.infra.control_id_config_django_app.models import (
     CatraConfig,
     HardwareConfig,
@@ -287,7 +287,9 @@ def make_response():
         response.status_code = status_code
         payload = {} if json_data is None else json_data
         response.json.return_value = payload
-        response.text = text if text is not None else ("" if payload == {} else str(payload))
+        response.text = (
+            text if text is not None else ("" if payload == {} else str(payload))
+        )
         response.content = response.text.encode()
         response.raise_for_status = Mock()
         return response
@@ -353,4 +355,3 @@ def mock_catraca_response():
         return response
 
     return create_response
-

@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
 from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollCardResponse
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.models.device import Device
 
 from ..models import User, Visitas
 from ..permissions import (
@@ -169,9 +169,13 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             expire_visit.apply_async(kwargs={"visit_id": visit.id}, eta=visit.end_date)
         return visit
 
-    def _build_visitor_response(self, instance: User, visit: Visitas, reused_existing: bool):
+    def _build_visitor_response(
+        self, instance: User, visit: Visitas, reused_existing: bool
+    ):
         payload = self.get_serializer(instance).data
-        payload["visit"] = VisitasSerializer(visit, context={"request": self.request}).data
+        payload["visit"] = VisitasSerializer(
+            visit, context={"request": self.request}
+        ).data
         payload["reused_existing_user"] = reused_existing
         return payload
 
@@ -230,7 +234,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                 )
                 if pin_resp.status_code != status.HTTP_201_CREATED:
                     logger.warning(
-                        "Falha ao criar PIN na catraca %s: %s", device.name, pin_resp.data
+                        "Falha ao criar PIN na catraca %s: %s",
+                        device.name,
+                        pin_resp.data,
                     )
 
             if self._is_device_admin_user(instance):
@@ -328,7 +334,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             created_new_user = False
 
             if self._is_visitor_payload(serializer.validated_data):
-                existing_visitor = self._find_existing_visitor(serializer.validated_data)
+                existing_visitor = self._find_existing_visitor(
+                    serializer.validated_data
+                )
                 if existing_visitor:
                     update_serializer = self.get_serializer(
                         existing_visitor,
@@ -369,7 +377,9 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
                     status=status.HTTP_201_CREATED,
                 )
 
-        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+        return Response(
+            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -443,7 +453,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             instance.groups.clear()
             instance.user_permissions.clear()
 
-            from src.core.control_Id.infra.control_id_django_app.models.access_logs import (
+            from src.core.control_id.infra.control_id_django_app.models.access_logs import (
                 AccessLogs,
             )
 
@@ -685,7 +695,7 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             self._normalize_user_type(instance)
 
             # 3. Salva o cartao no banco
-            from src.core.control_Id.infra.control_id_django_app.models import Card
+            from src.core.control_id.infra.control_id_django_app.models import Card
 
             card = Card.objects.create(user=instance, value=str(captured_value))
 

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from src.core.control_Id.infra.control_id_django_app.models import Device, Template
+from src.core.control_id.infra.control_id_django_app.models import Device, Template
 from src.core.user.infra.user_django_app.models import User
 
 

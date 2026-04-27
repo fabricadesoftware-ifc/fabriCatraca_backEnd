@@ -5,8 +5,8 @@ from rest_framework import status as http_status
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from src.core.control_Id.infra.control_id_django_app.models import PortalGroup
-from src.core.control_Id.infra.control_id_django_app.serializers.portal_group import (
+from src.core.control_id.infra.control_id_django_app.models import PortalGroup
+from src.core.control_id.infra.control_id_django_app.serializers.portal_group import (
     PortalGroupSerializer,
 )
 

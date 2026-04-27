@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 
 
 class EasySetupLog(models.Model):

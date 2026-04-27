@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timezone as dt_timezone
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     Template,
     TimeZone,
     TimeSpan,
@@ -20,9 +20,9 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     AccessLogs,
     ReleaseAudit,
     TemporaryUserRelease,
-    TemporaryGroupRelease
+    TemporaryGroupRelease,
 )
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.models.device import Device
 
 
 def format_datetime_utc(value):
@@ -164,6 +164,7 @@ class TemporaryUserReleaseAdmin(admin.ModelAdmin):
     list_filter = ("status", "access_rule")
     search_fields = ("user__name", "requested_by__name", "notes", "result_message")
 
+
 @admin.register(TemporaryGroupRelease)
 class TemporaryGroupReleaseAdmin(admin.ModelAdmin):
     @admin.display(description="Valid until (UTC)")
@@ -222,7 +223,12 @@ class ReleaseAuditAdmin(admin.ModelAdmin):
         "notes",
         "error_message",
     )
-    readonly_fields = ("created_at", "updated_at", "request_payload", "response_payload")
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "request_payload",
+        "response_payload",
+    )
 
 
 # Register your models here.

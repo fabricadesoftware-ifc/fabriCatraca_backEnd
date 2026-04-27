@@ -13,7 +13,7 @@ import requests
 from django.utils import timezone
 
 from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     AccessRule,
     AccessRuleTimeZone,
     Area,
@@ -28,7 +28,7 @@ from src.core.control_Id.infra.control_id_django_app.models import (
     UserAccessRule,
     UserGroup,
 )
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.models.device import Device
 from src.core.control_id_config.infra.control_id_config_django_app.models import (
     CatraConfig,
     HardwareConfig,
@@ -163,8 +163,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         return {
             "ok": False,
             "error": (
-                f"Device nao voltou a responder login apos "
-                f"{max_attempts * interval_s}s"
+                f"Device nao voltou a responder login apos {max_attempts * interval_s}s"
             ),
         }
 
@@ -175,7 +174,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
     def _get_reference_device(self):
         return (
             self.device.__class__.objects.filter(is_default=True).first()
-            or self.device.__class__.objects.filter(is_active=True).order_by("id").first()
+            or self.device.__class__.objects.filter(is_active=True)
+            .order_by("id")
+            .first()
         )
 
     def _get_device_scoped_config(self, model, *, predicate=None):
@@ -240,7 +241,13 @@ class _EasySetupEngine(ControlIDSyncMixin):
             config_specs.append(
                 (
                     MonitorConfig,
-                    ["request_timeout", "hostname", "port", "path", "heartbeat_timeout_seconds"],
+                    [
+                        "request_timeout",
+                        "hostname",
+                        "port",
+                        "path",
+                        "heartbeat_timeout_seconds",
+                    ],
                     lambda cfg: cfg.is_configured,
                 )
             )
@@ -309,7 +316,11 @@ class _EasySetupEngine(ControlIDSyncMixin):
                     ),
                     (
                         PushServerConfig,
-                        ["push_request_timeout", "push_request_period", "push_remote_address"],
+                        [
+                            "push_request_timeout",
+                            "push_request_period",
+                            "push_remote_address",
+                        ],
                         None,
                     ),
                 ]
@@ -320,7 +331,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
             if not source:
                 continue
 
-            defaults = {field_name: getattr(source, field_name) for field_name in field_names}
+            defaults = {
+                field_name: getattr(source, field_name) for field_name in field_names
+            }
             if model is MonitorConfig:
                 defaults.update(
                     {
@@ -544,12 +557,22 @@ class _EasySetupEngine(ControlIDSyncMixin):
         try:
             hw_cfg = self._get_device_scoped_config(HardwareConfig)
             if not hw_cfg:
-                return {"ok": True, "skipped": True, "message": "Nenhuma HardwareConfig encontrada"}
+                return {
+                    "ok": True,
+                    "skipped": True,
+                    "message": "Nenhuma HardwareConfig encontrada",
+                }
 
             payload = {
-                "interlock_enabled": 1 if getattr(hw_cfg, "network_interlock_enabled", False) else 0,
-                "api_bypass_enabled": 1 if getattr(hw_cfg, "network_interlock_api_bypass_enabled", False) else 0,
-                "rex_bypass_enabled": 1 if getattr(hw_cfg, "network_interlock_rex_bypass_enabled", False) else 0,
+                "interlock_enabled": 1
+                if getattr(hw_cfg, "network_interlock_enabled", False)
+                else 0,
+                "api_bypass_enabled": 1
+                if getattr(hw_cfg, "network_interlock_api_bypass_enabled", False)
+                else 0,
+                "rex_bypass_enabled": 1
+                if getattr(hw_cfg, "network_interlock_rex_bypass_enabled", False)
+                else 0,
             }
             resp = self._make_request("set_network_interlock.fcgi", json_data=payload)
             return {
@@ -574,22 +597,35 @@ class _EasySetupEngine(ControlIDSyncMixin):
             existing_ids = self._load_existing_ids("devices")
             desired_ids = {int(item["id"]) for item in desired_values}
 
-            to_create = [item for item in desired_values if int(item["id"]) not in existing_ids]
-            to_update = [item for item in desired_values if int(item["id"]) in existing_ids]
-            to_delete = [device_id for device_id in existing_ids if int(device_id) not in desired_ids]
+            to_create = [
+                item for item in desired_values if int(item["id"]) not in existing_ids
+            ]
+            to_update = [
+                item for item in desired_values if int(item["id"]) in existing_ids
+            ]
+            to_delete = [
+                device_id
+                for device_id in existing_ids
+                if int(device_id) not in desired_ids
+            ]
 
             create_ok = True
             update_ok = True
             delete_ok = True
 
             if to_create:
-                create_ok = self._create_objects_safe("devices", to_create).get("ok", False)
+                create_ok = self._create_objects_safe("devices", to_create).get(
+                    "ok", False
+                )
 
             if to_update:
                 update_ok = self._modify_objects("devices", to_update)
 
             for device_id in to_delete:
-                delete_ok = self._destroy_table("devices", {"devices": {"id": int(device_id)}}) and delete_ok
+                delete_ok = (
+                    self._destroy_table("devices", {"devices": {"id": int(device_id)}})
+                    and delete_ok
+                )
 
             return {
                 "ok": create_ok and update_ok and delete_ok,
@@ -685,7 +721,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
             identifier_cfg["verbose_logging"] = bool_to_str(
                 getattr(sec_cfg, "verbose_logging_enabled", True)
             )
-            identifier_cfg["log_type"] = bool_to_str(getattr(sec_cfg, "log_type", False))
+            identifier_cfg["log_type"] = bool_to_str(
+                getattr(sec_cfg, "log_type", False)
+            )
             result["sections"]["security"] = {"source_device_id": sec_cfg.device_id}
 
         # Métodos de identificação habilitados.
@@ -1356,7 +1394,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
         report = {"device": self.device.name, "steps": {}}
         t0 = _time.monotonic()
 
-        report["steps"]["pause_offline_detection"] = self._pause_monitor_offline_detection()
+        report["steps"]["pause_offline_detection"] = (
+            self._pause_monitor_offline_detection()
+        )
 
         # Etapa 1 — Login
         try:
@@ -1430,12 +1470,14 @@ class _EasySetupEngine(ControlIDSyncMixin):
         )
         report["steps"]["network_interlock"] = self.configure_network_interlock()
 
-        report["steps"]["persist_applied_configs"] = self._persist_applied_configs_to_database(
-            persist_monitor=report["steps"]["monitor"].get("ok", False),
-            persist_device_settings=(
-                report["steps"]["device_settings"].get("ok", False)
-                and report["steps"]["network_interlock"].get("ok", False)
-            ),
+        report["steps"]["persist_applied_configs"] = (
+            self._persist_applied_configs_to_database(
+                persist_monitor=report["steps"]["monitor"].get("ok", False),
+                persist_device_settings=(
+                    report["steps"]["device_settings"].get("ok", False)
+                    and report["steps"]["network_interlock"].get("ok", False)
+                ),
+            )
         )
 
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
@@ -1532,7 +1574,9 @@ class _EasySetupEngine(ControlIDSyncMixin):
         report = {"device": self.device.name, "steps": {}}
         t0 = _time.monotonic()
 
-        report["steps"]["pause_offline_detection"] = self._pause_monitor_offline_detection()
+        report["steps"]["pause_offline_detection"] = (
+            self._pause_monitor_offline_detection()
+        )
 
         try:
             self.login(force_new=True)
@@ -1589,12 +1633,14 @@ class _EasySetupEngine(ControlIDSyncMixin):
         )
         report["steps"]["network_interlock"] = self.configure_network_interlock()
 
-        report["steps"]["persist_applied_configs"] = self._persist_applied_configs_to_database(
-            persist_monitor=report["steps"]["monitor"].get("ok", False),
-            persist_device_settings=(
-                report["steps"]["device_settings"].get("ok", False)
-                and report["steps"]["network_interlock"].get("ok", False)
-            ),
+        report["steps"]["persist_applied_configs"] = (
+            self._persist_applied_configs_to_database(
+                persist_monitor=report["steps"]["monitor"].get("ok", False),
+                persist_device_settings=(
+                    report["steps"]["device_settings"].get("ok", False)
+                    and report["steps"]["network_interlock"].get("ok", False)
+                ),
+            )
         )
 
         logger.info(

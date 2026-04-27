@@ -3,11 +3,11 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from src.core.control_Id.infra.control_id_django_app.models import TemporaryGroupRelease
-from src.core.control_Id.infra.control_id_django_app.serializers import (
+from src.core.control_id.infra.control_id_django_app.models import TemporaryGroupRelease
+from src.core.control_id.infra.control_id_django_app.serializers import (
     TemporaryGroupReleaseSerializer,
 )
-from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
+from src.core.control_id.infra.control_id_django_app.temporary_release_service import (
     TemporaryGroupReleaseService,
 )
 from src.core.user.infra.user_django_app.permissions import IsAdminOrSisaeRole
@@ -61,7 +61,9 @@ class TemporaryGroupReleaseViewSet(
             release.Status.ACTIVE,
         ):
             return Response(
-                {"error": "Apenas liberações pendentes ou ativas podem ser canceladas."},
+                {
+                    "error": "Apenas liberações pendentes ou ativas podem ser canceladas."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

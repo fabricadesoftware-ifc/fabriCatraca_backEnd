@@ -4,7 +4,7 @@ from src.core.__seedwork__.domain import BaseModel
 from django.db.models import Q
 from django.utils import timezone
 
-from src.core.control_Id.infra.control_id_django_app.models import CustomGroup as Group
+from src.core.control_id.infra.control_id_django_app.models import CustomGroup as Group
 
 from .access_logs import AccessLogs
 from .access_rule import AccessRule
@@ -72,7 +72,6 @@ class TemporaryGroupRelease(BaseModel):
     closed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
     result_message = models.TextField(blank=True, default="")
-
 
     class Meta:
         db_table = "temporary_group_releases"

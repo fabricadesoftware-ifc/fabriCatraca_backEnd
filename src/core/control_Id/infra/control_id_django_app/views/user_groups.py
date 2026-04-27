@@ -6,12 +6,12 @@ from rest_framework import serializers
 from django.db import transaction, IntegrityError
 from drf_spectacular.utils import extend_schema
 
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     UserGroup,
     CustomGroup,
 )
 from src.core.user.infra.user_django_app.models import User
-from src.core.control_Id.infra.control_id_django_app.serializers import (
+from src.core.control_id.infra.control_id_django_app.serializers import (
     UserGroupSerializer,
 )
 from src.core.__seedwork__.infra.mixins import UserGroupsSyncMixin

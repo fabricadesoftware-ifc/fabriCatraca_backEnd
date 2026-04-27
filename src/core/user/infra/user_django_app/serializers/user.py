@@ -3,8 +3,8 @@ import logging
 from django.contrib.auth.models import Group
 from rest_framework import serializers
 
-from src.core.control_Id.infra.control_id_django_app.models import Device
-from src.core.control_Id.infra.control_id_django_app.models import UserGroup
+from src.core.control_id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import UserGroup
 from src.core.uploader.models import Archive
 
 from ..models import User

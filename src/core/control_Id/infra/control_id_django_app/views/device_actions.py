@@ -4,12 +4,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
-from src.core.control_Id.infra.control_id_django_app.serializers.device_actions import (
+from src.core.control_id.infra.control_id_django_app.serializers.device_actions import (
     BuzzerBuzzSerializer,
     MessageToScreenSerializer,
     RemoteUserAuthorizationSerializer,
 )
-from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
 from src.core.user.infra.user_django_app.permissions import (
@@ -18,7 +18,9 @@ from src.core.user.infra.user_django_app.permissions import (
 )
 
 
-def _execute_action(serializer_class, request, endpoint: str, request_timeout: int = 10):
+def _execute_action(
+    serializer_class, request, endpoint: str, request_timeout: int = 10
+):
     serializer = serializer_class(data=request.data)
     serializer.is_valid(raise_exception=True)
 

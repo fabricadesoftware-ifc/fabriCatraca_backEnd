@@ -1,6 +1,6 @@
 from django.db import models
 from src.core.__seedwork__.domain import BaseModel
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     Device,
     Portal,
     AccessRule,

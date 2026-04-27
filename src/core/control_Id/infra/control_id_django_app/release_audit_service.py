@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     Device,
     Portal,
     ReleaseAudit,
@@ -60,13 +60,19 @@ class ReleaseAuditService:
         if type(release) is TemporaryGroupRelease:
             return ReleaseAudit.ReleaseType.TEMPORARY_GROUP_RELEASE
         threshold = timedelta(minutes=1)
-        if release.valid_from and release.created_at and release.valid_from > release.created_at + threshold:
+        if (
+            release.valid_from
+            and release.created_at
+            and release.valid_from > release.created_at + threshold
+        ):
             return ReleaseAudit.ReleaseType.SCHEDULED_USER_RELEASE
         return ReleaseAudit.ReleaseType.TEMPORARY_USER_RELEASE
 
     @classmethod
-    def sync_from_temporary_release(cls, release: TemporaryUserRelease | TemporaryGroupRelease):
-        if (type(release) is TemporaryUserRelease):
+    def sync_from_temporary_release(
+        cls, release: TemporaryUserRelease | TemporaryGroupRelease
+    ):
+        if type(release) is TemporaryUserRelease:
             defaults = {
                 **cls._requested_by_snapshot(release.requested_by),
                 **cls._target_user_snapshot(release.user),
@@ -101,7 +107,7 @@ class ReleaseAuditService:
                 audit.save()
             return audit
 
-        elif (type(release) is TemporaryGroupRelease):
+        elif type(release) is TemporaryGroupRelease:
             defaults = {
                 **cls._requested_by_snapshot(release.requested_by),
                 "target_group": release.group,
@@ -142,7 +148,11 @@ class ReleaseAuditService:
         payload = payload or {}
         response_data = getattr(response, "data", {}) or {}
         device_ids = payload.get("device_ids") or []
-        first_device = Device.objects.filter(id=device_ids[0]).first() if len(device_ids) == 1 else None
+        first_device = (
+            Device.objects.filter(id=device_ids[0]).first()
+            if len(device_ids) == 1
+            else None
+        )
         portal = Portal.objects.filter(id=payload.get("portal_id")).first()
         target_user = None
         if payload.get("user_id"):
@@ -156,7 +166,8 @@ class ReleaseAuditService:
             else ReleaseAudit.ReleaseType.SINGLE_TURN
         )
         if not release_mode and not any(
-            action.get("action") == "catra" and "allow=" in str(action.get("parameters", ""))
+            action.get("action") == "catra"
+            and "allow=" in str(action.get("parameters", ""))
             for action in actions
         ):
             release_type = ReleaseAudit.ReleaseType.DEVICE_EVENT

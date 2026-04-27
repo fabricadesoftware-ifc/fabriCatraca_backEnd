@@ -1,6 +1,9 @@
 from django.db import models
 from src.core.__seedwork__.domain import BaseModel
-from src.core.control_Id.infra.control_id_django_app.models import CustomGroup, AccessRule
+from src.core.control_id.infra.control_id_django_app.models import (
+    CustomGroup,
+    AccessRule,
+)
 from .portal_group import PortalGroup
 
 
@@ -24,4 +27,4 @@ class GroupAccessRule(BaseModel):
         verbose_name = "Grupo de Acesso"
         verbose_name_plural = "Grupos de Acesso"
         db_table = "group_access_rules"
-        unique_together = ('group', 'access_rule', 'portal_group')
+        unique_together = ("group", "access_rule", "portal_group")

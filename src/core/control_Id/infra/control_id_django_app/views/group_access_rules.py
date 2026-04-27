@@ -2,8 +2,8 @@ from django.db import IntegrityError
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from src.core.control_Id.infra.control_id_django_app.models import GroupAccessRule
-from src.core.control_Id.infra.control_id_django_app.serializers import (
+from src.core.control_id.infra.control_id_django_app.models import GroupAccessRule
+from src.core.control_id.infra.control_id_django_app.serializers import (
     GroupAccessRuleSerializer,
 )
 from src.core.__seedwork__.infra.mixins import GroupAccessRulesSyncMixin

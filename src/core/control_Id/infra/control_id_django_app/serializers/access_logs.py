@@ -1,26 +1,36 @@
 from rest_framework import serializers
-from src.core.control_Id.infra.control_id_django_app.models import AccessLogs, Device, Portal, AccessRule
+from src.core.control_id.infra.control_id_django_app.models import (
+    AccessLogs,
+    Device,
+    Portal,
+    AccessRule,
+)
 from src.core.user.infra.user_django_app.models import User
+
 
 class DeviceMinSerializer(serializers.ModelSerializer):
     class Meta:
         model = Device
-        fields = ['id', 'name']
+        fields = ["id", "name"]
+
 
 class UserMinSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'name', 'registration']
+        fields = ["id", "name", "registration"]
+
 
 class PortalMinSerializer(serializers.ModelSerializer):
     class Meta:
         model = Portal
-        fields = ['id', 'name']
+        fields = ["id", "name"]
+
 
 class AccessRuleMinSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessRule
-        fields = ['id', 'name']
+        fields = ["id", "name"]
+
 
 class AccessLogsSerializer(serializers.ModelSerializer):
     device = DeviceMinSerializer(read_only=True)
@@ -48,11 +58,14 @@ class AccessLogsSerializer(serializers.ModelSerializer):
             "raw_payload",
             "sentido",
         ]
-        read_only_fields = ['id']
+        read_only_fields = ["id"]
 
     def to_representation(self, instance):
         # TODO: rever essa logica peraza2k26
-        if isinstance(self.instance, (list, AccessLogs.objects.none().__class__)) or self.many:
+        if (
+            isinstance(self.instance, (list, AccessLogs.objects.none().__class__))
+            or self.many
+        ):
             return {
                 "id": instance.id,
                 "time": instance.time,

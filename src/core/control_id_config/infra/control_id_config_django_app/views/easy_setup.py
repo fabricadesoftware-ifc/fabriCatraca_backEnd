@@ -14,7 +14,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.models import (
     MonitorConfig,
 )

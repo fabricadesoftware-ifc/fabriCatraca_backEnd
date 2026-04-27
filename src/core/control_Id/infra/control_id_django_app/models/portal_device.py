@@ -1,8 +1,8 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from src.core.__seedwork__.domain import BaseModel
-from src.core.control_Id.infra.control_id_django_app.models import Portal, Device
-from src.core.control_Id.infra.control_id_django_app.models.portal_group import (
+from src.core.control_id.infra.control_id_django_app.models import Portal, Device
+from src.core.control_id.infra.control_id_django_app.models.portal_group import (
     PortalGroup,
 )
 

@@ -1,17 +1,21 @@
 from rest_framework import serializers
-from src.core.control_Id.infra.control_id_django_app.models import PortalAccessRule, Portal, AccessRule
+from src.core.control_id.infra.control_id_django_app.models import (
+    PortalAccessRule,
+    Portal,
+    AccessRule,
+)
 
 
 class PortalBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Portal
-        fields = ['id', 'name']
+        fields = ["id", "name"]
 
 
 class AccessRuleBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessRule
-        fields = ['id', 'name']
+        fields = ["id", "name"]
 
 
 class PortalAccessRuleSerializer(serializers.ModelSerializer):
@@ -21,19 +25,16 @@ class PortalAccessRuleSerializer(serializers.ModelSerializer):
 
     # ✅ Entrada: permite enviar apenas os ids
     portal_id = serializers.PrimaryKeyRelatedField(
-        write_only=True,
-        queryset=Portal.objects.all(),
-        source="portal",
-        required=True
+        write_only=True, queryset=Portal.objects.all(), source="portal", required=True
     )
     access_rule_id = serializers.PrimaryKeyRelatedField(
         write_only=True,
         queryset=AccessRule.objects.all(),
         source="access_rule",
-        required=True
+        required=True,
     )
 
     class Meta:
         model = PortalAccessRule
-        fields = ['id', 'portal', 'portal_id', 'access_rule', 'access_rule_id']
-        read_only_fields = ['id']
+        fields = ["id", "portal", "portal_id", "access_rule", "access_rule_id"]
+        read_only_fields = ["id"]

@@ -6,21 +6,21 @@ from django.utils import timezone
 from src.core.control_id_monitor.infra.control_id_monitor_django_app.monitoring import (
     create_temporary_release_delay_alert,
 )
-from src.core.control_Id.infra.control_id_django_app.views.sync import GlobalSyncMixin
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.views.sync import GlobalSyncMixin
+from src.core.control_id.infra.control_id_django_app.models import (
     AccessLogs,
     Device,
     TemporaryUserRelease,
     TemporaryGroupRelease,
 )
-from src.core.control_Id.infra.control_id_django_app.temporary_release_service import (
+from src.core.control_id.infra.control_id_django_app.temporary_release_service import (
     TemporaryUserReleaseService,
     TemporaryGroupReleaseService,
 )
-from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
-from src.core.control_Id.infra.control_id_django_app.temporary_release_notification_service import (
+from src.core.control_id.infra.control_id_django_app.temporary_release_notification_service import (
     TemporaryUserReleaseNotificationService,
 )
 
@@ -70,23 +70,27 @@ def send_temporary_user_release_notification(self, release_id: int) -> dict:
 # garantindo idempotencia mesmo que a task seja chamada mais de uma vez.
 # ============================================================================
 
+
 @shared_task(bind=True)
 def activate_user_release(self, release_id: int) -> dict:
     """Ativa um release pendente — agendado com eta=valid_from."""
     from celery.app.task import Ignore
 
     try:
-        release = TemporaryUserRelease.objects.select_related("user", "access_rule").get(
-            pk=release_id
-        )
+        release = TemporaryUserRelease.objects.select_related(
+            "user", "access_rule"
+        ).get(pk=release_id)
     except TemporaryUserRelease.DoesNotExist:
-        logger.warning("[RELEASE] User release %d nao encontrado ao executar ativacao.", release_id)
+        logger.warning(
+            "[RELEASE] User release %d nao encontrado ao executar ativacao.", release_id
+        )
         return {"success": False, "error": "Release not found"}
 
     if release.status != TemporaryUserRelease.Status.PENDING:
         logger.info(
             "[RELEASE] Release user %d ja esta em status '%s' — ignorando ativacao.",
-            release_id, release.status,
+            release_id,
+            release.status,
         )
         return {"success": False, "skipped": True, "reason": f"status={release.status}"}
 
@@ -94,7 +98,9 @@ def activate_user_release(self, release_id: int) -> dict:
         release.status = release.Status.EXPIRED
         release.closed_at = timezone.now()
         release.result_message = "Liberação expirou antes de ser ativada."
-        release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+        release.save(
+            update_fields=["status", "closed_at", "result_message", "updated_at"]
+        )
         ReleaseAuditService.sync_from_temporary_release(release)
         logger.info("[RELEASE] Release user %d expirou antes de ativar.", release_id)
         return {"success": False, "expired": True}
@@ -105,7 +111,9 @@ def activate_user_release(self, release_id: int) -> dict:
         logger.info("[RELEASE] User release %d ativado via scheduled task.", release_id)
         return {"success": True}
     except Exception as exc:
-        logger.exception("Erro ao ativar scheduled release user %d: %s", release_id, exc)
+        logger.exception(
+            "Erro ao ativar scheduled release user %d: %s", release_id, exc
+        )
         service.fail_release(
             release,
             result_message=f"Falha ao agendar liberação temporária: {exc}",
@@ -117,17 +125,21 @@ def activate_user_release(self, release_id: int) -> dict:
 def activate_group_release(self, release_id: int) -> dict:
     """Ativa um release de grupo pendente — agendado com eta=valid_from."""
     try:
-        release = TemporaryGroupRelease.objects.select_related("group", "access_rule").get(
-            pk=release_id
-        )
+        release = TemporaryGroupRelease.objects.select_related(
+            "group", "access_rule"
+        ).get(pk=release_id)
     except TemporaryGroupRelease.DoesNotExist:
-        logger.warning("[RELEASE] Group release %d nao encontrado ao executar ativacao.", release_id)
+        logger.warning(
+            "[RELEASE] Group release %d nao encontrado ao executar ativacao.",
+            release_id,
+        )
         return {"success": False, "error": "Release not found"}
 
     if release.status != TemporaryGroupRelease.Status.PENDING:
         logger.info(
             "[RELEASE] Group release %d ja esta em status '%s' — ignorando ativacao.",
-            release_id, release.status,
+            release_id,
+            release.status,
         )
         return {"success": False, "skipped": True, "reason": f"status={release.status}"}
 
@@ -135,7 +147,9 @@ def activate_group_release(self, release_id: int) -> dict:
         release.status = TemporaryGroupRelease.Status.EXPIRED
         release.closed_at = timezone.now()
         release.result_message = "Liberação expirou antes de ser ativada."
-        release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+        release.save(
+            update_fields=["status", "closed_at", "result_message", "updated_at"]
+        )
         ReleaseAuditService.sync_from_temporary_release(release)
         logger.info("[RELEASE] Group release %d expirou antes de ativar.", release_id)
         return {"success": False, "expired": True}
@@ -143,10 +157,14 @@ def activate_group_release(self, release_id: int) -> dict:
     service = TemporaryGroupReleaseService()
     try:
         service.activate_release(release)
-        logger.info("[RELEASE] Group release %d ativado via scheduled task.", release_id)
+        logger.info(
+            "[RELEASE] Group release %d ativado via scheduled task.", release_id
+        )
         return {"success": True}
     except Exception as exc:
-        logger.exception("Erro ao ativar scheduled group release %d: %s", release_id, exc)
+        logger.exception(
+            "Erro ao ativar scheduled group release %d: %s", release_id, exc
+        )
         service.fail_release(
             release,
             result_message=f"Falha ao agendar liberação de turma: {exc}",
@@ -162,13 +180,16 @@ def expire_user_release(self, release_id: int) -> dict:
             "user", "access_rule", "user_access_rule"
         ).get(pk=release_id)
     except TemporaryUserRelease.DoesNotExist:
-        logger.warning("[RELEASE] User release %d nao encontrado ao expirar.", release_id)
+        logger.warning(
+            "[RELEASE] User release %d nao encontrado ao expirar.", release_id
+        )
         return {"success": False, "error": "Release not found"}
 
     if release.status != TemporaryUserRelease.Status.ACTIVE:
         logger.info(
             "[RELEASE] User release %d ja esta em status '%s' — ignorando expiracao.",
-            release_id, release.status,
+            release_id,
+            release.status,
         )
         return {"success": False, "skipped": True, "reason": f"status={release.status}"}
 
@@ -199,7 +220,9 @@ def expire_user_release(self, release_id: int) -> dict:
                 consumed_log=consumed_log,
                 consumed_at=consumed_log.time,
             )
-            logger.info("[RELEASE] User release %d consumido via scheduled expire.", release_id)
+            logger.info(
+                "[RELEASE] User release %d consumido via scheduled expire.", release_id
+            )
             return {"success": True, "consumed": True}
         except Exception as exc:
             logger.exception("Erro ao fechar release %d consumido.", release_id)
@@ -233,7 +256,9 @@ def expire_user_release(self, release_id: int) -> dict:
             final_status=release.Status.EXPIRED,
             result_message=result_message,
         )
-        logger.info("[RELEASE] User release %d expirado via scheduled task.", release_id)
+        logger.info(
+            "[RELEASE] User release %d expirado via scheduled task.", release_id
+        )
         return {"success": True}
     except Exception as exc:
         logger.exception("Erro ao expirar release %d.", release_id)
@@ -252,13 +277,16 @@ def expire_group_release(self, release_id: int) -> dict:
             "group", "access_rule", "group_access_rule"
         ).get(pk=release_id)
     except TemporaryGroupRelease.DoesNotExist:
-        logger.warning("[RELEASE] Group release %d nao encontrado ao expirar.", release_id)
+        logger.warning(
+            "[RELEASE] Group release %d nao encontrado ao expirar.", release_id
+        )
         return {"success": False, "error": "Release not found"}
 
     if release.status != TemporaryGroupRelease.Status.ACTIVE:
         logger.info(
             "[RELEASE] Group release %d ja esta em status '%s' — ignorando expiracao.",
-            release_id, release.status,
+            release_id,
+            release.status,
         )
         return {"success": False, "skipped": True, "reason": f"status={release.status}"}
 
@@ -283,7 +311,9 @@ def expire_group_release(self, release_id: int) -> dict:
                 consumed_log=consumed_log,
                 consumed_at=consumed_log.time,
             )
-            logger.info("[RELEASE] Group release %d consumido via scheduled expire.", release_id)
+            logger.info(
+                "[RELEASE] Group release %d consumido via scheduled expire.", release_id
+            )
             return {"success": True, "consumed": True}
         except Exception as exc:
             logger.exception("Erro ao fechar group release %d consumido.", release_id)
@@ -316,7 +346,9 @@ def expire_group_release(self, release_id: int) -> dict:
             final_status=release.Status.EXPIRED,
             result_message=result_message,
         )
-        logger.info("[RELEASE] Group release %d expirado via scheduled task.", release_id)
+        logger.info(
+            "[RELEASE] Group release %d expirado via scheduled task.", release_id
+        )
         return {"success": True}
     except Exception as exc:
         logger.exception("Erro ao expirar group release %d.", release_id)
@@ -331,6 +363,7 @@ def expire_group_release(self, release_id: int) -> dict:
 # Safety net — roda a cada 10 min para recapturar tasks orfas (worker restart)
 # So processa releases que ficaram "presas" devido a perda de eta.
 # ============================================================================
+
 
 @shared_task(bind=True)
 def reconcile_temporary_releases(self) -> dict:
@@ -353,7 +386,9 @@ def reconcile_temporary_releases(self) -> dict:
             TemporaryUserReleaseService().activate_release(release)
             stats["orphan_activated"] += 1
         except Exception:
-            logger.exception("[RECONCILE] Falha ao ativar orphan release %d", release.id)
+            logger.exception(
+                "[RECONCILE] Falha ao ativar orphan release %d", release.id
+            )
 
     orphan_pending_group = TemporaryGroupRelease.objects.filter(
         status=TemporaryGroupRelease.Status.PENDING,
@@ -366,7 +401,9 @@ def reconcile_temporary_releases(self) -> dict:
             TemporaryGroupReleaseService().activate_release(release)
             stats["orphan_activated"] += 1
         except Exception:
-            logger.exception("[RECONCILE] Falha ao ativar orphan group release %d", release.id)
+            logger.exception(
+                "[RECONCILE] Falha ao ativar orphan group release %d", release.id
+            )
 
     # 2. Ativos que ja passaram de valid_until e nao foram consumidos
     orphan_active_user = TemporaryUserRelease.objects.filter(
@@ -379,7 +416,9 @@ def reconcile_temporary_releases(self) -> dict:
             expire_user_release.delay(release.id)
             stats["orphan_expired"] += 1
         except Exception:
-            logger.exception("[RECONCILE] Falha ao expirar orphan active release %d", release.id)
+            logger.exception(
+                "[RECONCILE] Falha ao expirar orphan active release %d", release.id
+            )
 
     orphan_active_group = TemporaryGroupRelease.objects.filter(
         status=TemporaryGroupRelease.Status.ACTIVE,
@@ -391,12 +430,17 @@ def reconcile_temporary_releases(self) -> dict:
             expire_group_release.delay(release.id)
             stats["orphan_expired"] += 1
         except Exception:
-            logger.exception("[RECONCILE] Falha ao expirar orphan active group release %d", release.id)
+            logger.exception(
+                "[RECONCILE] Falha ao expirar orphan active group release %d",
+                release.id,
+            )
 
     if stats["checked"] > 0:
         logger.info(
             "[RECONCILE] Verificou %d releases, ativou %d, expirou %d",
-            stats["checked"], stats["orphan_activated"], stats["orphan_expired"],
+            stats["checked"],
+            stats["orphan_activated"],
+            stats["orphan_expired"],
         )
 
     return {"success": True, "stats": stats}
@@ -405,7 +449,6 @@ def reconcile_temporary_releases(self) -> dict:
 # ============================================================================
 # Legacy polling — mantido para back-compat mas nao sera mais usado
 # ============================================================================
-
 
 
 @shared_task(bind=True)
@@ -443,7 +486,9 @@ def process_temporary_user_releases(self) -> dict:
             release.status = release.Status.EXPIRED
             release.closed_at = now
             release.result_message = "Liberação expirou antes de ser ativada."
-            release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+            release.save(
+                update_fields=["status", "closed_at", "result_message", "updated_at"]
+            )
             ReleaseAuditService.sync_from_temporary_release(release)
             stats["expired"] += 1
             continue
@@ -570,7 +615,9 @@ def process_temporary_group_releases(self) -> dict:
             release.status = release.Status.EXPIRED
             release.closed_at = now
             release.result_message = "Liberação expirou antes de ser ativada."
-            release.save(update_fields=["status", "closed_at", "result_message", "updated_at"])
+            release.save(
+                update_fields=["status", "closed_at", "result_message", "updated_at"]
+            )
             ReleaseAuditService.sync_from_temporary_release(release)
             stats["expired"] += 1
             continue
@@ -579,7 +626,9 @@ def process_temporary_group_releases(self) -> dict:
             service.activate_release(release)
             stats["activated"] += 1
         except Exception as exc:
-            logger.exception("Erro ao ativar liberação temporária de turma %s", release.id)
+            logger.exception(
+                "Erro ao ativar liberação temporária de turma %s", release.id
+            )
             service.fail_release(
                 release,
                 result_message=f"Falha ao ativar liberação de turma: {exc}",
@@ -620,7 +669,9 @@ def process_temporary_group_releases(self) -> dict:
                 )
                 stats["consumed"] += 1
             except Exception as exc:
-                logger.exception("Erro ao finalizar liberação de turma consumida %s", release.id)
+                logger.exception(
+                    "Erro ao finalizar liberação de turma consumida %s", release.id
+                )
                 service.fail_release(
                     release,
                     result_message=f"Falha ao encerrar liberação de turma consumida: {exc}",

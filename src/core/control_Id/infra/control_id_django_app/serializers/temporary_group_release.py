@@ -4,13 +4,14 @@ from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     AccessLogs,
     AccessRule,
     TemporaryGroupRelease,
-    GroupAccessRule,  CustomGroup as Group
+    GroupAccessRule,
+    CustomGroup as Group,
 )
-from src.core.control_Id.infra.control_id_django_app.release_audit_service import (
+from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
 from src.core.user.infra.user_django_app.models import User
@@ -21,12 +22,21 @@ class TemporaryReleaseGroupSerializer(serializers.ModelSerializer):
         model = Group
         fields = ["id", "name"]
 
+
 class TemporaryReleaseUserSerializer(serializers.ModelSerializer):
     picture_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "name", "registration", "cpf", "phone", "birth_date", "picture_url"]
+        fields = [
+            "id",
+            "name",
+            "registration",
+            "cpf",
+            "phone",
+            "birth_date",
+            "picture_url",
+        ]
 
     def get_picture_url(self, obj):
         if obj.picture and obj.picture.arquivo:
@@ -135,7 +145,9 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
         if self.instance is None:  # CREATE
             notes = attrs.get("notes")
             if not notes or not str(notes).strip():
-                raise serializers.ValidationError({"notes": ["Este campo é obrigatório na criação."]})
+                raise serializers.ValidationError(
+                    {"notes": ["Este campo é obrigatório na criação."]}
+                )
 
         if TemporaryGroupRelease.objects.filter(
             group=group,
@@ -148,7 +160,9 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
                 {"group_id": ["O grupo já possui uma liberação temporária em aberto."]}
             )
 
-        if GroupAccessRule.objects.filter(group=group, access_rule=access_rule).exists():
+        if GroupAccessRule.objects.filter(
+            group=group, access_rule=access_rule
+        ).exists():
             raise serializers.ValidationError(
                 {
                     "group_id": [
@@ -181,11 +195,16 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
         ReleaseAuditService.sync_from_temporary_release(release)
 
         # Agenda tasks com eta exato
-        from src.core.control_Id.infra.control_id_django_app.tasks import (
+        from src.core.control_id.infra.control_id_django_app.tasks import (
             activate_group_release,
             expire_group_release,
         )
-        activate_group_release.apply_async(kwargs={"release_id": release.id}, eta=valid_from)
-        expire_group_release.apply_async(kwargs={"release_id": release.id}, eta=valid_until)
+
+        activate_group_release.apply_async(
+            kwargs={"release_id": release.id}, eta=valid_from
+        )
+        expire_group_release.apply_async(
+            kwargs={"release_id": release.id}, eta=valid_until
+        )
 
         return release

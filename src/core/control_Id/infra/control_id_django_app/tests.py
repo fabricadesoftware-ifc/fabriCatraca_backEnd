@@ -8,14 +8,14 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APITestCase
 
-from src.core.control_Id.infra.control_id_django_app.models import (
+from src.core.control_id.infra.control_id_django_app.models import (
     AccessLogs,
     AccessRule,
     Device,
     TemporaryUserRelease,
     UserAccessRule,
 )
-from src.core.control_Id.infra.control_id_django_app.tasks import (
+from src.core.control_id.infra.control_id_django_app.tasks import (
     process_temporary_user_releases,
     send_temporary_user_release_notification,
 )
@@ -103,12 +103,15 @@ class TemporaryUserReleaseTests(APITestCase):
             "Solicitado por: Operador.\n"
         )
 
-        with self.settings(
-            TEMPORARY_RELEASE_ACCESS_RULE_ID=self.access_rule.id,
-        ), patch(
-            "src.core.control_Id.infra.control_id_django_app.tasks."
-            "send_temporary_user_release_notification.delay"
-        ) as mock_delay:
+        with (
+            self.settings(
+                TEMPORARY_RELEASE_ACCESS_RULE_ID=self.access_rule.id,
+            ),
+            patch(
+                "src.core.control_id.infra.control_id_django_app.tasks."
+                "send_temporary_user_release_notification.delay"
+            ) as mock_delay,
+        ):
             response = self.client.post(
                 reverse("temporaryuserrelease-list"),
                 {
@@ -177,7 +180,7 @@ class TemporaryUserReleaseTests(APITestCase):
         )
 
         with patch(
-            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
+            "src.core.control_id.infra.control_id_django_app.temporary_release_service."
             "TemporaryUserReleaseService.create_in_catraca",
             return_value=Response({"success": True}, status=status.HTTP_201_CREATED),
         ):
@@ -209,7 +212,7 @@ class TemporaryUserReleaseTests(APITestCase):
         )
 
         with patch(
-            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
+            "src.core.control_id.infra.control_id_django_app.temporary_release_service."
             "TemporaryUserReleaseService.delete_in_catraca",
             return_value=Response({"success": True}, status=status.HTTP_204_NO_CONTENT),
         ):
@@ -218,7 +221,9 @@ class TemporaryUserReleaseTests(APITestCase):
         release.refresh_from_db()
         self.assertEqual(release.status, TemporaryUserRelease.Status.CONSUMED)
         self.assertEqual(release.consumed_log, access_log)
-        self.assertFalse(UserAccessRule.objects.filter(id=release.user_access_rule_id).exists())
+        self.assertFalse(
+            UserAccessRule.objects.filter(id=release.user_access_rule_id).exists()
+        )
 
     def test_task_expires_release_without_usage(self):
         release = self._create_active_release(
@@ -226,7 +231,7 @@ class TemporaryUserReleaseTests(APITestCase):
         )
 
         with patch(
-            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
+            "src.core.control_id.infra.control_id_django_app.temporary_release_service."
             "TemporaryUserReleaseService.delete_in_catraca",
             return_value=Response({"success": True}, status=status.HTTP_204_NO_CONTENT),
         ):
@@ -257,14 +262,21 @@ class TemporaryUserReleaseTests(APITestCase):
             mask="",
         )
 
-        with self.settings(TEMPORARY_RELEASE_DELAY_ALERT_SECONDS=300), patch(
-            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
-            "TemporaryUserReleaseService.delete_in_catraca",
-            return_value=Response({"success": True}, status=status.HTTP_204_NO_CONTENT),
+        with (
+            self.settings(TEMPORARY_RELEASE_DELAY_ALERT_SECONDS=300),
+            patch(
+                "src.core.control_id.infra.control_id_django_app.temporary_release_service."
+                "TemporaryUserReleaseService.delete_in_catraca",
+                return_value=Response(
+                    {"success": True}, status=status.HTTP_204_NO_CONTENT
+                ),
+            ),
         ):
             process_temporary_user_releases.run()
 
-        alert = MonitorAlert.objects.get(type=MonitorAlert.AlertType.AUTHORIZED_EXIT_DELAY)
+        alert = MonitorAlert.objects.get(
+            type=MonitorAlert.AlertType.AUTHORIZED_EXIT_DELAY
+        )
         self.assertEqual(alert.user, self.target_user)
         self.assertEqual(alert.device, self.device)
         self.assertTrue(alert.is_active)
@@ -290,10 +302,15 @@ class TemporaryUserReleaseTests(APITestCase):
             mask="",
         )
 
-        with self.settings(TEMPORARY_RELEASE_DELAY_ALERT_SECONDS=300), patch(
-            "src.core.control_Id.infra.control_id_django_app.temporary_release_service."
-            "TemporaryUserReleaseService.delete_in_catraca",
-            return_value=Response({"success": True}, status=status.HTTP_204_NO_CONTENT),
+        with (
+            self.settings(TEMPORARY_RELEASE_DELAY_ALERT_SECONDS=300),
+            patch(
+                "src.core.control_id.infra.control_id_django_app.temporary_release_service."
+                "TemporaryUserReleaseService.delete_in_catraca",
+                return_value=Response(
+                    {"success": True}, status=status.HTTP_204_NO_CONTENT
+                ),
+            ),
         ):
             process_temporary_user_releases.run()
 

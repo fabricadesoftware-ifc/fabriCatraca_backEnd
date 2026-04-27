@@ -9,7 +9,7 @@ def test_template_upload_raw_capture_handles_incomplete_and_completed_session(
 ):
     # Testa fluxo completo de tres tentativas de captura biometrica local.
     from src.core.user.infra.user_django_app.models import User
-    from src.core.control_Id.infra.control_id_django_app.models import (
+    from src.core.control_id.infra.control_id_django_app.models import (
         BiometricCaptureSession,
         Template,
     )

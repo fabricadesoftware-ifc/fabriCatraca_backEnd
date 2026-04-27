@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.timezone import localtime
 
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 
 from .models import MonitorAlert, MonitorConfig
 
@@ -28,7 +28,10 @@ def resolve_monitor_device(device_identifier):
     if monitor_cfg:
         return monitor_cfg.device
 
-    return Device.objects.filter(is_default=True).first() or Device.objects.filter(is_active=True).first()
+    return (
+        Device.objects.filter(is_default=True).first()
+        or Device.objects.filter(is_active=True).first()
+    )
 
 
 @transaction.atomic
@@ -76,7 +79,11 @@ def touch_device_heartbeat(device_identifier, source="monitor"):
 @transaction.atomic
 def mark_monitor_config_offline(config, detected_at=None):
     detected_at = detected_at or timezone.now()
-    config = MonitorConfig.objects.select_for_update().select_related("device").get(pk=config.pk)
+    config = (
+        MonitorConfig.objects.select_for_update()
+        .select_related("device")
+        .get(pk=config.pk)
+    )
 
     if config.is_offline:
         return None
@@ -128,7 +135,9 @@ def mark_monitor_config_offline(config, detected_at=None):
 @transaction.atomic
 def create_temporary_release_delay_alert(release, consumed_log, consumed_at=None):
     consumed_at = consumed_at or getattr(consumed_log, "time", None)
-    activated_at = getattr(release, "activated_at", None) or getattr(release, "valid_from", None)
+    activated_at = getattr(release, "activated_at", None) or getattr(
+        release, "valid_from", None
+    )
     if not consumed_at or not activated_at:
         return None
 
