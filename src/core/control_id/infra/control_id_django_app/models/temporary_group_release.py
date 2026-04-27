@@ -71,6 +71,16 @@ class TemporaryGroupRelease(BaseModel):
     consumed_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
+    notification_message = models.TextField(
+        blank=True,
+        default="",
+        help_text="Mensagem completa do e-mail enviada aos destinatarios.",
+    )
+    notification_email = models.TextField(
+        blank=True,
+        default="",
+        help_text="E-mails que devem receber a notificacao desta liberacao.",
+    )
     result_message = models.TextField(blank=True, default="")
 
     class Meta:

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import logging
 
 from django.conf import settings
 from django.utils import timezone
@@ -14,7 +15,12 @@ from src.core.control_id.infra.control_id_django_app.models import (
 from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
+from src.core.control_id.infra.control_id_django_app.temporary_release_notification_service import (
+    TemporaryUserReleaseNotificationService,
+)
 from src.core.user.infra.user_django_app.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class TemporaryReleaseGroupSerializer(serializers.ModelSerializer):
@@ -78,6 +84,8 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
     )
     valid_from = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False)
+    notification_message = serializers.CharField(required=False, allow_blank=True)
+    notification_email = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = TemporaryGroupRelease
@@ -95,6 +103,8 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
             "closed_at",
             "consumed_log",
             "notes",
+            "notification_message",
+            "notification_email",
             "result_message",
             "created_at",
             "updated_at",
@@ -140,6 +150,12 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         group = attrs["group"]
+        try:
+            notification_email = TemporaryUserReleaseNotificationService.normalize_email_list(
+                attrs.get("notification_email") or ""
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"notification_email": [str(exc)]}) from exc
         access_rule = self._get_temporary_access_rule()
 
         if self.instance is None:  # CREATE
@@ -171,10 +187,15 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
                 }
             )
 
+        if notification_email:
+            attrs["notification_email"] = notification_email
+
         attrs["resolved_access_rule"] = access_rule
         return attrs
 
     def create(self, validated_data):
+        self.notification_status = None
+        self.notification_warning = ""
         group = validated_data.pop("group")
         duration_minutes = validated_data.pop("duration_minutes")
         access_rule = validated_data.pop("resolved_access_rule")
@@ -193,6 +214,25 @@ class TemporaryGroupReleaseSerializer(serializers.ModelSerializer):
             **validated_data,
         )
         ReleaseAuditService.sync_from_temporary_release(release)
+
+        if release.notification_email:
+            try:
+                from src.core.control_id.infra.control_id_django_app.tasks import (
+                    send_temporary_group_release_notification,
+                )
+
+                send_temporary_group_release_notification.delay(release.id)
+                self.notification_status = "queued"
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue temporary group release notification for release %s",
+                    release.id,
+                )
+                self.notification_status = "failed"
+                self.notification_warning = (
+                    "Liberacao criada, mas nao foi possivel enfileirar o e-mail para os "
+                    "destinatarios informados."
+                )
 
         # Agenda tasks com eta exato
         from src.core.control_id.infra.control_id_django_app.tasks import (

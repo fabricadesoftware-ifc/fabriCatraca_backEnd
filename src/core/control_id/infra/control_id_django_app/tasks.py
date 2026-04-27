@@ -63,6 +63,39 @@ def send_temporary_user_release_notification(self, release_id: int) -> dict:
         return {"success": False, "error": str(exc)}
 
 
+@shared_task(bind=True)
+def send_temporary_group_release_notification(self, release_id: int) -> dict:
+    try:
+        release = TemporaryGroupRelease.objects.select_related(
+            "group",
+            "requested_by",
+        ).get(pk=release_id)
+    except TemporaryGroupRelease.DoesNotExist:
+        logger.warning(
+            "[RELEASE] Group release %d nao encontrado ao enviar notificacao por e-mail.",
+            release_id,
+        )
+        return {"success": False, "error": "Release not found"}
+
+    if not release.notification_email:
+        logger.info(
+            "[RELEASE] Group release %d nao possui e-mail para notificacao.",
+            release_id,
+        )
+        return {"success": False, "skipped": True, "reason": "no_notification_email"}
+
+    try:
+        TemporaryUserReleaseNotificationService.notify_release_created(release)
+        return {"success": True}
+    except Exception as exc:
+        logger.exception(
+            "Erro ao enviar e-mail da liberacao temporaria de turma %d: %s",
+            release_id,
+            exc,
+        )
+        return {"success": False, "error": str(exc)}
+
+
 # ============================================================================
 # Scheduled tasks (eta=valid_from ou valid_until)
 # Agendadas via apply_async quando o release e criado ou ativado.
