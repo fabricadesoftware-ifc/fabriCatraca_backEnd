@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 
 
 class MonitorConfig(models.Model):
@@ -84,7 +84,9 @@ class MonitorConfig(models.Model):
 
     def __str__(self):
         if self.hostname:
-            return f"Monitor {self.device.name} -> {self.hostname}:{self.port}/{self.path}"
+            return (
+                f"Monitor {self.device.name} -> {self.hostname}:{self.port}/{self.path}"
+            )
         return f"Monitor {self.device.name} (nao configurado)"
 
     @property
@@ -97,7 +99,9 @@ class MonitorConfig(models.Model):
             return None
 
         protocol = "https" if self.port == "443" else "http"
-        port_str = f":{self.port}" if self.port and self.port not in ["80", "443"] else ""
+        port_str = (
+            f":{self.port}" if self.port and self.port not in ["80", "443"] else ""
+        )
         path_str = self.path if self.path.startswith("/") else f"/{self.path}"
         return f"{protocol}://{self.hostname}{port_str}{path_str}"
 
@@ -121,8 +125,12 @@ class MonitorAlert(models.Model):
         WARNING = "warning", "Warning"
         ERROR = "error", "Error"
 
-    type = models.CharField(max_length=64, choices=AlertType.choices, default=AlertType.GENERIC)
-    severity = models.CharField(max_length=16, choices=Severity.choices, default=Severity.WARNING)
+    type = models.CharField(
+        max_length=64, choices=AlertType.choices, default=AlertType.GENERIC
+    )
+    severity = models.CharField(
+        max_length=16, choices=Severity.choices, default=Severity.WARNING
+    )
     title = models.CharField(max_length=255)
     message = models.TextField()
     device = models.ForeignKey(
@@ -157,15 +165,23 @@ class MonitorAlert(models.Model):
 
 
 class MonitorAlertRead(models.Model):
-    alert = models.ForeignKey(MonitorAlert, on_delete=models.CASCADE, related_name="reads")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="monitor_alert_reads")
+    alert = models.ForeignKey(
+        MonitorAlert, on_delete=models.CASCADE, related_name="reads"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="monitor_alert_reads",
+    )
     read_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Leitura de Alerta"
         verbose_name_plural = "Leituras de Alertas"
         constraints = [
-            models.UniqueConstraint(fields=("alert", "user"), name="unique_monitor_alert_read"),
+            models.UniqueConstraint(
+                fields=("alert", "user"), name="unique_monitor_alert_read"
+            ),
         ]
 
     def __str__(self):

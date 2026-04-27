@@ -1,11 +1,13 @@
 from django.db import models
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 
 
 class HardwareConfig(models.Model):
     """Configura??es de hardware da catraca"""
 
-    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name="hardware_config")
+    device = models.OneToOneField(
+        Device, on_delete=models.CASCADE, related_name="hardware_config"
+    )
 
     # Configura??es de som
     beep_enabled = models.BooleanField(default=True, help_text="Habilitar som de beep")
@@ -17,13 +19,23 @@ class HardwareConfig(models.Model):
 
     # Configura??es de rel?s
     relayN_enabled = models.BooleanField(default=False, help_text="Habilitar rel? N")
-    relayN_timeout = models.IntegerField(default=5, help_text="Timeout do rel? N em segundos")
-    relayN_auto_close = models.BooleanField(default=False, help_text="Fechar rel? automaticamente")
+    relayN_timeout = models.IntegerField(
+        default=5, help_text="Timeout do rel? N em segundos"
+    )
+    relayN_auto_close = models.BooleanField(
+        default=False, help_text="Fechar rel? automaticamente"
+    )
 
     # Configura??es de sensores de porta
-    door_sensorN_enabled = models.BooleanField(default=False, help_text="Habilitar sensor de porta N")
-    door_sensorN_idle = models.IntegerField(default=10, help_text="Tempo de inatividade do sensor em segundos")
-    doorN_interlock = models.BooleanField(default=False, help_text="Intertravamento da porta N")
+    door_sensorN_enabled = models.BooleanField(
+        default=False, help_text="Habilitar sensor de porta N"
+    )
+    door_sensorN_idle = models.IntegerField(
+        default=10, help_text="Tempo de inatividade do sensor em segundos"
+    )
+    doorN_interlock = models.BooleanField(
+        default=False, help_text="Intertravamento da porta N"
+    )
     network_interlock_enabled = models.BooleanField(
         default=False,
         help_text="Habilitar intertravamento via rede",
@@ -49,7 +61,9 @@ class HardwareConfig(models.Model):
         default="none",
         help_text="Modo de exce??o",
     )
-    doorN_exception_mode = models.BooleanField(default=False, help_text="Modo de exce??o da porta N")
+    doorN_exception_mode = models.BooleanField(
+        default=False, help_text="Modo de exce??o da porta N"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -8,9 +8,14 @@ def admin_dashboard(request):
     }
     try:
         # Evita custo em páginas fora do admin
-        if request and request.path and request.path.startswith('/api/admin'):
-            from src.core.control_Id.infra.control_id_django_app.models import Device, AccessRule, GroupAccessRule
+        if request and request.path and request.path.startswith("/api/admin"):
+            from src.core.control_id.infra.control_id_django_app.models import (
+                Device,
+                AccessRule,
+                GroupAccessRule,
+            )
             from src.core.user.infra.user_django_app.models import User
+
             data["devices_active_count"] = Device.objects.filter(is_active=True).count()
             data["users_count"] = User.objects.count()
             data["access_rules_count"] = AccessRule.objects.count()
@@ -19,4 +24,3 @@ def admin_dashboard(request):
         # Em migrações iniciais ou erros de import, mantém zero
         pass
     return data
-

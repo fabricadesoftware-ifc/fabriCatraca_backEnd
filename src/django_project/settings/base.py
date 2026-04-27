@@ -9,17 +9,17 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
-
 def show_toolbar(request):
     return DEBUG
 
-SECRET_KEY = os.getenv("SECRET_KEY", 'django-insecure-nice_key')
+
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-nice_key")
 
 MODE = os.getenv("MODE")
 DEBUG = os.getenv("DEBUG", "False") == "True"
-APPEND_SLASH=False
+APPEND_SLASH = False
 BROKER_URL = os.getenv("BROKER_URL", "amqp://rafaelbochi:2012@localhost/fabricapainel")
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ["*"]
 CSRF_TRUSTED_ORIGINS = [
     "https://catraca.fabricadesoftware.ifc.edu.br",
     "http://localhost:3001",
@@ -83,7 +83,7 @@ INSTALLED_APPS = [
     "django_extensions",
     "minio_storage",
     "src.core.user.infra.user_django_app",
-    "src.core.control_Id.infra.control_id_django_app",
+    "src.core.control_id.infra.control_id_django_app",
     "src.core.control_id_config.infra.control_id_config_django_app",
     "src.core.control_id_monitor.infra.control_id_monitor_django_app",
     "src.core.uploader",
@@ -107,7 +107,7 @@ MIDDLEWARE = [
 ]
 
 
-ROOT_URLCONF = 'django_project.urls'
+ROOT_URLCONF = "django_project.urls"
 
 AUTH_USER_MODEL = "user_django_app.User"
 
@@ -162,7 +162,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'django_project.wsgi.application'
+WSGI_APPLICATION = "django_project.wsgi.application"
 
 
 # Database
@@ -180,16 +180,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -197,9 +197,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'pt-br'
+LANGUAGE_CODE = "pt-br"
 
-TIME_ZONE = 'America/Sao_Paulo'
+TIME_ZONE = "America/Sao_Paulo"
 
 USE_I18N = True
 
@@ -209,8 +209,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_URL = "/static/"
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
 ]
@@ -233,17 +233,17 @@ AXES_ENABLED = False
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-INTERNAL_IPS = ['*', '127.0.0.1', 'localhost', '0.0.0.0', '172.16.0.1']
+INTERNAL_IPS = ["*", "127.0.0.1", "localhost", "0.0.0.0", "172.16.0.1"]
 
 DEBUG_TOOLBAR_CONFIG = {
     "SHOW_TOOLBAR_CALLBACK": "src.django_project.settings.show_toolbar",
 }
 
-CATRAKA_URL = os.getenv("CATRAKA_URL", 'http://localhost:8080')
-CATRAKA_USER = os.getenv("CATRAKA_USER", 'nice_user')
-CATRAKA_PASS = os.getenv("CATRAKA_PASS", 'nice_pass')
+CATRAKA_URL = os.getenv("CATRAKA_URL", "http://localhost:8080")
+CATRAKA_USER = os.getenv("CATRAKA_USER", "nice_user")
+CATRAKA_PASS = os.getenv("CATRAKA_PASS", "nice_pass")
 TEMPORARY_RELEASE_ACCESS_RULE_ID = os.getenv("TEMPORARY_RELEASE_ACCESS_RULE_ID", 1)
 TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS = os.getenv(
     "TEMPORARY_RELEASE_TASK_INTERVAL_SECONDS",
@@ -266,11 +266,11 @@ CELERY_TIMEZONE = "America/Sao_Paulo"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 CELERY_RESULT_BACKEND = "rpc://"
-CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', BROKER_URL)
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", BROKER_URL)
 CELERY_BEAT_SCHEDULE = {
     "reconcile_temporary_releases": {
-        "task": "src.core.control_Id.infra.control_id_django_app.tasks.reconcile_temporary_releases",
+        "task": "src.core.control_id.infra.control_id_django_app.tasks.reconcile_temporary_releases",
         "schedule": 600,  # safety net a cada 10 min
     },
     "check_monitor_heartbeats": {
@@ -348,7 +348,9 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "fabricadesoftware.araquari@ifc.edu.br")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@localhost")
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@localhost"
+)
 
 DEFAULT_CHARSET = "utf-8"
 EMAIL_CHARSET = "utf-8"

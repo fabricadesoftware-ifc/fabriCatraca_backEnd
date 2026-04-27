@@ -16,7 +16,7 @@ from src.core.__seedwork__.infra.types.catraca_sync import (
     RemoteEnrollBioResponse,
     RemoteEnrollCardResponse,
 )
-from src.core.control_Id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.models.device import Device
 
 # ---------------------------------------------------------------------------
 # Aliases de tipo
@@ -97,7 +97,7 @@ class CatracaSyncError(Exception):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True) #TORNAR IMUTÁVEL PARA EVITAR BUGS DE SESSÃO INVÁLIDA HELP
+@dataclass(frozen=True)  # TORNAR IMUTÁVEL PARA EVITAR BUGS DE SESSÃO INVÁLIDA HELP
 class DefaultDeviceClass:
     ip: str
     username: str
@@ -390,7 +390,8 @@ class ControlIDSyncMixin:
                         "device_id": device.pk,
                         "device_name": device.name,
                         "success": False,
-                        "status_code": exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "status_code": exc.status_code
+                        or status.HTTP_500_INTERNAL_SERVER_ERROR,
                         "error": str(exc),
                     }
                 )
@@ -406,14 +407,18 @@ class ControlIDSyncMixin:
                 "failed_devices": failed_count,
                 "results": results,
             },
-            status=status.HTTP_200_OK if failed_count == 0 else status.HTTP_502_BAD_GATEWAY,
+            status=status.HTTP_200_OK
+            if failed_count == 0
+            else status.HTTP_502_BAD_GATEWAY,
         )
 
     # ------------------------------------------------------------------
     # Utilitários de seleção de dispositivos
     # ------------------------------------------------------------------
 
-    def _get_target_devices(self, device_ids: Optional[List[int]] = None) -> List[Device]:
+    def _get_target_devices(
+        self, device_ids: Optional[List[int]] = None
+    ) -> List[Device]:
         """
         Resolve a lista de devices alvo com a seguinte prioridade:
 
@@ -633,16 +638,28 @@ class ControlIDSyncMixin:
     # ------------------------------------------------------------------
 
     def create_objects(
-        self, object_name: str, values: ObjectValues, device_ids: Optional[List[int]] = None, **kwargs: Any
+        self,
+        object_name: str,
+        values: ObjectValues,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
         """Alias de compatibilidade → :meth:`create_objects_in_all_devices`."""
-        return self.create_objects_in_all_devices(object_name, values, device_ids=device_ids, **kwargs)
+        return self.create_objects_in_all_devices(
+            object_name, values, device_ids=device_ids, **kwargs
+        )
 
     def create_or_update_objects(
-        self, object_name: str, values: ObjectValues, device_ids: Optional[List[int]] = None, **kwargs: Any
+        self,
+        object_name: str,
+        values: ObjectValues,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
         """Alias de compatibilidade → :meth:`create_or_update_objects_in_all_devices`."""
-        return self.create_or_update_objects_in_all_devices(object_name, values, device_ids=device_ids, **kwargs)
+        return self.create_or_update_objects_in_all_devices(
+            object_name, values, device_ids=device_ids, **kwargs
+        )
 
     def update_objects(
         self,
@@ -653,13 +670,21 @@ class ControlIDSyncMixin:
         **kwargs: Any,
     ) -> Response:
         """Alias de compatibilidade → :meth:`update_objects_in_all_devices`."""
-        return self.update_objects_in_all_devices(object_name, values, where, device_ids=device_ids, **kwargs)
+        return self.update_objects_in_all_devices(
+            object_name, values, where, device_ids=device_ids, **kwargs
+        )
 
     def destroy_objects(
-        self, object_name: str, where: JsonDict, device_ids: Optional[List[int]] = None, **kwargs: Any
+        self,
+        object_name: str,
+        where: JsonDict,
+        device_ids: Optional[List[int]] = None,
+        **kwargs: Any,
     ) -> Response:
         """Alias de compatibilidade → :meth:`destroy_objects_in_all_devices`."""
-        return self.destroy_objects_in_all_devices(object_name, where, device_ids=device_ids, **kwargs)
+        return self.destroy_objects_in_all_devices(
+            object_name, where, device_ids=device_ids, **kwargs
+        )
 
     # ------------------------------------------------------------------
     # Enroll remoto

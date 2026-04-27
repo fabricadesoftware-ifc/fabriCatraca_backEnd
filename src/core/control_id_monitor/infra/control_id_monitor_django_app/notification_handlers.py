@@ -66,7 +66,9 @@ class MonitorNotificationHandler:
             dict: Resultado do processamento
         """
         try:
-            sentido = payload.get("name")  # Campo opcional que pode indicar direção do acesso
+            sentido = payload.get(
+                "name"
+            )  # Campo opcional que pode indicar direção do acesso
             device_id = payload.get("device_id")
             object_changes = payload.get("object_changes", [])
 
@@ -133,7 +135,11 @@ class MonitorNotificationHandler:
             return {"success": False, "error": str(e), "processed": 0}
 
     def _process_single_change(
-        self, device_id: int, change: Dict[str, Any], raw_notification: Dict[str, Any], sentido: str | None = None
+        self,
+        device_id: int,
+        change: Dict[str, Any],
+        raw_notification: Dict[str, Any],
+        sentido: str | None = None,
     ) -> Dict[str, Any]:
         """
         Processa uma única mudança de objeto
@@ -167,7 +173,14 @@ class MonitorNotificationHandler:
 
         logger.debug(f"🔄 [MONITOR] Processando {object_type} - {change_type}")
 
-        return handler(device_id, change_type, values, raw_notification=raw_notification, raw_change=change, sentido=sentido)
+        return handler(
+            device_id,
+            change_type,
+            values,
+            raw_notification=raw_notification,
+            raw_change=change,
+            sentido=sentido,
+        )
 
     @staticmethod
     def _parse_device_unix_timestamp(time_unix: Any) -> datetime:
@@ -206,7 +219,7 @@ class MonitorNotificationHandler:
         - portal_id: ID do portal (lado da catraca)
         - card_value: Valor do cartão RFID
         """
-        from src.core.control_Id.infra.control_id_django_app.models import (
+        from src.core.control_id.infra.control_id_django_app.models import (
             AccessLogs,
             Device,
             Portal,
@@ -344,7 +357,6 @@ class MonitorNotificationHandler:
                             "change_type": change_type,
                             "change": deepcopy(raw_change or {}),
                             "notification": deepcopy(raw_notification or {}),
-
                         },
                     },
                 )

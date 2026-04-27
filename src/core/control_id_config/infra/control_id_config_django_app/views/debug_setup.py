@@ -61,7 +61,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 from .easy_setup import _EasySetupEngine, PUSH_ORDER
 
 logger = logging.getLogger(__name__)
@@ -348,7 +348,9 @@ class _DebugSetupEngine(_EasySetupEngine):
                 identifier_cfg["verbose_logging"] = bool_to_str(
                     getattr(sec_cfg, "verbose_logging_enabled", True)
                 )
-                identifier_cfg["log_type"] = bool_to_str(getattr(sec_cfg, "log_type", False))
+                identifier_cfg["log_type"] = bool_to_str(
+                    getattr(sec_cfg, "log_type", False)
+                )
             identifier_cfg.setdefault("card_identification_enabled", "1")
             identifier_cfg.setdefault("pin_identification_enabled", "1")
             payload["identifier"] = identifier_cfg
@@ -457,7 +459,10 @@ def debug_setup(request):
         )
     if not step:
         return Response(
-            {"error": "step é obrigatório", "available_steps": list(AVAILABLE_STEPS.keys())},
+            {
+                "error": "step é obrigatório",
+                "available_steps": list(AVAILABLE_STEPS.keys()),
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 

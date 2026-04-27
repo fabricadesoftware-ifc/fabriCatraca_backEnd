@@ -100,7 +100,7 @@ def _notify_device_setup_result(engine, device, log_status: str) -> dict:
 def _run_easy_setup_for_device(device_id: int, task_id: str) -> dict:
     from django.utils import timezone as tz
 
-    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from src.core.control_id.infra.control_id_django_app.models import Device
     from .models import EasySetupLog
     from .views.easy_setup_engine import _EasySetupEngine
 
@@ -178,7 +178,7 @@ def _legacy_run_easy_setup_task_v1(self, device_ids: list[int], task_id: str) ->
     """
     from django.utils import timezone as tz
 
-    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from src.core.control_id.infra.control_id_django_app.models import Device
     from .models import EasySetupLog
     from .views.easy_setup_engine import _EasySetupEngine
 
@@ -257,7 +257,7 @@ def run_easy_setup_task(self, device_ids: list[int], task_id: str) -> dict:
     Task Celery ass?ncrona que distribui o Easy Setup por device.
     Cada catraca roda em sua pr?pria subtask para permitir execu??o paralela.
     """
-    from src.core.control_Id.infra.control_id_django_app.models import Device
+    from src.core.control_id.infra.control_id_django_app.models import Device
 
     devices = list(Device.objects.filter(id__in=device_ids, is_active=True))
     if not devices:
@@ -296,7 +296,7 @@ def run_config_sync(self) -> dict:
         dict: Resultado da sincronização com estatísticas
     """
     try:
-        from src.core.control_Id.infra.control_id_django_app.models import Device
+        from src.core.control_id.infra.control_id_django_app.models import Device
         from .mixins.system_config_mixin import SystemConfigSyncMixin
         from .mixins.hardware_config_mixin import HardwareConfigSyncMixin
         from .mixins.security_config_mixin import SecurityConfigSyncMixin

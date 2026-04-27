@@ -1,10 +1,13 @@
 from django.db import models
-from src.core.control_Id.infra.control_id_django_app.models import Device
+from src.core.control_id.infra.control_id_django_app.models import Device
 
 
 class UIConfig(models.Model):
     """Configurações de interface do usuário da catraca"""
-    device = models.OneToOneField(Device, on_delete=models.CASCADE, related_name='ui_config')
+
+    device = models.OneToOneField(
+        Device, on_delete=models.CASCADE, related_name="ui_config"
+    )
 
     # Configurações de tela
     screen_always_on = models.BooleanField(default=True, help_text="Tela sempre ligada")
@@ -18,4 +21,3 @@ class UIConfig(models.Model):
 
     def __str__(self):
         return f"Configuração de Interface - {self.device.name}"
-
