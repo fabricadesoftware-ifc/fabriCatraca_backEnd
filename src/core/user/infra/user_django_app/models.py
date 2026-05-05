@@ -10,9 +10,49 @@ from src.core.uploader.models import Archive
 from .managers import CustomUserManager
 from src.core.__seedwork__.domain import BaseModel
 
+PIN_LENGTH = 4
+PIN_SPACE_SIZE = 10**PIN_LENGTH
+
 
 def generate_pin():
-    return str(random.randint(0, 9999)).zfill(4)
+    return str(random.randint(0, PIN_SPACE_SIZE - 1)).zfill(PIN_LENGTH)
+
+
+def _is_valid_pin(value: str | None) -> bool:
+    return bool(value and len(value) == PIN_LENGTH and value.isdigit())
+
+
+def generate_unique_pin(
+    *,
+    exclude_user_id: int | None = None,
+    extra_used_pins: set[str] | None = None,
+) -> str:
+    """
+    Gera um PIN de 4 digitos ainda livre entre usuarios ativos.
+
+    Mantemos o espaco em 0000-9999 por compatibilidade com a catraca. Quando
+    todos estiverem ocupados, falhamos explicitamente para evitar duplicidade.
+    """
+    used_pins = set(extra_used_pins or set())
+    queryset = User.objects.exclude(pin__isnull=True).exclude(pin="")
+    if exclude_user_id is not None:
+        queryset = queryset.exclude(pk=exclude_user_id)
+
+    used_pins.update(str(pin).strip() for pin in queryset.values_list("pin", flat=True))
+    if len({pin for pin in used_pins if _is_valid_pin(pin)}) >= PIN_SPACE_SIZE:
+        raise ValueError("Nao ha PINs de 4 digitos disponiveis.")
+
+    for _ in range(PIN_SPACE_SIZE):
+        candidate = generate_pin()
+        if candidate not in used_pins:
+            return candidate
+
+    for number in range(PIN_SPACE_SIZE):
+        candidate = str(number).zfill(PIN_LENGTH)
+        if candidate not in used_pins:
+            return candidate
+
+    raise ValueError("Nao ha PINs de 4 digitos disponiveis.")
 
 
 class User(SafeDeleteModel, AbstractUser):  # type: ignore
@@ -112,6 +152,26 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
 
     objects = CustomUserManager()
 
+    def save(self, *args, **kwargs):
+        normalized_pin = (self.pin or "").strip()
+        pin_conflicts = False
+        if _is_valid_pin(normalized_pin):
+            pin_conflicts = (
+                User.objects.filter(pin=normalized_pin)
+                .exclude(pk=self.pk)
+                .exists()
+            )
+
+        if not _is_valid_pin(normalized_pin) or pin_conflicts:
+            self.pin = generate_unique_pin(exclude_user_id=self.pk)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"pin"}
+        else:
+            self.pin = normalized_pin
+
+        super().save(*args, **kwargs)
+
     @property
     def effective_app_role(self):
         if self.app_role:
@@ -155,6 +215,13 @@ class User(SafeDeleteModel, AbstractUser):  # type: ignore
     class Meta(SafeDeleteModel.Meta, AbstractUser.Meta):
         verbose_name = "User"
         verbose_name_plural = "Users"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["pin"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_active_user_pin",
+            )
+        ]
 
 
 class Visitas(BaseModel):

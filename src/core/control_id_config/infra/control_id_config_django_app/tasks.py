@@ -30,11 +30,14 @@ def _evaluate_easy_setup_report(report: dict) -> tuple[str, list[str], list[str]
     # O fluxo atual nao executa mais algumas etapas legadas em todas as
     # reconfiguracoes. So avaliamos essas etapas quando elas aparecem no report,
     # evitando marcar uma execucao como failed por uma chave simplesmente ausente.
-    critical_steps = {
-        "login": _is_step_ok(steps.get("login")),
-        "factory_reset": _is_step_ok(steps.get("factory_reset")),
-        "device_settings": _is_step_ok(steps.get("device_settings")),
-    }
+    critical_steps = {"login": _is_step_ok(steps.get("login"))}
+    can_continue_after_login = critical_steps["login"]
+    if can_continue_after_login and "preflight" in steps:
+        critical_steps["preflight"] = _is_step_ok(steps.get("preflight"))
+        can_continue_after_login = critical_steps["preflight"]
+    if can_continue_after_login:
+        critical_steps["factory_reset"] = _is_step_ok(steps.get("factory_reset"))
+        critical_steps["device_settings"] = _is_step_ok(steps.get("device_settings"))
     for legacy_step in ("disable_identifier", "verify_access_rules"):
         if legacy_step in steps:
             critical_steps[legacy_step] = _is_step_ok(steps.get(legacy_step))

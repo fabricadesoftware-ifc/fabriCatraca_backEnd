@@ -101,6 +101,8 @@ class UserSerializer(serializers.ModelSerializer):
 
         if mutable_data.get("selected_device_ids", serializers.empty) is None:
             mutable_data["selected_device_ids"] = []
+        if mutable_data.get("pin") in ("", None):
+            mutable_data.pop("pin", None)
 
         return super().to_internal_value(mutable_data)
 
@@ -250,6 +252,19 @@ class UserSerializer(serializers.ModelSerializer):
             return normalize_phone(value)
         except ValueError as exc:
             raise serializers.ValidationError(str(exc)) from exc
+
+    def validate_pin(self, value):
+        pin = str(value).strip()
+        if len(pin) != 4 or not pin.isdigit():
+            raise serializers.ValidationError("PIN deve ter exatamente 4 digitos.")
+
+        queryset = User.objects.filter(pin=pin)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("Este PIN ja esta em uso.")
+
+        return pin
 
     def validate_user_type_id(self, value):
         if value in (0, "0", "", None):

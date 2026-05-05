@@ -71,6 +71,52 @@ def test_user_serializer_rejects_panel_only_with_non_none_scope():
 
 @pytest.mark.unit
 @pytest.mark.django_db
+def test_user_serializer_rejects_duplicate_pin():
+    User.objects.create(name="Aluno 1", registration="A001", pin="1234")
+
+    serializer = UserSerializer(
+        data={
+            "name": "Aluno 2",
+            "registration": "A002",
+            "pin": "1234",
+        }
+    )
+
+    assert not serializer.is_valid()
+    assert "pin" in serializer.errors
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_blank_pin_payload_generates_unique_pin():
+    serializer = UserSerializer(
+        data={
+            "name": "Aluno",
+            "registration": "A003",
+            "pin": "",
+        }
+    )
+
+    assert serializer.is_valid(), serializer.errors
+    user = serializer.save()
+
+    assert len(user.pin) == 4
+    assert user.pin.isdigit()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+def test_user_save_replaces_duplicate_pin_for_programmatic_create():
+    existing = User.objects.create(name="Aluno 1", registration="A004", pin="4321")
+    duplicated = User.objects.create(name="Aluno 2", registration="A005", pin="4321")
+
+    assert duplicated.pin != existing.pin
+    assert len(duplicated.pin) == 4
+    assert duplicated.pin.isdigit()
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
 def test_role_aware_serializer_exposes_validity_fields_for_operational_roles():
     requester = User.objects.create(
         name="SISAE",
