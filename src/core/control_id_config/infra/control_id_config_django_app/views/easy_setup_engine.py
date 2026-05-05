@@ -7,7 +7,9 @@ constantes auxiliares usadas pelo setup completo.
 
 import logging
 import time as _time
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import timedelta
+from typing import Any, Literal, NotRequired, TypedDict
 
 import requests
 from django.utils import timezone
@@ -106,6 +108,54 @@ _DUPLICATE_ERROR_MARKERS = (
     "ja existe",
     "já existe",
 )
+
+
+_CREATE_CHUNK_LADDER = (100, 50, 10, 5, 1)
+_MAX_FAILED_ITEM_REPORTS = 20
+
+DevicePayload = dict[str, Any]
+PushOperation = Literal["create", "modify", "create_or_modify"]
+DuplicateMode = Literal["skip", "modify", "error"]
+PushStrategy = Literal["batch", "dynamic_chunks", "create_or_modify", "skipped"]
+
+
+class ChunkStageReport(TypedDict):
+    operation: PushOperation
+    chunk_size: int
+    chunks: int
+    ok_chunks: int
+    failed_chunks: int
+    records_ok: int
+    records_pending: int
+
+
+class FailedItemReport(TypedDict):
+    table: str
+    item: DevicePayload
+    status: int | None
+    detail: str
+
+
+class PushReport(TypedDict):
+    ok: bool
+    count: int
+    created: int
+    modified: int
+    skipped_unique: int
+    errors: int
+    note: str
+    strategy: PushStrategy | str
+    chunk_plan: list[int]
+    stages: list[ChunkStageReport]
+    failed_items: list[FailedItemReport]
+    failed_items_truncated: bool
+    status: NotRequired[int | None]
+    skipped: NotRequired[bool]
+    applied: NotRequired[int]
+    initial_status: NotRequired[int | None]
+    initial_detail: NotRequired[str]
+    detail: NotRequired[str]
+    error: NotRequired[str]
 
 
 class _EasySetupEngine(ControlIDSyncMixin):
@@ -353,7 +403,6 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         return persisted
 
-    # ── 1. Factory reset ────────────────────────────────────────────────────
     def factory_reset(self):
         """
         Reseta a catraca para configuração de fábrica mantendo config de rede.
@@ -1041,11 +1090,18 @@ class _EasySetupEngine(ControlIDSyncMixin):
         )
 
         # Cards
-        data["cards"] = list(
-            Card.objects.filter(user_id__in=eligible_user_ids).values(
-                "user_id", "value"
-            )
-        )
+        data["cards"] = []
+        for card in Card.objects.filter(user_id__in=eligible_user_ids).values(
+            "user_id", "value"
+        ):
+            # A API da Control iD espera int64 em cards.value. O campo local e
+            # texto para acomodar importacoes, entao normalizamos quando seguro.
+            normalized = dict(card)
+            try:
+                normalized["value"] = int(str(normalized["value"]).strip())
+            except (TypeError, ValueError):
+                pass
+            data["cards"].append(normalized)
 
         # Templates (biometria)
         data["templates"] = list(
@@ -1155,7 +1211,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             )
         return fixed
 
-    def _create_objects_safe(self, table, values):
+    def _legacy_create_objects_safe(self, table, values):
         """
         Cria objetos numa tabela da catraca com estratégia UPSERT.
 
@@ -1220,7 +1276,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         except Exception as e:
             return {"ok": False, "count": len(values), "error": str(e)}
 
-    def _upsert_entity_objects(self, table, values):
+    def _legacy_upsert_entity_objects(self, table, values):
         """
         Upsert para entity tables (com coluna 'id').
         Atualiza registros que já existem na catraca (ex: defaults do
@@ -1290,7 +1346,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
             "note": "upsert",
         }
 
-    def _create_junction_one_by_one(self, table, values):
+    def _legacy_create_junction_one_by_one(self, table, values):
         """
         Cria registros de junção um a um, pulando UNIQUE.
         Para tabelas como group_access_rules, portal_access_rules, etc.
@@ -1333,6 +1389,543 @@ class _EasySetupEngine(ControlIDSyncMixin):
             "errors": errors,
             "note": "one-by-one",
         }
+
+    def _chunk_values(
+        self, values: Sequence[DevicePayload], chunk_size: int
+    ) -> Iterable[list[DevicePayload]]:
+        """Divide uma lista em lotes pequenos sem esconder a ordem original."""
+        for index in range(0, len(values), chunk_size):
+            yield list(values[index : index + chunk_size])
+
+    def _response_detail(self, response: requests.Response) -> str:
+        """Extrai uma mensagem curta e segura para logs/relatorio do frontend."""
+        try:
+            return (response.text or "")[:500]
+        except Exception:
+            return str(response)[:500]
+
+    def _post_create_objects(
+        self, table: str, values: Sequence[DevicePayload], *, timeout: int = 60
+    ) -> requests.Response:
+        sess = self.login()
+        return requests.post(
+            self.get_url(f"create_objects.fcgi?session={sess}"),
+            json={"object": table, "values": values},
+            timeout=timeout,
+        )
+
+    def _post_create_or_modify_objects(
+        self, table: str, values: Sequence[DevicePayload], *, timeout: int = 60
+    ) -> requests.Response:
+        sess = self.login()
+        return requests.post(
+            self.get_url(f"create_or_modify_objects.fcgi?session={sess}"),
+            json={"object": table, "values": values},
+            timeout=timeout,
+        )
+
+    def _post_modify_objects(
+        self, table: str, values: Sequence[DevicePayload], *, timeout: int = 60
+    ) -> requests.Response:
+        sess = self.login()
+        return requests.post(
+            self.get_url(f"modify_objects.fcgi?session={sess}"),
+            json={"object": table, "values": values},
+            timeout=timeout,
+        )
+
+    def _item_identity(self, item: Any) -> DevicePayload:
+        """
+        Mostra apenas os campos que ajudam a achar o registro problematico.
+
+        O payload completo pode ter biometria/base64 ou campos grandes demais
+        para a tela; por isso o relatorio usa uma identidade compacta.
+        """
+        if not isinstance(item, dict):
+            return {"value": str(item)[:120]}
+
+        useful_keys = (
+            "id",
+            "user_id",
+            "group_id",
+            "access_rule_id",
+            "portal_id",
+            "time_zone_id",
+            "area_id",
+            "value",
+            "registration",
+            "name",
+        )
+        identity = {key: item.get(key) for key in useful_keys if key in item}
+        if identity:
+            return identity
+
+        return {key: item[key] for key in list(item.keys())[:4]}
+
+    def _new_push_report(
+        self,
+        table: str,
+        values: Sequence[DevicePayload],
+        *,
+        note: str,
+        strategy: PushStrategy | str,
+        initial_status: int | None = None,
+        initial_detail: str | None = None,
+    ) -> PushReport:
+        report: PushReport = {
+            "ok": True,
+            "count": len(values),
+            "created": 0,
+            "modified": 0,
+            "skipped_unique": 0,
+            "errors": 0,
+            "note": note,
+            "strategy": strategy,
+            "chunk_plan": list(_CREATE_CHUNK_LADDER),
+            "stages": [],
+            "failed_items": [],
+            "failed_items_truncated": False,
+        }
+        if initial_status is not None:
+            report["initial_status"] = initial_status
+        if initial_detail:
+            report["initial_detail"] = initial_detail
+        return report
+
+    def _new_skipped_push_report(self) -> PushReport:
+        report = self._new_push_report("", [], note="skipped", strategy="skipped")
+        report["skipped"] = True
+        report["chunk_plan"] = []
+        return report
+
+    def _new_success_push_report(
+        self,
+        table: str,
+        values: Sequence[DevicePayload],
+        *,
+        note: str,
+        strategy: PushStrategy,
+        applied: int = 0,
+        created: int = 0,
+        modified: int = 0,
+        skipped_unique: int = 0,
+    ) -> PushReport:
+        report = self._new_push_report(table, values, note=note, strategy=strategy)
+        report["status"] = 200
+        if applied:
+            report["applied"] = applied
+        report["created"] = created
+        report["modified"] = modified
+        report["skipped_unique"] = skipped_unique
+        report["chunk_plan"] = []
+        return report
+
+    def _new_stage_report(
+        self, operation: PushOperation, chunk_size: int
+    ) -> ChunkStageReport:
+        return {
+            "operation": operation,
+            "chunk_size": chunk_size,
+            "chunks": 0,
+            "ok_chunks": 0,
+            "failed_chunks": 0,
+            "records_ok": 0,
+            "records_pending": 0,
+        }
+
+    def _append_failed_item(
+        self,
+        report: PushReport,
+        table: str,
+        item: DevicePayload,
+        *,
+        status: int | None,
+        detail: str,
+    ) -> None:
+        if len(report["failed_items"]) >= _MAX_FAILED_ITEM_REPORTS:
+            report["failed_items_truncated"] = True
+            return
+
+        report["failed_items"].append(
+            {
+                "table": table,
+                "item": self._item_identity(item),
+                "status": status,
+                "detail": (detail or "")[:500],
+            }
+        )
+
+    def _mark_single_item_failed(
+        self,
+        report: PushReport,
+        stage: ChunkStageReport,
+        table: str,
+        item: DevicePayload,
+        status: int | None,
+        detail: str,
+    ) -> None:
+        report["errors"] += 1
+        stage["failed_chunks"] += 1
+        stage["records_pending"] += 1
+        self._append_failed_item(report, table, item, status=status, detail=detail)
+        logger.debug(
+            "[EASY_SETUP] [%s] %s falhou para %s: HTTP %s - %s",
+            self.device.name,
+            table,
+            self._item_identity(item),
+            status,
+            detail,
+        )
+
+    def _resolve_duplicate_create(
+        self,
+        report: PushReport,
+        stage: ChunkStageReport,
+        table: str,
+        item: DevicePayload,
+        duplicate_mode: DuplicateMode,
+    ) -> bool:
+        """
+        Trata duplicidade quando o lote ja caiu para 1 registro.
+
+        - skip: relacoes/cartoes/pins ja existem, entao consideramos resolvido.
+        - modify: entidade com id ja existente deve ser atualizada.
+        - error: duplicidade inesperada vira falha explicita.
+        """
+        if duplicate_mode == "skip":
+            report["skipped_unique"] += 1
+            stage["ok_chunks"] += 1
+            stage["records_ok"] += 1
+            return True
+
+        if duplicate_mode != "modify":
+            return False
+
+        try:
+            response = self._post_modify_objects(table, [item], timeout=30)
+            detail = self._response_detail(response)
+            if response.status_code == 200:
+                report["modified"] += 1
+                stage["ok_chunks"] += 1
+                stage["records_ok"] += 1
+                return True
+
+            self._mark_single_item_failed(
+                report,
+                stage,
+                table,
+                item,
+                response.status_code,
+                f"create duplicado; modify falhou: {detail}",
+            )
+            return True
+        except Exception as exc:
+            self._mark_single_item_failed(
+                report,
+                stage,
+                table,
+                item,
+                None,
+                f"create duplicado; modify gerou excecao: {exc}",
+            )
+            return True
+
+    def _run_dynamic_chunks(
+        self,
+        table: str,
+        values: Sequence[DevicePayload],
+        *,
+        operation: PushOperation,
+        report: PushReport,
+        duplicate_mode: DuplicateMode = "error",
+        include_full_attempt: bool = False,
+    ) -> None:
+        """
+        Envia somente os lotes que ainda falharam para o proximo tamanho.
+
+        Fluxo:
+        1. tenta o conjunto inteiro quando include_full_attempt=True;
+        2. tenta 100, 50, 10, 5;
+        3. cai para 1 por 1 e registra o item exato que quebrou.
+        """
+        pending = list(values)
+        if not pending:
+            return
+
+        sizes = list(_CREATE_CHUNK_LADDER)
+        if include_full_attempt:
+            sizes = [len(pending)] + [size for size in sizes if size < len(pending)]
+        else:
+            sizes = [size for size in sizes if size < len(pending) or size == 1]
+        if 1 not in sizes:
+            sizes.append(1)
+
+        for chunk_size in sizes:
+            if not pending:
+                break
+
+            stage = self._new_stage_report(operation, chunk_size)
+            next_pending = []
+
+            for chunk in self._chunk_values(pending, chunk_size):
+                stage["chunks"] += 1
+                timeout = 30 if chunk_size == 1 else 60
+
+                try:
+                    if operation == "create_or_modify":
+                        response = self._post_create_or_modify_objects(
+                            table, chunk, timeout=timeout
+                        )
+                    elif operation == "modify":
+                        response = self._post_modify_objects(
+                            table, chunk, timeout=timeout
+                        )
+                    else:
+                        response = self._post_create_objects(
+                            table, chunk, timeout=timeout
+                        )
+                    status = response.status_code
+                    detail = self._response_detail(response)
+                except Exception as exc:
+                    status = None
+                    detail = str(exc)[:500]
+
+                if status == 200:
+                    if operation == "create_or_modify":
+                        report["applied"] = int(report.get("applied", 0)) + len(
+                            chunk
+                        )
+                    elif operation == "modify":
+                        report["modified"] += len(chunk)
+                    else:
+                        report["created"] += len(chunk)
+                    stage["ok_chunks"] += 1
+                    stage["records_ok"] += len(chunk)
+                    continue
+
+                if chunk_size == 1:
+                    item = chunk[0]
+                    is_duplicate = (
+                        operation == "create"
+                        and self._looks_like_duplicate_error(detail)
+                    )
+                    if is_duplicate and self._resolve_duplicate_create(
+                        report, stage, table, item, duplicate_mode
+                    ):
+                        continue
+
+                    self._mark_single_item_failed(
+                        report, stage, table, item, status, detail
+                    )
+                    continue
+
+                stage["failed_chunks"] += 1
+                stage["records_pending"] += len(chunk)
+                next_pending.extend(chunk)
+
+            if stage["chunks"]:
+                report["stages"].append(stage)
+            pending = next_pending
+
+    def _finalize_push_report(self, report: PushReport) -> PushReport:
+        report["ok"] = report["errors"] == 0
+        report["status"] = 200 if report["ok"] else report.get("initial_status")
+        return report
+
+    def _count_push_result_records(self, result: Mapping[str, Any]) -> int:
+        if result.get("skipped"):
+            return 0
+
+        counters = (
+            result.get("applied"),
+            result.get("created"),
+            result.get("modified"),
+            result.get("skipped_unique"),
+        )
+        if any(isinstance(value, int) for value in counters):
+            return sum(value for value in counters if isinstance(value, int))
+
+        count = result.get("count", 0)
+        return count if result.get("ok") and isinstance(count, int) else 0
+
+    def _create_junction_dynamic_chunks(
+        self,
+        table: str,
+        values: Sequence[DevicePayload],
+        *,
+        initial_status: int | None = None,
+        initial_detail: str | None = None,
+    ) -> PushReport:
+        report = self._new_push_report(
+            table,
+            values,
+            note="dynamic_chunks",
+            strategy="dynamic_chunks",
+            initial_status=initial_status,
+            initial_detail=initial_detail,
+        )
+        self._run_dynamic_chunks(
+            table,
+            values,
+            operation="create",
+            report=report,
+            duplicate_mode="skip",
+            include_full_attempt=False,
+        )
+        return self._finalize_push_report(report)
+
+    def _create_or_modify_entity_objects(
+        self, table: str, values: Sequence[DevicePayload]
+    ) -> PushReport:
+        """
+        Caminho rapido para entidades que possuem id estavel.
+
+        Depois do factory reset a Control iD recria alguns defaults
+        (areas, portals, access_rules etc.). Nesses casos create_objects gera
+        erro de constraint mesmo quando queremos apenas deixar o registro igual
+        ao banco. create_or_modify_objects trata criacao e atualizacao no mesmo
+        endpoint e evita cair no fallback por duplicidade esperada.
+        """
+        try:
+            response = self._post_create_or_modify_objects(table, values, timeout=60)
+            detail = self._response_detail(response)
+            if response.status_code == 200:
+                return self._new_success_push_report(
+                    table,
+                    values,
+                    note="create_or_modify_batch",
+                    strategy="create_or_modify",
+                    applied=len(values),
+                )
+
+            initial_status = response.status_code
+            initial_detail = detail
+        except Exception as exc:
+            initial_status = None
+            initial_detail = str(exc)[:500]
+
+        logger.warning(
+            "[EASY_SETUP] [%s] create_or_modify_objects(%s) batch falhou "
+            "(HTTP %s). Iniciando fallback dinamico: 100, 50, 10, 5, 1.",
+            self.device.name,
+            table,
+            initial_status,
+        )
+
+        report = self._new_push_report(
+            table,
+            values,
+            note="create_or_modify_dynamic_chunks",
+            strategy="dynamic_chunks",
+            initial_status=initial_status,
+            initial_detail=initial_detail,
+        )
+        report["applied"] = 0
+        self._run_dynamic_chunks(
+            table,
+            values,
+            operation="create_or_modify",
+            report=report,
+            include_full_attempt=False,
+        )
+        return self._finalize_push_report(report)
+
+    def _upsert_entity_objects(
+        self,
+        table: str,
+        values: Sequence[DevicePayload],
+        *,
+        initial_status: int | None = None,
+        initial_detail: str | None = None,
+    ) -> PushReport:
+        report = self._new_push_report(
+            table,
+            values,
+            note="upsert_dynamic_chunks",
+            strategy="dynamic_chunks",
+            initial_status=initial_status,
+            initial_detail=initial_detail,
+        )
+
+        existing_ids = self._load_existing_ids(table)
+        to_modify = [value for value in values if value.get("id") in existing_ids]
+        to_create = [value for value in values if value.get("id") not in existing_ids]
+
+        logger.info(
+            "[EASY_SETUP] [%s] %s: upsert dinamico (%s criar, %s atualizar)",
+            self.device.name,
+            table,
+            len(to_create),
+            len(to_modify),
+        )
+
+        self._run_dynamic_chunks(
+            table,
+            to_modify,
+            operation="modify",
+            report=report,
+            include_full_attempt=True,
+        )
+        self._run_dynamic_chunks(
+            table,
+            to_create,
+            operation="create",
+            report=report,
+            duplicate_mode="modify",
+            include_full_attempt=True,
+        )
+
+        return self._finalize_push_report(report)
+
+    def _create_objects_safe(
+        self, table: str, values: Sequence[DevicePayload]
+    ) -> PushReport:
+        """
+        Cria dados na catraca com fallback progressivo e diagnostico claro.
+
+        Primeiro tentamos o batch completo, que e o caminho rapido. Se a
+        catraca rejeitar o conjunto, nao desistimos do pacote inteiro: quebramos
+        em 100, 50, 10, 5 e finalmente 1 por 1. Assim um registro ruim nao
+        derruba 1444 usuarios, grupos, biometrias ou relacoes.
+        """
+        if not values:
+            return self._new_skipped_push_report()
+
+        if table in _UPSERTABLE_TABLES:
+            return self._create_or_modify_entity_objects(table, values)
+
+        try:
+            response = self._post_create_objects(table, values, timeout=60)
+            detail = self._response_detail(response)
+            if response.status_code == 200:
+                return self._new_success_push_report(
+                    table,
+                    values,
+                    note="batch",
+                    strategy="batch",
+                    created=len(values),
+                )
+
+            initial_status = response.status_code
+            initial_detail = detail
+        except Exception as exc:
+            initial_status = None
+            initial_detail = str(exc)[:500]
+
+        logger.warning(
+            "[EASY_SETUP] [%s] create_objects(%s) batch completo falhou "
+            "(HTTP %s). Iniciando fallback dinamico: 100, 50, 10, 5, 1.",
+            self.device.name,
+            table,
+            initial_status,
+        )
+
+        return self._create_junction_dynamic_chunks(
+            table,
+            values,
+            initial_status=initial_status,
+            initial_detail=initial_detail,
+        )
 
     def push_data(self, data):
         """
@@ -1484,7 +2077,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
 
         # Resumo rápido
         push = report["steps"]["push"]
-        total_pushed = sum(v.get("count", 0) for v in push.values() if v.get("ok"))
+        total_pushed = sum(self._count_push_result_records(v) for v in push.values())
         total_errors = sum(
             1 for v in push.values() if not v.get("ok") and not v.get("skipped")
         )
@@ -1652,7 +2245,7 @@ class _EasySetupEngine(ControlIDSyncMixin):
         report["elapsed_s"] = round(_time.monotonic() - t0, 2)
 
         push = report["steps"]["push"]
-        total_pushed = sum(v.get("count", 0) for v in push.values() if v.get("ok"))
+        total_pushed = sum(self._count_push_result_records(v) for v in push.values())
         total_errors = sum(
             1 for v in push.values() if not v.get("ok") and not v.get("skipped")
         )

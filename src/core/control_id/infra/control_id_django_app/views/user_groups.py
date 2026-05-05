@@ -14,6 +14,7 @@ from src.core.user.infra.user_django_app.models import User
 from src.core.control_id.infra.control_id_django_app.serializers import (
     UserGroupSerializer,
 )
+from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError
 from src.core.__seedwork__.infra.mixins import UserGroupsSyncMixin
 
 import pandas as pd
@@ -59,6 +60,16 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
     search_fields = ["user__name", "group__name"]
     ordering_fields = ["user__name", "group__name"]
 
+    @staticmethod
+    def _build_sync_error_response(exc: CatracaSyncError) -> Response:
+        return Response(
+            {
+                "error": "Erro ao sincronizar vinculo de usuario e grupo na catraca.",
+                "details": str(exc),
+            },
+            status=exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -77,10 +88,12 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
         soft_deleted_instance = UserGroup._base_manager.filter(
             user=user, group=group
         ).first()
+        restored_existing = False
         if soft_deleted_instance:
             soft_deleted_instance.undelete()
             instance = soft_deleted_instance
             created = False
+            restored_existing = True
         else:
             try:
                 instance = serializer.save()
@@ -95,17 +108,29 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
                 existing.undelete()
                 instance = existing
                 created = False
+                restored_existing = True
 
         if not created:
             # Recria na catraca quando o vínculo estava ausente localmente (ou soft-deletado).
-            response = self.create_in_catraca(instance)
+            try:
+                response = self.create_in_catraca(instance)
+            except CatracaSyncError as exc:
+                if restored_existing:
+                    instance.delete()
+                return self._build_sync_error_response(exc)
             if response.status_code != status.HTTP_201_CREATED:
+                if restored_existing:
+                    instance.delete()
                 return response
             return Response(
                 self.get_serializer(instance).data, status=status.HTTP_200_OK
             )
 
-        response = self.create_in_catraca(instance)
+        try:
+            response = self.create_in_catraca(instance)
+        except CatracaSyncError as exc:
+            instance.delete()  # Reverte se falhar na catraca
+            return self._build_sync_error_response(exc)
 
         if response.status_code != status.HTTP_201_CREATED:
             instance.delete()  # Reverte se falhar na catraca
@@ -121,7 +146,10 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
 
-        response = self.update_in_catraca(instance)
+        try:
+            response = self.update_in_catraca(instance)
+        except CatracaSyncError as exc:
+            return self._build_sync_error_response(exc)
 
         if response.status_code != status.HTTP_200_OK:
             return response
@@ -131,7 +159,10 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        response = self.delete_in_catraca(instance)
+        try:
+            response = self.delete_in_catraca(instance)
+        except CatracaSyncError as exc:
+            return self._build_sync_error_response(exc)
 
         if response.status_code != status.HTTP_204_NO_CONTENT:
             return response

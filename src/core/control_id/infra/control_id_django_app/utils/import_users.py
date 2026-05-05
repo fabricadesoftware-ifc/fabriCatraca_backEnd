@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from .excel_parser import (
     CSV_REQUIRED_COLUMNS,
+    LEGACY_REQUIRED_COLUMNS,
     REQUIRED_COLUMNS,
     is_valid_csv,
     is_valid_excel,
@@ -42,7 +43,8 @@ class FileUploadSerializer(serializers.Serializer):
     file = serializers.FileField(
         help_text=(
             "Arquivo Excel (.xlsx) com usuários para importar. "
-            "Abas no formato '1INFO1(2025)', colunas: ORDEM, Matrícula, Nome"
+            "Abas como '1INFO1(2025)', '1INFO1' ou '2QUIMI'. "
+            "Aceita layout legado com ORDEM/Matrícula/Nome ou planilhas com matrícula e nome."
         )
     )
 
@@ -82,8 +84,9 @@ class ImportUsersView(APIView):
                 "content_type": "multipart/form-data",
                 "field_name": "file",
                 "file_format": ".xlsx ou .csv",
-                "sheet_format": "1INFO1(2025), 1AGRO1(2025), 1QUIMI1(2025), etc.",
+                "sheet_format": "1INFO1(2025), 1INFO1, 2QUIMI, etc.",
                 "required_columns": REQUIRED_COLUMNS,
+                "legacy_required_columns": LEGACY_REQUIRED_COLUMNS,
                 "csv_required_columns": CSV_REQUIRED_COLUMNS,
                 "import_profiles": list(IMPORT_PROFILE_GROUPS.keys()),
             },

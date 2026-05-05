@@ -19,30 +19,33 @@ def _is_step_ok(step: dict, treat_missing_as_failure: bool = True) -> bool:
 def _evaluate_easy_setup_report(report: dict) -> tuple[str, list[str], list[str]]:
     from .models import EasySetupLog
 
+    steps = report.get("steps", {})
     push = report.get("steps", {}).get("push", {})
     tables_with_errors = sum(
         1
         for v in push.values()
         if isinstance(v, dict) and not v.get("ok") and not v.get("skipped")
     )
+
+    # O fluxo atual nao executa mais algumas etapas legadas em todas as
+    # reconfiguracoes. So avaliamos essas etapas quando elas aparecem no report,
+    # evitando marcar uma execucao como failed por uma chave simplesmente ausente.
     critical_steps = {
-        "login": _is_step_ok(report.get("steps", {}).get("login")),
-        "factory_reset": _is_step_ok(report.get("steps", {}).get("factory_reset")),
-        "disable_identifier": _is_step_ok(
-            report.get("steps", {}).get("disable_identifier")
-        ),
-        "device_settings": _is_step_ok(report.get("steps", {}).get("device_settings")),
-        "verify_access_rules": _is_step_ok(
-            report.get("steps", {}).get("verify_access_rules")
-        ),
+        "login": _is_step_ok(steps.get("login")),
+        "factory_reset": _is_step_ok(steps.get("factory_reset")),
+        "device_settings": _is_step_ok(steps.get("device_settings")),
     }
+    for legacy_step in ("disable_identifier", "verify_access_rules"):
+        if legacy_step in steps:
+            critical_steps[legacy_step] = _is_step_ok(steps.get(legacy_step))
+
     optional_warnings = {
         "datetime": _is_step_ok(
-            report.get("steps", {}).get("datetime"),
+            steps.get("datetime"),
             treat_missing_as_failure=False,
         ),
         "monitor": _is_step_ok(
-            report.get("steps", {}).get("monitor"),
+            steps.get("monitor"),
             treat_missing_as_failure=False,
         ),
     }
