@@ -706,6 +706,10 @@ class _EasySetupEngine(ControlIDSyncMixin):
         def bool_to_str(value):
             return "1" if value else "0"
 
+        def is_missing_online_client(detail):
+            text = str(detail or "").lower()
+            return "online_client" in text and "not found" in text
+
         payload = {}
 
         # ── general (SystemConfig + HardwareConfig + UIConfig) ──
@@ -812,6 +816,28 @@ class _EasySetupEngine(ControlIDSyncMixin):
             result["payload_sections"] = list(payload.keys())
             if resp.status_code != 200:
                 result["detail"] = resp.text[:300]
+                if "online_client" in payload and is_missing_online_client(resp.text):
+                    result["online_client_skipped"] = True
+                    result["optional_warnings"] = [
+                        "online_client nao suportado por este firmware"
+                    ]
+                    result["initial_detail"] = resp.text[:300]
+
+                    retry_payload = dict(payload)
+                    retry_payload.pop("online_client", None)
+                    retry_resp = self._make_request(
+                        "set_configuration.fcgi",
+                        json_data=retry_payload,
+                    )
+                    result["ok"] = retry_resp.status_code == 200
+                    result["payload_sections"] = list(retry_payload.keys())
+                    result["retry_without_online_client_status"] = (
+                        retry_resp.status_code
+                    )
+                    if retry_resp.status_code != 200:
+                        result["detail"] = retry_resp.text[:300]
+                    else:
+                        result.pop("detail", None)
         except Exception as e:
             result["ok"] = False
             result["error"] = str(e)
@@ -961,6 +987,71 @@ class _EasySetupEngine(ControlIDSyncMixin):
         )
 
     # ── 7. Coletar dados do banco ───────────────────────────────────────────
+    @staticmethod
+    def _find_duplicate_pin_payloads(
+        pins: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for pin in pins:
+            value = str(pin.get("value") or "").strip()
+            if not value:
+                continue
+            grouped.setdefault(value, []).append(
+                {
+                    "user_id": pin.get("user_id"),
+                    "name": pin.get("name"),
+                }
+            )
+
+        return [
+            {"value": value, "count": len(users), "users": users}
+            for value, users in sorted(grouped.items())
+            if len(users) > 1
+        ]
+
+    @staticmethod
+    def _format_duplicate_pin_error(duplicates: Sequence[Mapping[str, Any]]) -> str:
+        examples = []
+        for duplicate in duplicates[:5]:
+            users = duplicate.get("users") or []
+            user_labels = []
+            for user in users[:4]:
+                if not isinstance(user, Mapping):
+                    continue
+                label = str(user.get("user_id") or "?")
+                if user.get("name"):
+                    label = f"{label} - {user.get('name')}"
+                user_labels.append(label)
+            examples.append(
+                f"PIN {duplicate.get('value')} usado por {', '.join(user_labels)}"
+            )
+        suffix = " | ".join(examples)
+        return (
+            "Existem PINs duplicados no banco local. Corrija antes do Easy Setup. "
+            f"{suffix}"
+        ).strip()
+
+    def _load_active_pin_payloads(self) -> list[dict[str, Any]]:
+        return [
+            {"user_id": user_id, "name": name, "value": pin}
+            for user_id, name, pin in User.objects.exclude(pin__isnull=True)
+            .exclude(pin="")
+            .values_list("id", "name", "pin")
+        ]
+
+    def validate_data_integrity(self) -> dict[str, Any]:
+        pins = self._load_active_pin_payloads()
+        duplicates = self._find_duplicate_pin_payloads(pins)
+        if duplicates:
+            return {
+                "ok": False,
+                "error": self._format_duplicate_pin_error(duplicates),
+                "duplicate_pins": duplicates[:20],
+                "duplicate_pins_truncated": len(duplicates) > 20,
+            }
+
+        return {"ok": True, "pins_checked": len(pins)}
+
     def collect_db_data(self):
         """
         Coleta todos os dados do Django DB que precisam ser enviados
@@ -1003,7 +1094,14 @@ class _EasySetupEngine(ControlIDSyncMixin):
                 user_roles_list.append({"user_id": u.id, "role": 1})
 
             if u.pin:
-                pins_list.append({"user_id": u.id, "value": u.pin})
+                pins_list.append({"user_id": u.id, "name": u.name, "value": u.pin})
+
+        duplicate_pins = self._find_duplicate_pin_payloads(pins_list)
+        if duplicate_pins:
+            raise ValueError(self._format_duplicate_pin_error(duplicate_pins))
+
+        for pin in pins_list:
+            pin.pop("name", None)
 
         data["users"] = users_list
         data["user_roles"] = user_roles_list
@@ -2004,6 +2102,17 @@ class _EasySetupEngine(ControlIDSyncMixin):
         # Limpa users/pins/cards/templates e reseta configs.
         # Preserva: groups, access_rules, portals, areas, time_zones,
         # time_spans, e todas as junções estruturais.
+        # Etapa 1.5: validar dados locais antes de resetar a catraca.
+        report["steps"]["preflight"] = self.validate_data_integrity()
+        if not report["steps"]["preflight"].get("ok"):
+            logger.error(
+                "[EASY_SETUP] [%s] Preflight FALHOU: %s",
+                self.device.name,
+                report["steps"]["preflight"].get("error"),
+            )
+            report["elapsed_s"] = round(_time.monotonic() - t0, 2)
+            return report
+
         logger.info(
             f"[EASY_SETUP] [{self.device.name}] Factory reset (keep_network)..."
         )

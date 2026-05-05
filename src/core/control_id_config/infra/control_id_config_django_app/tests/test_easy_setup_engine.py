@@ -193,6 +193,53 @@ def test_count_push_result_records_includes_partial_progress(device_factory):
     assert engine._count_push_result_records({"ok": True, "skipped": True}) == 0
 
 
+def test_data_integrity_preflight_reports_duplicate_pins(mocker, device_factory):
+    engine = _engine_for_device(device_factory(name="Catraca Teste"))
+    mocker.patch.object(
+        engine,
+        "_load_active_pin_payloads",
+        return_value=[
+            {"user_id": 1, "name": "Aluno 1", "value": "1234"},
+            {"user_id": 2, "name": "Aluno 2", "value": "1234"},
+            {"user_id": 3, "name": "Aluno 3", "value": "5678"},
+        ],
+    )
+
+    report = engine.validate_data_integrity()
+
+    assert report["ok"] is False
+    assert report["duplicate_pins"][0]["value"] == "1234"
+    assert "PIN 1234" in report["error"]
+
+
+def test_configure_device_settings_retries_without_unsupported_online_client(
+    mocker, make_response, device_factory
+):
+    engine = _engine_for_device(device_factory(name="Catraca Teste"))
+    payloads = []
+
+    def fake_make_request(endpoint, json_data=None, **kwargs):
+        payloads.append(dict(json_data or {}))
+        if "online_client" in (json_data or {}):
+            return make_response(
+                400,
+                text='{"error":"Node or attribute not found. Node path: config->modules->module[name=online_client]->param[name=enabled]","code":1}',
+            )
+        return make_response(200, text="{}")
+
+    mocker.patch.object(engine, "_make_request", side_effect=fake_make_request)
+
+    report = engine.configure_device_settings()
+
+    assert report["ok"] is True
+    assert report["online_client_skipped"] is True
+    assert report["retry_without_online_client_status"] == 200
+    assert "online_client" in payloads[0]
+    assert "online_client" not in payloads[1]
+    assert "general" in payloads[1]
+    assert "identifier" in payloads[1]
+
+
 def test_easy_setup_report_evaluation_ignores_missing_legacy_steps():
     report = {
         "steps": {
@@ -209,6 +256,24 @@ def test_easy_setup_report_evaluation_ignores_missing_legacy_steps():
 
     assert status == "success"
     assert failed_critical == []
+    assert warning_steps == []
+
+
+def test_easy_setup_report_evaluation_treats_preflight_as_critical():
+    report = {
+        "steps": {
+            "login": {"ok": True},
+            "preflight": {"ok": False},
+            "datetime": {"ok": True},
+            "monitor": {"ok": True},
+            "push": {},
+        }
+    }
+
+    status, failed_critical, warning_steps = _evaluate_easy_setup_report(report)
+
+    assert status == "failed"
+    assert failed_critical == ["preflight"]
     assert warning_steps == []
 
 
