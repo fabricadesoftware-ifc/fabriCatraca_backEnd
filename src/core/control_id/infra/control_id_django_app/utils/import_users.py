@@ -77,23 +77,25 @@ class ImportUsersView(APIView):
         return response
 
     def get(self, request, *args, **kwargs):
-        return Response({
-            "message": "Upload de arquivo Excel para importação de usuários",
-            "instructions": {
-                "method": "POST",
-                "content_type": "multipart/form-data",
-                "field_name": "file",
-                "file_format": ".xlsx ou .csv",
-                "sheet_format": "1INFO1(2025), 1INFO1, 2QUIMI, etc.",
-                "required_columns": REQUIRED_COLUMNS,
-                "legacy_required_columns": LEGACY_REQUIRED_COLUMNS,
-                "csv_required_columns": CSV_REQUIRED_COLUMNS,
-                "import_profiles": list(IMPORT_PROFILE_GROUPS.keys()),
-            },
-            "example": {
-                "curl": "curl -X POST -F 'file=@alunos.xlsx' http://localhost:8000/api/control_id/import-users/"
-            },
-        })
+        return Response(
+            {
+                "message": "Upload de arquivo Excel para importação de usuários",
+                "instructions": {
+                    "method": "POST",
+                    "content_type": "multipart/form-data",
+                    "field_name": "file",
+                    "file_format": ".xlsx ou .csv",
+                    "sheet_format": "1INFO1(2025), 1INFO1, 2QUIMI, etc.",
+                    "required_columns": REQUIRED_COLUMNS,
+                    "legacy_required_columns": LEGACY_REQUIRED_COLUMNS,
+                    "csv_required_columns": CSV_REQUIRED_COLUMNS,
+                    "import_profiles": list(IMPORT_PROFILE_GROUPS.keys()),
+                },
+                "example": {
+                    "curl": "curl -X POST -F 'file=@alunos.xlsx' http://localhost:8000/api/control_id/import-users/"
+                },
+            }
+        )
 
     def post(self, request, *args, **kwargs):
         start_time = time.perf_counter()
@@ -148,7 +150,9 @@ class ImportUsersView(APIView):
         """Salva o upload em arquivo temporário. Retorna o path ou um Response de erro."""
         file: InMemoryUploadedFile = request.FILES.get("file")
         if not file:
-            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         if is_valid_excel(file.name):
             file_kind = "excel"
@@ -188,7 +192,9 @@ class ImportUsersView(APIView):
         sheet_names = excel_file.sheet_names
         excel_file.close()
 
-        logger.info(f"[IMPORT] Arquivo recebido: {len(sheet_names)} aba(s) → {sheet_names}")
+        logger.info(
+            f"[IMPORT] Arquivo recebido: {len(sheet_names)} aba(s) → {sheet_names}"
+        )
 
         if not sheet_names:
             return Response(
@@ -196,6 +202,21 @@ class ImportUsersView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return sheet_names
+
+    def _append_sync_failure_messages(
+        self,
+        service: ImportUsersService,
+        catraca_errors: list[str],
+    ) -> None:
+        getter = getattr(service, "get_last_sync_failure_messages", None)
+        if not callable(getter):
+            return
+
+        messages = getter()
+        if not isinstance(messages, list):
+            return
+
+        catraca_errors.extend(str(message) for message in messages)
 
     def _process_csv(self, tmp_path: str, import_profile: str) -> Response:
         """Processa CSV/TSV de discentes e cadastra usuarios no grupo do perfil."""
@@ -238,7 +259,9 @@ class ImportUsersView(APIView):
                 "errors": errors or None,
                 "catraca_errors": catraca_errors or None,
             },
-            status=status.HTTP_200_OK if not catraca_errors else status.HTTP_207_MULTI_STATUS,
+            status=status.HTTP_200_OK
+            if not catraca_errors
+            else status.HTTP_207_MULTI_STATUS,
         )
 
     def _process_generic_excel(
@@ -294,7 +317,9 @@ class ImportUsersView(APIView):
                 "errors": errors or None,
                 "catraca_errors": catraca_errors or None,
             },
-            status=status.HTTP_200_OK if not (errors or catraca_errors) else status.HTTP_207_MULTI_STATUS,
+            status=status.HTTP_200_OK
+            if not (errors or catraca_errors)
+            else status.HTTP_207_MULTI_STATUS,
         )
 
     def _upsert_users_in_group(
@@ -312,12 +337,15 @@ class ImportUsersView(APIView):
                 catraca_errors.append(f"Grupo {group_name}: {err}")
                 return 0, 0, 0
 
-            users_new, users_existing, created_users, updated_users = service.upsert_users(
-                rows,
-                app_role=app_role,
+            users_new, users_existing, created_users, updated_users = (
+                service.upsert_users(
+                    rows,
+                    app_role=app_role,
+                )
             )
             all_users = users_new + users_existing
             synced_users = service.sync_users_to_devices(all_users, source_name)
+            self._append_sync_failure_messages(service, catraca_errors)
             if not synced_users:
                 catraca_errors.append(
                     f"{source_name}: falha ao sincronizar usuarios na catraca"
@@ -331,6 +359,7 @@ class ImportUsersView(APIView):
                     grupo,
                     source_name,
                 )
+                self._append_sync_failure_messages(service, catraca_errors)
                 if not success:
                     catraca_errors.append(
                         f"{source_name}: falha ao sincronizar relacoes na catraca"
@@ -385,6 +414,7 @@ class ImportUsersView(APIView):
                 # Sync usuários na catraca
                 all_users = users_new + users_existing
                 synced_users = service.sync_users_to_devices(all_users, sheet_name)
+                self._append_sync_failure_messages(service, catraca_errors)
 
                 if not synced_users:
                     catraca_errors.append(
@@ -401,6 +431,7 @@ class ImportUsersView(APIView):
                     success = service.sync_relations_to_devices(
                         new_relation_users, grupo, sheet_name
                     )
+                    self._append_sync_failure_messages(service, catraca_errors)
                     if not success:
                         catraca_errors.append(
                             f"Sheet '{sheet_name}': falha ao sincronizar relações na catraca"
@@ -429,5 +460,7 @@ class ImportUsersView(APIView):
                 "errors": errors or None,
                 "catraca_errors": catraca_errors or None,
             },
-            status=status.HTTP_200_OK if not (errors or catraca_errors) else status.HTTP_207_MULTI_STATUS,
+            status=status.HTTP_200_OK
+            if not (errors or catraca_errors)
+            else status.HTTP_207_MULTI_STATUS,
         )
