@@ -1,11 +1,13 @@
 import logging
 from dataclasses import dataclass
+from typing import Any, Generic, Iterable, TypeVar
 
 from django.contrib.auth.models import Group as DjangoGroup
 from django.db import transaction
 from rest_framework import status
 
 from src.core.__seedwork__.infra import ControlIDSyncMixin
+from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError
 from src.core.control_id.infra.control_id_django_app.models import (
     CustomGroup as Group,
     UserGroup,
@@ -16,6 +18,11 @@ from src.core.user.infra.user_django_app.validate import normalize_phone
 from .excel_parser import ParsedRow
 
 logger = logging.getLogger(__name__)
+
+IMPORT_SYNC_CHUNK_LADDER = (100, 50, 10, 5, 1)
+MAX_IMPORT_SYNC_FAILURE_MESSAGES = 20
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -33,12 +40,208 @@ class SheetImportResult:
         self.catraca_errors = self.catraca_errors or []
 
 
+@dataclass(frozen=True)
+class ImportSyncItem(Generic[T]):
+    source: T
+    payload: dict[str, Any]
+    label: str
+
+
+@dataclass(frozen=True)
+class ImportSyncFailure:
+    object_name: str
+    label: str
+    payload: dict[str, Any]
+    status_code: int | None
+    detail: str
+
+    def to_message(self) -> str:
+        status_label = f"HTTP {self.status_code}" if self.status_code else "sem HTTP"
+        return (
+            f"{self.object_name}: {self.label} falhou na catraca "
+            f"({status_label}) - {self.detail}"
+        )
+
+
+@dataclass(frozen=True)
+class ImportSyncResult(Generic[T]):
+    object_name: str
+    attempted_count: int
+    successful_items: list[T]
+    failures: list[ImportSyncFailure]
+
+    @property
+    def synced_count(self) -> int:
+        return len(self.successful_items)
+
+    @property
+    def failed_count(self) -> int:
+        return len(self.failures)
+
+    @property
+    def ok(self) -> bool:
+        return self.failed_count == 0
+
+
 class ImportUsersService(ControlIDSyncMixin):
     """Serviço de importação de usuários para o Django e catracas."""
 
     def __init__(self):
         super().__init__()
         self._device = None
+        self.last_sync_failures: list[ImportSyncFailure] = []
+
+    def _chunk_items(
+        self, items: list[ImportSyncItem[T]], chunk_size: int
+    ) -> Iterable[list[ImportSyncItem[T]]]:
+        for index in range(0, len(items), chunk_size):
+            yield items[index : index + chunk_size]
+
+    def _try_sync_chunk(
+        self,
+        object_name: str,
+        items: list[ImportSyncItem[T]],
+    ) -> tuple[bool, int | None, str | None]:
+        values = [item.payload for item in items]
+        try:
+            response = self.create_or_update_objects_in_all_devices(
+                object_name,
+                values,
+            )
+        except CatracaSyncError as exc:
+            return False, exc.status_code, str(exc)
+        except Exception as exc:
+            logger.exception("[IMPORT_SYNC] Excecao ao sincronizar %s", object_name)
+            return False, None, str(exc)
+
+        if response.status_code == status.HTTP_200_OK:
+            return True, response.status_code, None
+
+        detail = getattr(response, "data", str(response))
+        return False, response.status_code, str(detail)
+
+    def _sync_items_with_dynamic_chunks(
+        self,
+        object_name: str,
+        items: list[ImportSyncItem[T]],
+        source_name: str,
+    ) -> ImportSyncResult[T]:
+        """
+        Sincroniza como no Easy Setup: lote completo, depois 100/50/10/5/1.
+        """
+        self.last_sync_failures = []
+
+        if not items:
+            return ImportSyncResult(
+                object_name=object_name,
+                attempted_count=0,
+                successful_items=[],
+                failures=[],
+            )
+
+        logger.info(
+            "[IMPORT_SYNC] %s: tentando lote completo de %s item(ns) da origem '%s'",
+            object_name,
+            len(items),
+            source_name,
+        )
+        ok, initial_status, initial_detail = self._try_sync_chunk(object_name, items)
+        if ok:
+            logger.info(
+                "[IMPORT_SYNC] %s: lote completo sincronizado (%s item(ns))",
+                object_name,
+                len(items),
+            )
+            return ImportSyncResult(
+                object_name=object_name,
+                attempted_count=len(items),
+                successful_items=[item.source for item in items],
+                failures=[],
+            )
+
+        logger.warning(
+            "[IMPORT_SYNC] %s: lote completo da origem '%s' falhou "
+            "(HTTP %s). Iniciando fallback dinamico: 100, 50, 10, 5, 1. Detalhe: %s",
+            object_name,
+            source_name,
+            initial_status,
+            initial_detail,
+        )
+
+        pending = list(items)
+        successful_items: list[T] = []
+        failures: list[ImportSyncFailure] = []
+
+        for chunk_size in IMPORT_SYNC_CHUNK_LADDER:
+            if not pending:
+                break
+
+            next_pending: list[ImportSyncItem[T]] = []
+            logger.info(
+                "[IMPORT_SYNC] %s: tentando %s item(ns) pendente(s) em blocos de %s",
+                object_name,
+                len(pending),
+                chunk_size,
+            )
+
+            for chunk in self._chunk_items(pending, chunk_size):
+                ok, chunk_status, chunk_detail = self._try_sync_chunk(
+                    object_name,
+                    chunk,
+                )
+                if ok:
+                    successful_items.extend(item.source for item in chunk)
+                    logger.info(
+                        "[IMPORT_SYNC] %s: bloco de %s item(ns) OK",
+                        object_name,
+                        len(chunk),
+                    )
+                    continue
+
+                if chunk_size == 1:
+                    failed_item = chunk[0]
+                    failure = ImportSyncFailure(
+                        object_name=object_name,
+                        label=failed_item.label,
+                        payload=failed_item.payload,
+                        status_code=chunk_status,
+                        detail=str(chunk_detail)[:500],
+                    )
+                    failures.append(failure)
+                    logger.error("[IMPORT_SYNC] %s", failure.to_message())
+                    continue
+
+                next_pending.extend(chunk)
+
+            pending = next_pending
+
+        successful_source_ids = {id(source) for source in successful_items}
+        ordered_successful_items = [
+            item.source for item in items if id(item.source) in successful_source_ids
+        ]
+
+        result = ImportSyncResult(
+            object_name=object_name,
+            attempted_count=len(items),
+            successful_items=ordered_successful_items,
+            failures=failures,
+        )
+        self.last_sync_failures = failures
+        logger.info(
+            "[IMPORT_SYNC] %s: finalizado origem '%s' - %s/%s OK, %s falha(s)",
+            object_name,
+            source_name,
+            result.synced_count,
+            result.attempted_count,
+            result.failed_count,
+        )
+        return result
+
+    def get_last_sync_failure_messages(self) -> list[str]:
+        return [
+            failure.to_message()
+            for failure in self.last_sync_failures[:MAX_IMPORT_SYNC_FAILURE_MESSAGES]
+        ]
 
     def _build_user_payload(self, user: User) -> dict:
         payload = {
@@ -219,32 +422,33 @@ class ImportUsersService(ControlIDSyncMixin):
         return users_new, users_existing, len(users_new), len(users_existing)
 
     def sync_users_to_devices(self, users: list[User], sheet_name: str) -> list[User]:
-        """Upsert em batch dos usuários em todas as catracas."""
+        """Upsert em batch dos usuarios em todas as catracas."""
         if not users:
+            self.last_sync_failures = []
             return []
 
         self._device = None
-        batch_payload = [self._build_user_payload(u) for u in users]
-
-        logger.info(
-            f"[USERS] Batch upsert de {len(batch_payload)} usuário(s) "
-            f"ids={[p['id'] for p in batch_payload]}"
+        items = [
+            ImportSyncItem(
+                source=user,
+                payload=self._build_user_payload(user),
+                label=f"usuario id={user.pk} name='{user.name}'",
+            )
+            for user in users
+        ]
+        result = self._sync_items_with_dynamic_chunks(
+            "users",
+            items,
+            sheet_name,
         )
 
-        response = self.create_or_update_objects_in_all_devices("users", batch_payload)
-
         logger.info(
-            f"[USERS] Resposta batch: status={response.status_code} "
-            f"data={getattr(response, 'data', None)}"
+            "[USERS] Aba '%s': %s/%s usuario(s) confirmado(s) na catraca",
+            sheet_name,
+            result.synced_count,
+            result.attempted_count,
         )
-
-        if response.status_code != status.HTTP_200_OK:
-            error_detail = getattr(response, "data", str(response))
-            logger.error(f"[USERS] Falha batch aba '{sheet_name}': {error_detail}")
-            return []
-
-        logger.info(f"[USERS] {len(users)} usuário(s) confirmado(s) na catraca")
-        return users
+        return result.successful_items
 
     # ── Relações user_group ──
 
@@ -267,30 +471,33 @@ class ImportUsersService(ControlIDSyncMixin):
     def sync_relations_to_devices(
         self, users: list[User], grupo: DjangoGroup, sheet_name: str
     ) -> bool:
-        """Upsert em batch das relações user_groups em todas as catracas."""
+        """Upsert em batch das relacoes user_groups em todas as catracas."""
         if not users:
+            self.last_sync_failures = []
             return True
 
         self._device = None
-        relations_payload = [{"user_id": u.pk, "group_id": grupo.pk} for u in users]
+        items = [
+            ImportSyncItem(
+                source=user,
+                payload={"user_id": user.pk, "group_id": grupo.pk},
+                label=(
+                    f"relacao user_id={user.pk} group_id={grupo.pk} "
+                    f"group='{grupo.name}'"
+                ),
+            )
+            for user in users
+        ]
+        result = self._sync_items_with_dynamic_chunks(
+            "user_groups",
+            items,
+            sheet_name,
+        )
 
         logger.info(
-            f"[RELACAO] Batch upsert de {len(relations_payload)} relação(ões) "
-            f"grupo id={grupo.pk} name='{grupo.name}'"
+            "[RELACAO] Aba '%s': %s/%s relacao(oes) confirmada(s) na catraca",
+            sheet_name,
+            result.synced_count,
+            result.attempted_count,
         )
-
-        response = self.create_or_update_objects_in_all_devices(
-            "user_groups", relations_payload
-        )
-
-        logger.info(
-            f"[RELACAO] Resposta batch: status={response.status_code} "
-            f"data={getattr(response, 'data', None)}"
-        )
-
-        if response.status_code != status.HTTP_200_OK:
-            error_detail = getattr(response, "data", str(response))
-            logger.error(f"[RELACAO] Falha batch aba '{sheet_name}': {error_detail}")
-            return False
-
-        return True
+        return result.ok

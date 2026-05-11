@@ -203,6 +203,21 @@ class ImportUsersView(APIView):
             )
         return sheet_names
 
+    def _append_sync_failure_messages(
+        self,
+        service: ImportUsersService,
+        catraca_errors: list[str],
+    ) -> None:
+        getter = getattr(service, "get_last_sync_failure_messages", None)
+        if not callable(getter):
+            return
+
+        messages = getter()
+        if not isinstance(messages, list):
+            return
+
+        catraca_errors.extend(str(message) for message in messages)
+
     def _process_csv(self, tmp_path: str, import_profile: str) -> Response:
         """Processa CSV/TSV de discentes e cadastra usuarios no grupo do perfil."""
         service = ImportUsersService()
@@ -330,6 +345,7 @@ class ImportUsersView(APIView):
             )
             all_users = users_new + users_existing
             synced_users = service.sync_users_to_devices(all_users, source_name)
+            self._append_sync_failure_messages(service, catraca_errors)
             if not synced_users:
                 catraca_errors.append(
                     f"{source_name}: falha ao sincronizar usuarios na catraca"
@@ -343,6 +359,7 @@ class ImportUsersView(APIView):
                     grupo,
                     source_name,
                 )
+                self._append_sync_failure_messages(service, catraca_errors)
                 if not success:
                     catraca_errors.append(
                         f"{source_name}: falha ao sincronizar relacoes na catraca"
@@ -397,6 +414,7 @@ class ImportUsersView(APIView):
                 # Sync usuários na catraca
                 all_users = users_new + users_existing
                 synced_users = service.sync_users_to_devices(all_users, sheet_name)
+                self._append_sync_failure_messages(service, catraca_errors)
 
                 if not synced_users:
                     catraca_errors.append(
@@ -413,6 +431,7 @@ class ImportUsersView(APIView):
                     success = service.sync_relations_to_devices(
                         new_relation_users, grupo, sheet_name
                     )
+                    self._append_sync_failure_messages(service, catraca_errors)
                     if not success:
                         catraca_errors.append(
                             f"Sheet '{sheet_name}': falha ao sincronizar relações na catraca"

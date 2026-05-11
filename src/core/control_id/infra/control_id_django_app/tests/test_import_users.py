@@ -2,6 +2,7 @@ from datetime import date
 from io import BytesIO
 import os
 import tempfile
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -9,9 +10,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.response import Response
 
+from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError
 from src.core.control_id.infra.control_id_django_app.utils.excel_parser import (
     parse_sheet,
     parse_sheet_name,
+)
+from src.core.control_id.infra.control_id_django_app.utils.import_users_service import (
+    ImportUsersService,
 )
 
 
@@ -73,6 +78,71 @@ def test_parse_sheet_accepts_technical_workbook_layout():
     assert parsed.rows[0].birth_date == date(2010, 10, 22)
     assert parsed.rows[0].phone == "47 99195-0170"
     assert parsed.rows[0].phone_landline == "47 98871-4585"
+
+
+def test_import_sync_users_dynamic_chunks_isolate_bad_user(mocker):
+    service = ImportUsersService()
+    users = [
+        SimpleNamespace(pk=index, name=f"Aluno {index}", registration=str(index))
+        for index in range(1, 107)
+    ]
+    calls = []
+
+    def fake_sync(object_name, values):
+        assert object_name == "users"
+        ids = [value["id"] for value in values]
+        calls.append(ids)
+        if 42 in ids:
+            raise CatracaSyncError("bad id 42", status_code=400)
+        return Response({"success": True}, status=status.HTTP_200_OK)
+
+    mocker.patch.object(
+        service,
+        "create_or_update_objects_in_all_devices",
+        side_effect=fake_sync,
+    )
+
+    synced_users = service.sync_users_to_devices(users, "1INFO1")
+
+    assert [user.pk for user in synced_users] == [
+        user.pk for user in users if user.pk != 42
+    ]
+    assert any(len(call) == 100 for call in calls)
+    assert any(len(call) == 50 for call in calls)
+    assert any(len(call) == 10 for call in calls)
+    assert any(len(call) == 5 for call in calls)
+    assert [42] in calls
+    assert "usuario id=42" in service.get_last_sync_failure_messages()[0]
+
+
+def test_import_sync_relations_dynamic_chunks_isolate_bad_relation(mocker):
+    service = ImportUsersService()
+    users = [
+        SimpleNamespace(pk=index, name=f"Aluno {index}", registration=str(index))
+        for index in range(1, 13)
+    ]
+    group = SimpleNamespace(pk=9, name="1INFO1")
+    calls = []
+
+    def fake_sync(object_name, values):
+        assert object_name == "user_groups"
+        user_ids = [value["user_id"] for value in values]
+        calls.append(user_ids)
+        if 7 in user_ids:
+            raise CatracaSyncError("missing user 7", status_code=400)
+        return Response({"success": True}, status=status.HTTP_200_OK)
+
+    mocker.patch.object(
+        service,
+        "create_or_update_objects_in_all_devices",
+        side_effect=fake_sync,
+    )
+
+    success = service.sync_relations_to_devices(users, group, "1INFO1")
+
+    assert success is False
+    assert [7] in calls
+    assert "relacao user_id=7" in service.get_last_sync_failure_messages()[0]
 
 
 @pytest.mark.integration
