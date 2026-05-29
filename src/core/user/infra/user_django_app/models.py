@@ -237,7 +237,7 @@ class Visitas(BaseModel):
     end_date = models.DateTimeField(blank=True, null=True)
     visit_date = models.DateTimeField()
     card = models.ForeignKey(
-        "control_id_django_app.Card",
+        "control_id_django_app.Card", #TODO: Tá errado
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

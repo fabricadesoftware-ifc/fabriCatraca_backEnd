@@ -8,6 +8,7 @@ from src.core.control_id.infra.control_id_django_app.models import UserGroup
 from src.core.uploader.models import Archive
 
 from ..models import User
+from ..role_labels import get_app_role_label, get_app_role_labels
 from ..validate import normalize_cpf, normalize_phone, validate_user_dates
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,9 @@ class UserSerializer(serializers.ModelSerializer):
     device_admin = serializers.BooleanField(source="is_staff", required=False)
     picture_url = serializers.SerializerMethodField()
     effective_app_role = serializers.CharField(read_only=True)
+    app_role_label = serializers.SerializerMethodField()
+    effective_app_role_label = serializers.SerializerMethodField()
+    role_labels = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     selected_devices = DeviceBasicSerializer(read_only=True, many=True)
     selected_device_ids = serializers.PrimaryKeyRelatedField(
@@ -56,6 +60,9 @@ class UserSerializer(serializers.ModelSerializer):
             "registration",
             "app_role",
             "effective_app_role",
+            "app_role_label",
+            "effective_app_role_label",
+            "role_labels",
             "panel_access_only",
             "device_scope",
             "selected_devices",
@@ -92,6 +99,15 @@ class UserSerializer(serializers.ModelSerializer):
             {"id": group.pk, "name": group.name}
             for group in Group.objects.filter(id__in=group_ids)
         ]
+
+    def get_app_role_label(self, obj):
+        return get_app_role_label(obj.app_role)
+
+    def get_effective_app_role_label(self, obj):
+        return get_app_role_label(obj.effective_app_role)
+
+    def get_role_labels(self, obj):
+        return get_app_role_labels()
 
     def to_internal_value(self, data):
         if hasattr(data, "copy"):

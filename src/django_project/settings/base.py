@@ -132,6 +132,7 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
 }
 
 SPECTACULAR_SETTINGS = {
@@ -261,6 +262,15 @@ IFC_SCHEDULES_SOURCE_URL = os.getenv(
     "IFC_SCHEDULES_SOURCE_URL",
     "https://horarios.araquari.ifc.edu.br/data/horario2026.29_mar%C3%A7o_years_days_horizontal.html",
 )
+
+APP_ROLE_LABELS = {
+    "": os.getenv("APP_ROLE_LABEL_NONE", "Sem perfil"),
+    "admin": os.getenv("APP_ROLE_LABEL_ADMIN", "Administrador"),
+    "guarita": os.getenv("APP_ROLE_LABEL_GUARITA", "Guarita"),
+    "sisae": os.getenv("APP_ROLE_LABEL_SISAE", "SISAE"),
+    "aluno": os.getenv("APP_ROLE_LABEL_ALUNO", "Aluno"),
+    "servidor": os.getenv("APP_ROLE_LABEL_SERVIDOR", "Servidor"),
+}
 
 CELERY_TIMEZONE = "America/Sao_Paulo"
 CELERY_TASK_TRACK_STARTED = True

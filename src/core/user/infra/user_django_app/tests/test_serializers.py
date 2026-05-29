@@ -2,6 +2,7 @@ import pytest
 from datetime import datetime
 from types import SimpleNamespace
 from django.utils import timezone
+from django.test import override_settings
 
 from src.core.user.infra.user_django_app.serializers import (
     RoleAwareUserReadSerializer,
@@ -20,6 +21,30 @@ def test_me_uses_user_serializer_without_role_restrictions():
 
     viewset.action = "retrieve"
     assert viewset.get_serializer_class() is RoleAwareUserReadSerializer
+
+
+@pytest.mark.unit
+@pytest.mark.django_db
+@override_settings(
+    APP_ROLE_LABELS={
+        "": "Sem perfil",
+        "admin": "Administrador",
+        "guarita": "Recepcao",
+        "sisae": "Atendimento estudantil",
+        "aluno": "Aluno",
+        "servidor": "Servidor",
+    }
+)
+def test_user_serializer_exposes_configured_role_labels():
+    user = User.objects.create(name="Recepcao", app_role=User.AppRole.GUARITA)
+
+    data = UserSerializer(user).data
+
+    assert data["app_role"] == User.AppRole.GUARITA
+    assert data["app_role_label"] == "Recepcao"
+    assert data["effective_app_role_label"] == "Recepcao"
+    assert data["role_labels"]["guarita"] == "Recepcao"
+    assert data["role_labels"]["sisae"] == "Atendimento estudantil"
 
 
 @pytest.mark.unit
