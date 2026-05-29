@@ -263,6 +263,15 @@ IFC_SCHEDULES_SOURCE_URL = os.getenv(
     "https://horarios.araquari.ifc.edu.br/data/horario2026.29_mar%C3%A7o_years_days_horizontal.html",
 )
 
+APP_ROLE_LABELS = {
+    "": os.getenv("APP_ROLE_LABEL_NONE", "Sem perfil"),
+    "admin": os.getenv("APP_ROLE_LABEL_ADMIN", "Administrador"),
+    "guarita": os.getenv("APP_ROLE_LABEL_GUARITA", "Guarita"),
+    "sisae": os.getenv("APP_ROLE_LABEL_SISAE", "SISAE"),
+    "aluno": os.getenv("APP_ROLE_LABEL_ALUNO", "Aluno"),
+    "servidor": os.getenv("APP_ROLE_LABEL_SERVIDOR", "Servidor"),
+}
+
 CELERY_TIMEZONE = "America/Sao_Paulo"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
