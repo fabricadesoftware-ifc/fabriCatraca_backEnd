@@ -6,18 +6,18 @@ authors = [
     {name = "jonatasperaza", email = "jonatassilvaperaza@gmail.com"},
 ]
 dependencies = [
-    "django>=5.2.4",
+    "django>=5.2.14,<6.0",
     "djangorestframework>=3.16.0",
     "django-simple-history>=3.10.1",
     "django-safedelete>=1.4.1",
     "django-debug-toolbar>=6.2.0",
     "dj-database-url>=3.0.1",
-    "python-dotenv>=1.1.1",
+    "python-dotenv>=1.2.2",
     "django-cors-headers>=4.7.0",
     "rest-framework-simplejwt>=0.0.2",
     "drf-spectacular>=0.28.0",
     "django-filter>=25.1",
-    "requests>=2.32.4",
+    "requests>=2.33.0",
     "openpyxl>=3.1.5",
     "whitenoise>=6.11.0",
     "gunicorn>=23.0.0",
@@ -28,7 +28,7 @@ dependencies = [
     "django-celery-results>=2.6.0",
     "django-celery-beat>=2.8.1",
     "djangorestframework-simplejwt>=5.5.1",
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-django>=4.8.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.12.0",
@@ -43,7 +43,12 @@ dependencies = [
     "idbio-sdk>=0.1.0",
     "argon2-cffi>=25.1.0",
     "django-axes>=8.3.1",
-    "django-minio-storage>=0.5.9"
+    "django-minio-storage>=0.5.9",
+    "idna>=3.15",
+    "pygments>=2.20.0",
+    "pyjwt>=2.12.0",
+    "sqlparse>=0.5.4",
+    "urllib3>=2.7.0"
     ]
 requires-python = ">=3.13"
 readme = "README.md"

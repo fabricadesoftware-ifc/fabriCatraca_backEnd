@@ -85,6 +85,22 @@ def test_login_uses_cached_session_and_resets_on_failure(
 
 @pytest.mark.integration
 @pytest.mark.django_db
+def test_login_accepts_custom_timeout(mocker, make_response, device_factory):
+    from src.core.__seedwork__.infra.catraca_sync import ControlIDSyncMixin
+
+    mixin = ControlIDSyncMixin()
+    mixin.set_device(device_factory(ip="192.0.2.113"))
+    post = mocker.patch(
+        "src.core.__seedwork__.infra.catraca_sync.requests.post",
+        return_value=make_response(json_data={"session": "sess-timeout"}),
+    )
+
+    assert mixin.login(request_timeout=1.5) == "sess-timeout"
+    assert post.call_args.kwargs["timeout"] == 1.5
+
+
+@pytest.mark.integration
+@pytest.mark.django_db
 def test_make_request_retries_once_when_session_expires(
     mocker, make_response, device_factory
 ):

@@ -1,4 +1,5 @@
 import requests
+from django.conf import settings
 from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -145,6 +146,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
     def test_connection(self, request, pk=None):
         """Testa a conexão com o dispositivo"""
         device = self.get_object()
+        timeout_seconds = max(
+            0.5,
+            float(getattr(settings, "DEVICE_CONNECTION_TEST_TIMEOUT_SECONDS", 2)),
+        )
 
         try:
             # Tenta fazer login
@@ -152,7 +157,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
             mixin = ControlIDSyncMixin()
             mixin.set_device(device)
-            mixin.login()
+            mixin.login(force_new=True, request_timeout=timeout_seconds)
 
             Device.objects.filter(id=device.id).update(is_active=True)
             return Response(
@@ -161,7 +166,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
         except Exception as e:
             Device.objects.filter(id=device.id).update(is_active=False)
             return Response(
-                {"success": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+                {
+                    "success": False,
+                    "error": str(e),
+                    "message": (
+                        "Nao foi possivel conectar ao dispositivo "
+                        f"em ate {timeout_seconds:g}s."
+                    ),
+                },
+                status=status.HTTP_200_OK,
             )
 
     @action(detail=False, methods=["post"])
