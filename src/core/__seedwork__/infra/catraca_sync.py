@@ -213,7 +213,7 @@ class ControlIDSyncMixin:
         base_url = ip if ip.startswith(("http://", "https://")) else f"http://{ip}"
         return f"{base_url}/{endpoint}"
 
-    def login(self, force_new: bool = False) -> str:
+    def login(self, force_new: bool = False, request_timeout: int | float = 10) -> str:
         """
         Realiza login na API da catraca com gerenciamento inteligente de sessão.
 
@@ -233,10 +233,15 @@ class ControlIDSyncMixin:
             response = requests.post(
                 self.get_url("login.fcgi"),
                 json={"login": self.device.username, "password": self.device.password},
-                timeout=10,
+                timeout=request_timeout,
             )
             response.raise_for_status()
             self.session = response.json().get("session")
+            if not self.session:
+                raise CatracaSyncError(
+                    "Falha no login: resposta sem sessao",
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                )
             return self.session  # type: ignore[return-value]
         except requests.RequestException as exc:
             self.session = None
