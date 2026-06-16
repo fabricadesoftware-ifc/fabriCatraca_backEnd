@@ -8,6 +8,7 @@ from src.core.user.infra.user_django_app.serializers import (
     RoleAwareUserReadSerializer,
     UserSerializer,
 )
+from src.core.user.infra.user_django_app.mappers import UserControlIDMapper
 from src.core.user.infra.user_django_app.models import User
 from src.core.user.infra.user_django_app.views import UserViewSet
 
@@ -164,7 +165,7 @@ def test_role_aware_serializer_exposes_validity_fields_for_operational_roles():
 
 @pytest.mark.unit
 @pytest.mark.django_db
-def test_build_user_payload_includes_validity_timestamps():
+def test_user_control_id_mapper_includes_validity_timestamps():
     user = User.objects.create(
         name="Visitante",
         registration="V201",
@@ -172,7 +173,7 @@ def test_build_user_payload_includes_validity_timestamps():
         end_date=timezone.make_aware(datetime(2026, 4, 11, 18, 45)),
     )
 
-    payload = UserViewSet()._build_user_payload(user)
+    payload = UserControlIDMapper.to_user_payload(user)
 
     assert payload["begin_time"] == int(user.start_date.timestamp())
     assert payload["end_time"] == int(user.end_date.timestamp())

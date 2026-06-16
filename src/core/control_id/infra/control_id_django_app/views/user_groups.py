@@ -1,58 +1,63 @@
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework import serializers
-from django.db import transaction, IntegrityError
+import pandas as pd
+from django.db import transaction
 from drf_spectacular.utils import extend_schema
+from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
 
+from src.core.__seedwork__.infra.api_errors import api_error_response
 from src.core.control_id.infra.control_id_django_app.models import (
-    UserGroup,
     CustomGroup,
+    UserGroup,
 )
-from src.core.user.infra.user_django_app.models import User
 from src.core.control_id.infra.control_id_django_app.serializers import (
     UserGroupSerializer,
 )
-from src.core.__seedwork__.infra.catraca_sync import CatracaSyncError
-from src.core.__seedwork__.infra.mixins import UserGroupsSyncMixin
-
-import pandas as pd
+from src.core.control_id.infra.control_id_django_app.services import (
+    UserGroupDeviceSyncService,
+)
+from src.core.control_id.infra.control_id_django_app.use_cases import (
+    CreateUserGroupUseCase,
+    DeleteUserGroupUseCase,
+    UpdateUserGroupUseCase,
+)
+from src.core.user.infra.user_django_app.models import User
 
 
 class UserGroupImportSerializer(serializers.Serializer):
-    """Serializer para importação de usuários em grupo"""
+    """Serializer para importacao de usuarios em grupo."""
 
     file = serializers.FileField(
-        help_text="Arquivo Excel (.xlsx) com usuários para importar. Deve conter colunas 'MATRICULA' e 'NOME_COMPLETO'."
+        help_text=(
+            "Arquivo Excel (.xlsx) com usuarios para importar. Deve conter "
+            "colunas 'Matricula' e 'Nome'."
+        )
     )
     group_id = serializers.IntegerField(
-        help_text="ID do grupo para adicionar os usuários"
+        help_text="ID do grupo para adicionar os usuarios"
     )
 
     def validate(self, attrs):
-        """Validação personalizada para o arquivo e grupo"""
-        # Verifica se o grupo existe
         try:
             CustomGroup.objects.get(id=attrs["group_id"])
         except CustomGroup.DoesNotExist:
-            raise serializers.ValidationError({"group_id": "Grupo não encontrado"})
+            raise serializers.ValidationError({"group_id": "Grupo nao encontrado"})
 
-        # Verifica se o arquivo é um Excel
         file = attrs.get("file")
         if not file:
-            raise serializers.ValidationError({"file": "Arquivo é obrigatório"})
+            raise serializers.ValidationError({"file": "Arquivo e obrigatorio"})
 
         if not file.name.lower().endswith((".xls", ".xlsx")):
             raise serializers.ValidationError(
-                {"file": "Formato de arquivo inválido. Use .xlsx"}
+                {"file": "Formato de arquivo invalido. Use .xlsx"}
             )
 
         return attrs
 
 
-class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
-    """ViewSet para gerenciamento de grupos de usuários"""
+class UserGroupViewSet(viewsets.ModelViewSet):
+    """ViewSet para gerenciamento de vinculos entre usuarios e grupos."""
 
     queryset = UserGroup.objects.all()
     serializer_class = UserGroupSerializer
@@ -60,150 +65,68 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
     search_fields = ["user__name", "group__name"]
     ordering_fields = ["user__name", "group__name"]
 
+    def _user_group_sync_service(self) -> UserGroupDeviceSyncService:
+        return UserGroupDeviceSyncService()
+
     @staticmethod
-    def _build_sync_error_response(exc: CatracaSyncError) -> Response:
-        return Response(
-            {
-                "error": "Erro ao sincronizar vinculo de usuario e grupo na catraca.",
-                "details": str(exc),
-            },
-            status=exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+    def _build_sync_error_response(exc: Exception) -> Response:
+        return api_error_response(
+            "Erro ao sincronizar vinculo de usuario e grupo na catraca.",
+            code="user_group_sync_failed",
+            details=str(exc),
+            status_code=getattr(exc, "status_code", None)
+            or status.HTTP_400_BAD_REQUEST,
         )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = serializer.validated_data["user"]
-        group = serializer.validated_data["group"]
-        instance = UserGroup.objects.filter(user=user, group=group).first()
-
-        if instance:
-            # Operação idempotente: se já existe ativo, apenas retorna o vínculo existente.
-            return Response(
-                self.get_serializer(instance).data, status=status.HTTP_200_OK
-            )
-
-        # SafeDelete pode ocultar registros já apagados logicamente; recupera via _base_manager.
-        soft_deleted_instance = UserGroup._base_manager.filter(
-            user=user, group=group
-        ).first()
-        restored_existing = False
-        if soft_deleted_instance:
-            soft_deleted_instance.undelete()
-            instance = soft_deleted_instance
-            created = False
-            restored_existing = True
-        else:
-            try:
-                instance = serializer.save()
-                created = True
-            except IntegrityError:
-                # Corrida de concorrência: outra transação pode ter criado ao mesmo tempo.
-                existing = UserGroup._base_manager.filter(
-                    user=user, group=group
-                ).first()
-                if not existing:
-                    raise
-                existing.undelete()
-                instance = existing
-                created = False
-                restored_existing = True
-
-        if not created:
-            # Recria na catraca quando o vínculo estava ausente localmente (ou soft-deletado).
-            try:
-                response = self.create_in_catraca(instance)
-            except CatracaSyncError as exc:
-                if restored_existing:
-                    instance.delete()
-                return self._build_sync_error_response(exc)
-            if response.status_code != status.HTTP_201_CREATED:
-                if restored_existing:
-                    instance.delete()
-                return response
-            return Response(
-                self.get_serializer(instance).data, status=status.HTTP_200_OK
-            )
-
         try:
-            response = self.create_in_catraca(instance)
-        except CatracaSyncError as exc:
-            instance.delete()  # Reverte se falhar na catraca
+            result = CreateUserGroupUseCase(
+                sync_service=self._user_group_sync_service(),
+            ).execute(serializer)
+        except Exception as exc:
             return self._build_sync_error_response(exc)
 
-        if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
-            return response
-
         return Response(
-            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+            self.get_serializer(result.instance).data,
+            status=result.status_code,
         )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
 
         try:
-            response = self.update_in_catraca(instance)
-        except CatracaSyncError as exc:
+            instance = UpdateUserGroupUseCase(
+                sync_service=self._user_group_sync_service(),
+            ).execute(instance, serializer)
+        except Exception as exc:
             return self._build_sync_error_response(exc)
 
-        if response.status_code != status.HTTP_200_OK:
-            return response
-
-        return Response(serializer.data)
+        return Response(self.get_serializer(instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
         try:
-            response = self.delete_in_catraca(instance)
-        except CatracaSyncError as exc:
+            DeleteUserGroupUseCase(
+                sync_service=self._user_group_sync_service(),
+            ).execute(instance)
+        except Exception as exc:
             return self._build_sync_error_response(exc)
 
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            return response
-
-        instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
-        summary="Importar usuários para um grupo",
-        description="""
-        Importa usuários de um arquivo Excel para um grupo específico.
-
-        Formato do arquivo Excel:
-        - Colunas obrigatórias:
-          * MATRICULA: Matrícula do usuário
-          * NOME_COMPLETO: Nome completo do usuário
-
-        Comportamento:
-        - Usuários são buscados pela matrícula
-        - Usuários já existentes no grupo são ignorados
-        - Usuários não encontrados são listados nos erros
-
-        Exemplo de uso via cURL:
-        ```
-        curl -X POST -F "file=@usuarios.xlsx" -F "group_id=123" /api/user-groups/import-users/
-        ```
-
-        Resposta de exemplo:
-        ```json
-        {
-            "message": "Importação de usuários concluída",
-            "estatisticas": {
-                "total_usuarios": 10,
-                "usuarios_adicionados": 7,
-                "usuarios_ja_existentes": 2,
-                "usuarios_nao_encontrados": 1,
-                "erros": ["Usuário não encontrado: 12345 - João Silva"]
-            }
-        }
-        ```
-        """,
+        summary="Importar usuarios para um grupo",
+        description=(
+            "Importa usuarios de um arquivo Excel para um grupo especifico. "
+            "Usuarios sao buscados pela matricula e usuarios ja vinculados "
+            "ao grupo sao ignorados."
+        ),
         request={
             "multipart/form-data": {
                 "type": "object",
@@ -214,26 +137,10 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
             }
         },
         responses={
-            200: {
-                "description": "Importação bem-sucedida",
-                "content": {
-                    "application/json": {
-                        "example": {
-                            "message": "Importação de usuários concluída",
-                            "estatisticas": {
-                                "total_usuarios": 10,
-                                "usuarios_adicionados": 7,
-                                "usuarios_ja_existentes": 2,
-                                "usuarios_nao_encontrados": 1,
-                                "erros": [],
-                            },
-                        }
-                    }
-                },
-            },
-            400: {"description": "Erro de validação do arquivo"},
-            404: {"description": "Nenhum usuário encontrado"},
-            207: {"description": "Importação parcial com erros"},
+            200: {"description": "Importacao bem-sucedida"},
+            207: {"description": "Importacao parcial com erros"},
+            400: {"description": "Erro de validacao do arquivo"},
+            404: {"description": "Nenhum usuario encontrado"},
         },
     )
     @action(
@@ -243,20 +150,11 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
         serializer_class=UserGroupImportSerializer,
     )
     def import_users(self, request):
-        """
-        Importa usuários de um arquivo Excel para um grupo específico
-
-        Formato do arquivo Excel:
-        - Colunas obrigatórias: MATRICULA, NOME_COMPLETO
-        - Exemplo de uso:
-          curl -X POST -F "file=@usuarios.xlsx" -F "group_id=123" /api/user-groups/import-users/
-        """
-        # Verifica se há arquivos
         if not request.FILES:
             return Response(
                 {
                     "error": "Nenhum arquivo enviado",
-                    "details": "request.FILES está vazio",
+                    "details": "request.FILES esta vazio",
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -265,30 +163,25 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
 
         try:
             serializer.is_valid(raise_exception=True)
-        except serializers.ValidationError as e:
-            # Adiciona mais detalhes sobre o erro de validação
+        except serializers.ValidationError as exc:
             return Response(
                 {
-                    "error": "Erro de validação",
-                    "details": str(e),
-                    "validation_errors": e.detail,
+                    "error": "Erro de validacao",
+                    "details": str(exc),
+                    "validation_errors": exc.detail,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Dados validados
         file = serializer.validated_data["file"]
-        group_id = serializer.validated_data["group_id"]
+        group = CustomGroup.objects.get(id=serializer.validated_data["group_id"])
 
-        group = CustomGroup.objects.get(id=group_id)
-
-        # Lê o arquivo Excel
         try:
             df = pd.read_excel(file)
-        except Exception as e:
+        except Exception as exc:
             return Response(
                 {
-                    "error": f"Erro ao ler arquivo Excel: {str(e)}",
+                    "error": f"Erro ao ler arquivo Excel: {str(exc)}",
                     "details": {
                         "filename": file.name,
                         "file_size": file.size,
@@ -298,17 +191,26 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Valida colunas
-        required_columns = {"Matrícula", "Nome"}
-        if not required_columns.issubset(df.columns):
+        required_columns = {"Matricula", "Nome"}
+        column_aliases = {
+            "Matricula": ("Matricula", "Matrícula", "MATRICULA"),
+            "Nome": ("Nome", "NOME", "NOME_COMPLETO"),
+        }
+        resolved_columns = {
+            target: next((name for name in names if name in df.columns), None)
+            for target, names in column_aliases.items()
+        }
+        if any(column is None for column in resolved_columns.values()):
             return Response(
                 {
-                    "error": f"Colunas obrigatórias ausentes. Esperado: {required_columns}"
+                    "error": (
+                        "Colunas obrigatorias ausentes. Esperado: "
+                        f"{sorted(required_columns)}"
+                    )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Estatísticas de importação
         stats = {
             "total_usuarios": len(df),
             "usuarios_adicionados": 0,
@@ -317,69 +219,60 @@ class UserGroupViewSet(UserGroupsSyncMixin, viewsets.ModelViewSet):
             "erros": [],
         }
 
-        # Processamento em transação
+        sync_service = self._user_group_sync_service()
+        registration_column = resolved_columns["Matricula"]
+        name_column = resolved_columns["Nome"]
+
         with transaction.atomic():
             for _, row in df.iterrows():
+                registration = ""
+                name = ""
                 try:
-                    # Busca usuário pela matrícula
-                    registration = str(row["Matrícula"]).strip()
-                    name = str(row["Nome"]).strip()
+                    registration = str(row[registration_column]).strip()
+                    name = str(row[name_column]).strip()
 
-                    # Tenta encontrar usuário pela matrícula
                     user = User.objects.filter(registration=registration).first()
 
                     if not user:
-                        # Se não encontrar, pula
                         stats["usuarios_nao_encontrados"] += 1
                         stats["erros"].append(
-                            f"Usuário não encontrado: {registration} - {name}"
+                            f"Usuario nao encontrado: {registration} - {name}"
                         )
                         continue
 
-                    # Verifica se já está no grupo
                     existing_group = UserGroup.objects.filter(
-                        user=user, group=group
+                        user=user,
+                        group=group,
                     ).exists()
                     if existing_group:
                         stats["usuarios_ja_existentes"] += 1
                         continue
 
-                    # Adiciona ao grupo no banco local
                     instance = UserGroup.objects.create(user=user, group=group)
 
-                    # Sincroniza com a catraca
                     try:
-                        catraca_resp = self.create_in_catraca(instance)
-                        if catraca_resp.status_code != status.HTTP_201_CREATED:
-                            stats["erros"].append(
-                                f"Usuário {registration} salvo localmente, mas falhou na catraca"
-                            )
+                        sync_service.create(instance)
                     except Exception as sync_err:
                         stats["erros"].append(
-                            f"Usuário {registration} salvo localmente, erro sync catraca: {str(sync_err)}"
+                            "Usuario "
+                            f"{registration} salvo localmente, erro sync catraca: "
+                            f"{str(sync_err)}"
                         )
 
                     stats["usuarios_adicionados"] += 1
 
-                except Exception as e:
-                    # Registra erro para este usuário
+                except Exception as exc:
                     stats["erros"].append(
-                        f"Erro ao processar {registration} - {name}: {str(e)}"
+                        f"Erro ao processar {registration} - {name}: {str(exc)}"
                     )
 
-        # Prepara resposta
         response_data = {
-            "message": "Importação de usuários concluída",
+            "message": "Importacao de usuarios concluida",
             "estatisticas": stats,
         }
 
-        # Determina status de resposta
         if stats["usuarios_nao_encontrados"] == stats["total_usuarios"]:
-            # Nenhum usuário encontrado
             return Response(response_data, status=status.HTTP_404_NOT_FOUND)
-        elif stats["erros"]:
-            # Alguns erros ocorreram
+        if stats["erros"]:
             return Response(response_data, status=status.HTTP_207_MULTI_STATUS)
-        else:
-            # Importação bem-sucedida
-            return Response(response_data, status=status.HTTP_200_OK)
+        return Response(response_data, status=status.HTTP_200_OK)

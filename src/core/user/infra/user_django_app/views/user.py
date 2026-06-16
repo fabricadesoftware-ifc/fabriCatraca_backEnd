@@ -1,19 +1,17 @@
-import logging
-from datetime import datetime, timezone as dt_timezone
-from typing import cast
-
-import requests
-from django.db import transaction
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from src.core.__seedwork__.infra import ControlIDSyncMixin
-from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollCardResponse
+from src.core.__seedwork__.infra.api_errors import api_error_response
 from src.core.control_id.infra.control_id_django_app.models.device import Device
+from src.core.control_id.infra.control_id_django_app.services import (
+    CardDeviceSyncService,
+    CardEnrollmentError,
+    CardEnrollmentService,
+)
 
 from ..models import User, Visitas
 from ..permissions import (
@@ -21,13 +19,19 @@ from ..permissions import (
     IsOperationalRole,
     IsAdminOrGuaritaRole,
 )
+from ..policies import UserModificationForbidden, UserModificationPolicy
 from ..serializers import RoleAwareUserReadSerializer, UserSerializer, VisitasSerializer
-
-logger = logging.getLogger(__name__)
+from ..services import UserDeviceSyncService, VisitorService
+from ..use_cases import (
+    CreateUserUseCase,
+    CreateVisitorWithCardUseCase,
+    DeleteUserUseCase,
+    UpdateUserUseCase,
+)
 
 
 @extend_schema(tags=["Users"])
-class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
+class UserViewSet(viewsets.ModelViewSet):
     queryset = (
         User.objects.all()
         .filter(deleted_at__isnull=True)
@@ -60,23 +64,20 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
             return [IsAdminOrGuaritaRole()]
         return [IsAdminRole()]
 
-    def _is_visitor(self, user):
-        return user.user_type_id == 1
+    def _policy(self) -> UserModificationPolicy:
+        return UserModificationPolicy()
 
-    def _ensure_can_modify_user(self, request, instance):
-        """Non-admin users can only create/edit/delete visitors (user_type_id=1)."""
-        if (
-            not request.user.is_superuser
-            and request.user.effective_app_role != User.AppRole.ADMIN
-        ):
-            if not self._is_visitor(instance):
-                return Response(
-                    {
-                        "error": "Apenas administradores podem modificar usuarios nao-visitantes."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        return None
+    def _visitor_service(self) -> VisitorService:
+        return VisitorService()
+
+    def _user_sync_service(self) -> UserDeviceSyncService:
+        return UserDeviceSyncService()
+
+    def _card_enrollment_service(self) -> CardEnrollmentService:
+        return CardEnrollmentService()
+
+    def _card_sync_service(self) -> CardDeviceSyncService:
+        return CardDeviceSyncService()
 
     def get_serializer_class(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         if self.action == "me":
@@ -84,90 +85,6 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         if self.action in ("list", "retrieve"):
             return RoleAwareUserReadSerializer
         return UserSerializer
-
-    def _normalize_user_type(self, instance):
-        if instance.user_type_id in (0, "0"):
-            instance.user_type_id = None
-            instance.save(update_fields=["user_type_id"])
-
-    def _datetime_to_device_timestamp(self, value) -> int:
-        if not value:
-            return 0
-
-        aware_value = value
-        if timezone.is_naive(aware_value):
-            aware_value = timezone.make_aware(
-                aware_value,
-                timezone.get_current_timezone(),
-            )
-        return int(aware_value.timestamp())
-
-    def _build_user_payload(self, instance):
-        payload = {
-            "id": instance.id,
-            "name": instance.name,
-            "registration": instance.registration or "",
-            "begin_time": self._datetime_to_device_timestamp(instance.start_date),
-            "end_time": self._datetime_to_device_timestamp(instance.end_date),
-        }
-        return payload
-
-    def _get_active_target_devices(self, user: User):
-        return list(user.get_target_devices(include_inactive=False))
-
-    @staticmethod
-    def _is_visitor_payload(data) -> bool:
-        return data.get("user_type_id") == 1
-
-    def _find_existing_visitor(self, validated_data):
-        visitors = User.objects.filter(deleted_at__isnull=True, user_type_id=1)
-
-        cpf = validated_data.get("cpf")
-        if cpf:
-            existing = visitors.filter(cpf=cpf).first()
-            if existing:
-                return existing
-
-        registration = validated_data.get("registration")
-        if registration:
-            existing = visitors.filter(registration=registration).first()
-            if existing:
-                return existing
-
-        phone = validated_data.get("phone")
-        if phone:
-            phone_matches = visitors.filter(phone=phone)
-            if phone_matches.count() == 1:
-                return phone_matches.first()
-
-            name = validated_data.get("name")
-            if name:
-                name_matches = phone_matches.filter(name__iexact=name)
-                if name_matches.count() == 1:
-                    return name_matches.first()
-
-        email = validated_data.get("email")
-        if email:
-            email_matches = visitors.filter(email=email)
-            if email_matches.count() == 1:
-                return email_matches.first()
-
-        return None
-
-    def _create_visit_record(self, user: User, request_user: User, card=None):
-        visit_date = user.start_date or timezone.now()
-        visit = Visitas.objects.create(
-            user=user,
-            created_by=request_user,
-            visit_date=visit_date,
-            end_date=user.end_date,
-            card=card,
-        )
-        if visit.end_date and visit.end_date > timezone.now():
-            from ..tasks import expire_visit
-
-            expire_visit.apply_async(kwargs={"visit_id": visit.id}, eta=visit.end_date)
-        return visit
 
     def _build_visitor_response(
         self, instance: User, visit: Visitas, reused_existing: bool
@@ -179,372 +96,118 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         payload["reused_existing_user"] = reused_existing
         return payload
 
-    @staticmethod
-    def _is_device_admin_user(user: User) -> bool:
-        return bool(user.is_staff or user.is_superuser)
-
-    @staticmethod
-    def _is_duplicate_user_error(response) -> bool:
-        data = getattr(response, "data", None)
-        if isinstance(data, dict):
-            raw_text = " ".join(str(value) for value in data.values())
-        else:
-            raw_text = str(data)
-
-        normalized = raw_text.lower()
-        return "unique constraint failed" in normalized and "users.id" in normalized
-
-    def _set_user_admin_on_device(self, device, user_id: int):
-        self.set_device(device)
-        sess = self.login()
-        payload_row = {"user_id": user_id, "role": 1}
-
-        r_create = requests.post(
-            self.get_url(f"create_objects.fcgi?session={sess}"),
-            json={"object": "user_roles", "values": [payload_row]},
-            timeout=30,
-        )
-        if r_create.status_code == 200:
-            return
-
-        r_mod = requests.post(
-            self.get_url(f"modify_objects.fcgi?session={sess}"),
-            json={
-                "object": "user_roles",
-                "values": payload_row,
-                "where": {"user_roles": {"user_id": user_id}},
-            },
-            timeout=30,
-        )
-        if r_mod.status_code != 200:
-            raise RuntimeError(
-                f"Erro ao definir administrador na catraca {device.name}: "
-                f"create HTTP {r_create.status_code} {r_create.text[:300]!r} | "
-                f"modify HTTP {r_mod.status_code} {r_mod.text[:300]!r}"
-            )
-
-    def _create_user_in_device(self, device, instance):
-        self.set_device(device)
-        response = self.create_objects("users", [self._build_user_payload(instance)])
-        if response.status_code == status.HTTP_201_CREATED:
-            if instance.pin:
-                pin_resp = self.create_objects(
-                    "pins",
-                    [{"user_id": instance.id, "value": instance.pin}],
-                )
-                if pin_resp.status_code != status.HTTP_201_CREATED:
-                    logger.warning(
-                        "Falha ao criar PIN na catraca %s: %s",
-                        device.name,
-                        pin_resp.data,
-                    )
-
-            if self._is_device_admin_user(instance):
-                self._set_user_admin_on_device(device, instance.id)
-            return
-
-        if self._is_duplicate_user_error(response):
-            self._update_user_in_device(
-                device,
-                instance,
-                previous_device_admin=self._is_device_admin_user(instance),
-            )
-            return
-
-        if response.status_code != status.HTTP_201_CREATED:
-            raise RuntimeError(
-                f"Erro ao criar usuario na catraca {device.name}: {response.data}"
-            )
-
-    def _upsert_user_in_device(self, device, instance, previous_device_admin=False):
-        try:
-            self._update_user_in_device(
-                device,
-                instance,
-                previous_device_admin=previous_device_admin,
-            )
-        except Exception:
-            self._create_user_in_device(device, instance)
-
-    def _update_user_in_device(self, device, instance, previous_device_admin=False):
-        self.set_device(device)
-        payload = self._build_user_payload(instance)
-        response = self.update_objects("users", payload, {"users": {"id": instance.id}})
-        if response.status_code != status.HTTP_200_OK:
-            raise RuntimeError(
-                f"Erro ao atualizar usuario na catraca {device.name}: {response.data}"
-            )
-
-        if instance.pin:
-            pin_resp = self.update_objects(
-                "pins",
-                {"value": instance.pin},
-                {"pins": {"user_id": instance.id}},
-            )
-            if pin_resp.status_code != status.HTTP_200_OK:
-                self.create_objects(
-                    "pins",
-                    [{"user_id": instance.id, "value": instance.pin}],
-                )
-
-        current_admin = self._is_device_admin_user(instance)
-        if current_admin:
-            self._set_user_admin_on_device(device, instance.id)
-        elif previous_device_admin:
-            role_resp = self.destroy_objects(
-                "user_roles",
-                {"user_roles": {"user_id": instance.id}},
-            )
-            if role_resp.status_code not in (
-                status.HTTP_204_NO_CONTENT,
-                status.HTTP_200_OK,
-            ):
-                raise RuntimeError(
-                    f"Erro ao remover papel administrativo na catraca {device.name}: {role_resp.data}"
-                )
-
-    def _delete_user_from_device(self, device, instance):
-        self.set_device(device)
-        self.destroy_objects("user_roles", {"user_roles": {"user_id": instance.id}})
-        self.destroy_objects("pins", {"pins": {"user_id": instance.id}})
-        response = self.destroy_objects("users", {"users": {"id": instance.id}})
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            raise RuntimeError(
-                f"Erro ao deletar usuario da catraca {device.name}: {response.data}"
-            )
-
     def create(self, request, *args, **kwargs):
-        if (
-            not request.user.is_superuser
-            and request.user.effective_app_role != User.AppRole.ADMIN
-        ):
-            if request.data.get("user_type_id") != 1:
-                return Response(
-                    {
-                        "error": "Apenas administradores podem criar usuarios nao-visitantes."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.id = serializer.validated_data.get("registration")
 
-        with transaction.atomic():
-            reused_existing = False
-            created_new_user = False
+        try:
+            self._policy().assert_can_create(request.user, serializer.validated_data)
+        except UserModificationForbidden as exc:
+            return api_error_response(
+                exc.message,
+                code="user_modification_forbidden",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
 
-            if self._is_visitor_payload(serializer.validated_data):
-                existing_visitor = self._find_existing_visitor(
-                    serializer.validated_data
-                )
-                if existing_visitor:
-                    update_serializer = self.get_serializer(
-                        existing_visitor,
-                        data=request.data,
-                        partial=True,
-                    )
-                    update_serializer.is_valid(raise_exception=True)
-                    instance = update_serializer.save()
-                    reused_existing = True
-                else:
-                    instance = serializer.save()
-                    created_new_user = True
-            else:
-                instance = serializer.save()
-                created_new_user = True
+        try:
+            result = CreateUserUseCase(
+                visitor_service=self._visitor_service(),
+                sync_service=self._user_sync_service(),
+            ).execute(
+                serializer,
+                request.user,
+                raw_data=request.data,
+                serializer_factory=self.get_serializer,
+            )
+        except ValidationError:
+            raise
+        except Exception as exc:
+            return api_error_response(
+                "Erro ao sincronizar usuario na catraca.",
+                code="user_device_sync_failed",
+                details=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
-            self._normalize_user_type(instance)
-
-            if not instance.panel_access_only:
-                devices = self._get_active_target_devices(instance)
-                try:
-                    for device in devices:
-                        if created_new_user:
-                            self._create_user_in_device(device, instance)
-                        else:
-                            self._upsert_user_in_device(device, instance)
-                except Exception as exc:
-                    if created_new_user:
-                        instance.delete()
-                    return Response(
-                        {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
-                    )
-
-            if self._is_visitor(instance):
-                visit = self._create_visit_record(instance, request.user)
-                return Response(
-                    self._build_visitor_response(instance, visit, reused_existing),
-                    status=status.HTTP_201_CREATED,
-                )
+        if result.visit:
+            return Response(
+                self._build_visitor_response(
+                    result.user,
+                    result.visit,
+                    result.reused_existing_user,
+                ),
+                status=status.HTTP_201_CREATED,
+            )
 
         return Response(
-            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+            self.get_serializer(result.user).data,
+            status=status.HTTP_201_CREATED,
         )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        guard = self._ensure_can_modify_user(request, instance)
-        if guard is not None:
-            return guard
-        previous_panel_access_only = instance.panel_access_only
-        previous_device_admin = self._is_device_admin_user(instance)
-        previous_devices = self._get_active_target_devices(instance)
-        previous_device_ids = {device.id for device in previous_devices}
-        previous_device_map = {device.id: device for device in previous_devices}
+
+        try:
+            self._policy().assert_can_modify(request.user, instance)
+        except UserModificationForbidden as exc:
+            return api_error_response(
+                exc.message,
+                code="user_modification_forbidden",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
-        with transaction.atomic():
-            instance = serializer.save()
-            self._normalize_user_type(instance)
-
-            current_devices = self._get_active_target_devices(instance)
-            current_device_ids = {device.id for device in current_devices}
-            current_device_map = {device.id: device for device in current_devices}
-
-            try:
-                removed_ids = previous_device_ids - current_device_ids
-                added_ids = current_device_ids - previous_device_ids
-                common_ids = previous_device_ids & current_device_ids
-
-                if previous_panel_access_only and instance.panel_access_only:
-                    removed_ids = set()
-                    added_ids = set()
-                    common_ids = set()
-                elif previous_panel_access_only and not instance.panel_access_only:
-                    removed_ids = set()
-                    added_ids = current_device_ids
-                    common_ids = set()
-                elif not previous_panel_access_only and instance.panel_access_only:
-                    removed_ids = previous_device_ids
-                    added_ids = set()
-                    common_ids = set()
-
-                for device_id in removed_ids:
-                    self._delete_user_from_device(
-                        previous_device_map[device_id], instance
-                    )
-
-                for device_id in added_ids:
-                    self._create_user_in_device(current_device_map[device_id], instance)
-
-                for device_id in common_ids:
-                    self._update_user_in_device(
-                        current_device_map[device_id],
-                        instance,
-                        previous_device_admin=previous_device_admin,
-                    )
-            except Exception as exc:
-                return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            instance = UpdateUserUseCase(
+                sync_service=self._user_sync_service(),
+            ).execute(instance, serializer)
+        except ValidationError:
+            raise
+        except Exception as exc:
+            return api_error_response(
+                "Erro ao sincronizar usuario na catraca.",
+                code="user_device_sync_failed",
+                details=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(self.get_serializer(instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        guard = self._ensure_can_modify_user(request, instance)
-        if guard is not None:
-            return guard
 
-        with transaction.atomic():
-            instance.useraccessrule_set.all().delete()
-            instance.usergroup_set.all().delete()
-            instance.templates.all().delete()
-            instance.cards.all().delete()
-            instance.groups.clear()
-            instance.user_permissions.clear()
-
-            from src.core.control_id.infra.control_id_django_app.models.access_logs import (
-                AccessLogs,
+        try:
+            self._policy().assert_can_modify(request.user, instance)
+        except UserModificationForbidden as exc:
+            return api_error_response(
+                exc.message,
+                code="user_modification_forbidden",
+                status_code=status.HTTP_403_FORBIDDEN,
             )
 
-            AccessLogs.objects.filter(user=instance).update(user=None)
+        try:
+            DeleteUserUseCase(sync_service=self._user_sync_service()).execute(instance)
+        except Exception as exc:
+            return api_error_response(
+                "Erro ao sincronizar usuario na catraca.",
+                code="user_device_sync_failed",
+                details=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
-            if not instance.panel_access_only:
-                for device in self._get_active_target_devices(instance):
-                    try:
-                        self._delete_user_from_device(device, instance)
-                    except Exception as exc:
-                        return Response(
-                            {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
-                        )
-
-            instance.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"])
     def sync(self, request):
-        try:
-            with transaction.atomic():
-                devices = Device.objects.filter(is_active=True)
-
-                for device in devices:
-                    self.set_device(device)
-                    catraca_objects = self.load_objects(
-                        "users",
-                        fields=[
-                            "id",
-                            "name",
-                            "registration",
-                            "user_type_id",
-                            "begin_time",
-                            "end_time",
-                        ],
-                        order_by=["id"],
-                    )
-
-                    for data in catraca_objects:
-                        raw_type = data.get("user_type_id")
-                        raw_begin_time = data.get("begin_time")
-                        raw_end_time = data.get("end_time")
-
-                        start_date = None
-                        end_date = None
-
-                        if raw_begin_time not in (None, "", 0, "0"):
-                            start_date = timezone.localtime(
-                                datetime.fromtimestamp(
-                                    int(raw_begin_time),
-                                    tz=dt_timezone.utc,
-                                )
-                            )
-
-                        if raw_end_time not in (None, "", 0, "0"):
-                            end_date = timezone.localtime(
-                                datetime.fromtimestamp(
-                                    int(raw_end_time),
-                                    tz=dt_timezone.utc,
-                                )
-                            )
-
-                        try:
-                            existing_user = User.objects.get(id=data["id"])
-                            user_type = existing_user.user_type_id
-                        except User.DoesNotExist:
-                            user_type = (
-                                raw_type if raw_type and int(raw_type) == 1 else None
-                            )
-
-                        User.objects.update_or_create(
-                            id=data["id"],
-                            defaults={
-                                "name": data["name"],
-                                "registration": data.get("registration", ""),
-                                "user_type_id": user_type,
-                                "start_date": start_date,
-                                "end_date": end_date,
-                            },
-                        )
-
-                return Response(
-                    {
-                        "success": True,
-                        "message": f"Sincronizados usuarios de {len(devices)} catraca(s)",
-                    }
-                )
-        except Exception as exc:
-            return Response(
-                {"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return api_error_response(
+            "Sincronizacao de usuarios desativada.",
+            code="legacy_user_sync_disabled",
+            details="Esta funcao nao esta disponivel no momento.",
+            status_code=status.HTTP_410_GONE,
+        )
 
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def me(self, request):
@@ -566,44 +229,32 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         """
         enrollment_device_id: int = request.data.get("enrollment_device_id")
         if not enrollment_device_id:
-            return Response(
-                {
-                    "error": "E necessario especificar uma catraca para captura do cartao"
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return api_error_response(
+                "E necessario especificar uma catraca para captura do cartao",
+                code="card_enrollment_device_required",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
             device: Device = Device.objects.get(id=enrollment_device_id)
         except Device.DoesNotExist:
-            return Response(
-                {"error": f"Catraca com ID {enrollment_device_id} nao encontrada"},
-                status=status.HTTP_404_NOT_FOUND,
+            return api_error_response(
+                f"Catraca com ID {enrollment_device_id} nao encontrada",
+                code="device_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        self.set_device(device)
-        response = cast(
-            Response,
-            self.remote_enroll(
+        try:
+            captured_value = self._card_enrollment_service().capture_card(
+                device,
                 user_id=0,
-                type="card",
-                save=False,
-                sync=True,
-            ),
-        )
-
-        if response.status_code != status.HTTP_201_CREATED:
-            return response
-
-        card_data = cast(RemoteEnrollCardResponse, response.data)
-        captured_value: int = card_data.get("card_value")
-        if not captured_value:
-            return Response(
-                {
-                    "error": "Catraca nao retornou o valor do cartao",
-                    "details": card_data,
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except CardEnrollmentError as exc:
+            return api_error_response(
+                exc.message,
+                code=exc.code,
+                details=exc.details,
+                status_code=exc.status_code,
             )
 
         return Response(
@@ -629,44 +280,50 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         captured_value = request.data.get("card_value")
 
         if not enrollment_device_id:
-            return Response(
-                {
-                    "error": "E necessario especificar uma catraca para captura do cartao"
-                },
-                status=status.HTTP_400_BAD_REQUEST,
+            return api_error_response(
+                "E necessario especificar uma catraca para captura do cartao",
+                code="card_enrollment_device_required",
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
             enrollment_device = Device.objects.get(id=enrollment_device_id)
         except Device.DoesNotExist:
-            return Response(
-                {"error": f"Catraca com ID {enrollment_device_id} nao encontrada"},
-                status=status.HTTP_404_NOT_FOUND,
+            return api_error_response(
+                f"Catraca com ID {enrollment_device_id} nao encontrada",
+                code="device_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
             )
 
         # 1. Se nao veio card_value, faz remote enroll para capturar
         if not captured_value:
-            self.set_device(enrollment_device)
-            response = cast(
-                Response,
-                self.remote_enroll(user_id=0, type="card", save=False, sync=True),
-            )
-
-            if response.status_code != status.HTTP_201_CREATED:
-                return response
-
-            captured_value = cast(RemoteEnrollCardResponse, response.data).get(
-                "card_value"
-            )
-            if not captured_value:
-                return Response(
-                    {"error": "Catraca nao retornou o valor do cartao"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            try:
+                captured_value = self._card_enrollment_service().capture_card(
+                    enrollment_device,
+                    user_id=0,
                 )
+            except CardEnrollmentError as exc:
+                return api_error_response(
+                    exc.message,
+                    code=exc.code,
+                    details=exc.details,
+                    status_code=exc.status_code,
+                )
+
+        try:
+            captured_value = int(captured_value)
+        except (TypeError, ValueError):
+            return api_error_response(
+                "Valor do cartao invalido.",
+                code="invalid_card_value",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
         # 2. Cria o usuario (remove enrollment_device_id do data)
         user_data = {
-            k: v for k, v in request.data.items() if k != "enrollment_device_id"
+            k: v
+            for k, v in request.data.items()
+            if k not in ("enrollment_device_id", "card_value")
         }
         # Garante que e visitante
         user_data["user_type_id"] = 1
@@ -674,68 +331,37 @@ class UserViewSet(ControlIDSyncMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(data=user_data)
         serializer.is_valid(raise_exception=True)
 
-        with transaction.atomic():
-            reused_existing = False
-            created_new_user = False
-
-            existing_visitor = self._find_existing_visitor(serializer.validated_data)
-            if existing_visitor:
-                update_serializer = self.get_serializer(
-                    existing_visitor,
-                    data=user_data,
-                    partial=True,
-                )
-                update_serializer.is_valid(raise_exception=True)
-                instance = update_serializer.save()
-                reused_existing = True
-            else:
-                instance = serializer.save()
-                created_new_user = True
-
-            self._normalize_user_type(instance)
-
-            # 3. Salva o cartao no banco
-            from src.core.control_id.infra.control_id_django_app.models import Card
-
-            card = Card.objects.create(user=instance, value=str(captured_value))
-
-            # 4. Replica usuario para catracas alvo
-            if not instance.panel_access_only:
-                devices = self._get_active_target_devices(instance)
-                try:
-                    for device in devices:
-                        if created_new_user:
-                            self._create_user_in_device(device, instance)
-                        else:
-                            self._upsert_user_in_device(device, instance)
-
-                        # Cria cartao na catraca
-                        self.set_device(device)
-                        self.create_objects(
-                            "cards",
-                            [
-                                {
-                                    "id": card.id,
-                                    "user_id": instance.id,
-                                    "value": int(captured_value),
-                                }
-                            ],
-                        )
-                except Exception as exc:
-                    if created_new_user:
-                        instance.delete()
-                    return Response(
-                        {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
-                    )
-
-            visit = self._create_visit_record(instance, request.user, card=card)
+        try:
+            result = CreateVisitorWithCardUseCase(
+                visitor_service=self._visitor_service(),
+                user_sync_service=self._user_sync_service(),
+                card_sync_service=self._card_sync_service(),
+            ).execute(
+                serializer,
+                request.user,
+                raw_data=user_data,
+                serializer_factory=self.get_serializer,
+                captured_value=captured_value,
+            )
+        except ValidationError:
+            raise
+        except Exception as exc:
+            return api_error_response(
+                "Erro ao sincronizar usuario e cartao na catraca.",
+                code="visitor_card_sync_failed",
+                details=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
             {
-                "user": self.get_serializer(instance).data,
-                "card": {"id": card.id, "value": card.value},
-                "visit": VisitasSerializer(visit, context={"request": request}).data,
-                "reused_existing_user": reused_existing,
+                "user": self.get_serializer(result.user).data,
+                "card": {"id": result.card.id, "value": result.card.value},
+                "visit": VisitasSerializer(
+                    result.visit,
+                    context={"request": request},
+                ).data,
+                "reused_existing_user": result.reused_existing_user,
             },
             status=status.HTTP_201_CREATED,
         )

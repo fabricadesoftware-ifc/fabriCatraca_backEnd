@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import traceback
-import requests
 
-from typing import Any, cast
+from typing import Any
 
 from django.conf import settings
-from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -15,7 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from src.core.__seedwork__.infra.mixins import TemplateSyncMixin
+from src.core.__seedwork__.infra.api_errors import api_error_response
 from src.core.control_id.infra.control_id_django_app.models import (
     BiometricCaptureSession,
     Device,
@@ -24,9 +22,20 @@ from src.core.control_id.infra.control_id_django_app.models import (
 from src.core.control_id.infra.control_id_django_app.serializers.template import (
     TemplateSerializer,
 )
+from src.core.control_id.infra.control_id_django_app.services import (
+    BiometricEnrollmentError,
+    BiometricEnrollmentService,
+    BiometricTemplateExtractionService,
+    TemplateDeviceSyncService,
+)
+from src.core.control_id.infra.control_id_django_app.use_cases import (
+    CompleteLocalCaptureSessionUseCase,
+    CreateRemoteTemplateUseCase,
+    DeleteTemplateUseCase,
+    TemplateOperationError,
+    UpdateTemplateUseCase,
+)
 from src.core.user.infra.user_django_app.models import User
-
-from src.core.__seedwork__.infra.types.catraca_sync import RemoteEnrollBioResponse
 
 
 CreateRemoteTemplatePayload = tuple[Template, dict[str, Any]]
@@ -34,7 +43,7 @@ CompleteCaptureSessionPayload = tuple[Template, list[dict[str, Any]]]
 
 
 @extend_schema(tags=["Templates"])
-class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
+class TemplateViewSet(viewsets.ModelViewSet):
     queryset = Template.objects.all()
     serializer_class = TemplateSerializer
     filterset_fields = ["user"]
@@ -64,6 +73,15 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             or Device.objects.filter(is_active=True).order_by("id").first()
         )
 
+    def _template_sync_service(self) -> TemplateDeviceSyncService:
+        return TemplateDeviceSyncService()
+
+    def _biometric_enrollment_service(self) -> BiometricEnrollmentService:
+        return BiometricEnrollmentService()
+
+    def _template_extraction_service(self) -> BiometricTemplateExtractionService:
+        return BiometricTemplateExtractionService()
+
     def _expire_stale_sessions(self):
         stale_sessions = BiometricCaptureSession.objects.filter(
             status__in=[
@@ -79,33 +97,9 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         )
 
     def _replicate_template_to_active_devices(self, instance: Template):
-        devices = self._get_target_devices_for_user(instance.user)
-        errors = []
-
-        for device in devices:
-            self.set_device(device)
-            create_response = self.create_objects(
-                "templates",
-                [
-                    {
-                        "id": instance.pk,
-                        "user_id": instance.user.id,
-                        "template": instance.template,
-                        "finger_type": instance.finger_type,
-                        "finger_position": instance.finger_position,
-                    }
-                ],
-            )
-            if create_response.status_code != status.HTTP_201_CREATED:
-                errors.append(
-                    {
-                        "device_id": device.pk,
-                        "device_name": device.name,
-                        "details": create_response.data,
-                    }
-                )
-
-        return errors
+        return self._template_sync_service().replicate_template_to_user_devices(
+            instance
+        )
 
     def _create_remote_template(
         self,
@@ -113,46 +107,7 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         user_id: int,
         enrollment_device: Device,
     ) -> Response | CreateRemoteTemplatePayload:
-        self.set_device(enrollment_device)
-        response = cast(
-            Response,
-            self.remote_enroll(
-                user_id=user_id,
-                type="biometry",
-                save=False,
-                sync=True,
-            ),
-        )
-
-        if response.status_code != status.HTTP_201_CREATED:
-            return Response(
-                {
-                    "error": "Erro no cadastro remoto da biometria",
-                    "details": response.data,
-                },
-                status=response.status_code,
-            )
-
-        if not isinstance(response.data, dict):
-            return Response(
-                {
-                    "error": "Resposta invalida da catraca no cadastro remoto da biometria",
-                    "details": response.data,
-                },
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        template_data = cast(RemoteEnrollBioResponse, response.data)
-        captured_template = str(template_data.get("template") or "").strip()
-        if not captured_template:
-            return Response(
-                {
-                    "error": "Catraca nao retornou o template biometrico",
-                    "details": template_data,
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
+        user = get_object_or_404(User, id=user_id)
         serializer = self.get_serializer(
             data={
                 "user_id": user_id,
@@ -160,16 +115,38 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
             }
         )
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save(template=captured_template)
-        replication_errors = self._replicate_template_to_active_devices(instance)
 
-        return instance, {
+        try:
+            result = CreateRemoteTemplateUseCase(
+                enrollment_service=self._biometric_enrollment_service(),
+                template_sync_service=self._template_sync_service(),
+            ).execute(
+                serializer,
+                user=user,
+                enrollment_device=enrollment_device,
+            )
+        except BiometricEnrollmentError as exc:
+            return api_error_response(
+                exc.message,
+                code=exc.code,
+                details=exc.details,
+                status_code=exc.status_code,
+            )
+        except TemplateOperationError as exc:
+            return api_error_response(
+                exc.message,
+                code=exc.code,
+                details=exc.details,
+                status_code=exc.status_code,
+            )
+
+        return result.template, {
             "capture_mode": "catraca",
             "enrollment_device": {
                 "id": enrollment_device.pk,
                 "name": enrollment_device.name,
             },
-            "replication_errors": replication_errors,
+            "replication_errors": result.replication_errors or [],
         }
 
     def _check_device_api_key(self, request):
@@ -180,52 +157,17 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         return bool(expected_key) and sent_key == expected_key
 
     def _expand_packed_fingerprint_image(self, packed_image: bytes) -> bytes:
-        if not packed_image:
-            raise ValueError("Imagem biometrica vazia.")
-
-        raw_image = bytearray(len(packed_image) * 2)
-        write_index = 0
-        for packed_byte in packed_image:
-            raw_image[write_index] = ((packed_byte >> 4) & 0x0F) * 17
-            raw_image[write_index + 1] = (packed_byte & 0x0F) * 17
-            write_index += 2
-        return bytes(raw_image)
+        return self._template_extraction_service().expand_packed_fingerprint_image(
+            packed_image
+        )
 
     def _extract_template_from_raw_capture(
         self, session: BiometricCaptureSession, packed_image: bytes
     ):
-        extractor_device = (
-            session.extractor_device or self._get_default_extractor_device()
+        return self._template_extraction_service().extract_template_from_raw_capture(
+            session,
+            packed_image,
         )
-        if extractor_device is None:
-            raise ValueError(
-                "Nenhuma catraca ativa disponivel para extrair o template."
-            )
-
-        self.set_device(extractor_device)
-        extractor_session = self.login()
-        raw_image = self._expand_packed_fingerprint_image(packed_image)
-
-        response = requests.post(
-            self.get_url(f"template_extract.fcgi?session={extractor_session}"),
-            params={"width": 256, "height": 288},
-            data=raw_image,
-            headers={"Content-Type": "application/octet-stream"},
-            timeout=40,
-        )
-        response.raise_for_status()
-        payload = response.json()
-
-        template_value = str(payload.get("template") or "").strip()
-        if not template_value:
-            raise ValueError(
-                "A catraca nao retornou um template valido para a captura."
-            )
-
-        return {
-            "quality": int(payload.get("quality", 0) or 0),
-            "template": template_value,
-        }
 
     def _append_capture_attempt(
         self,
@@ -303,36 +245,18 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         quality: int | None,
         attempts: list[dict],
     ) -> CompleteCaptureSessionPayload:
-        with transaction.atomic():
-            serializer = self.get_serializer(data={"user_id": session.user.pk})
-            serializer.is_valid(raise_exception=True)
-            instance = cast(Template, serializer.save(template=template_value))
-            replication_errors = cast(
-                list[dict[str, Any]],
-                self._replicate_template_to_active_devices(instance),
-            )
-
-            session.template = instance
-            session.status = BiometricCaptureSession.STATUS_COMPLETED
-            session.selected_quality = quality
-            session.attempts = attempts
-            session.error_message = ""
-            session.finished_at = timezone.now()
-            session.save(
-                update_fields=[
-                    "template",
-                    "status",
-                    "selected_quality",
-                    "attempts",
-                    "error_message",
-                    "finished_at",
-                    "updated_at",
-                ]
-            )
-
-            result: CompleteCaptureSessionPayload = (instance, replication_errors)
-
-        return result
+        serializer = self.get_serializer(data={"user_id": session.user.pk})
+        serializer.is_valid(raise_exception=True)
+        result = CompleteLocalCaptureSessionUseCase(
+            template_sync_service=self._template_sync_service(),
+        ).execute(
+            serializer,
+            session=session,
+            template_value=template_value,
+            quality=quality,
+            attempts=attempts,
+        )
+        return result.template, result.replication_errors or []
 
     def create(self, request, *args, **kwargs):
         try:
@@ -692,50 +616,33 @@ class TemplateViewSet(TemplateSyncMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
-        with transaction.atomic():
-            instance = serializer.save()
+        try:
+            result = UpdateTemplateUseCase(
+                template_sync_service=self._template_sync_service(),
+            ).execute(serializer)
+        except Exception as exc:
+            return api_error_response(
+                "Erro ao atualizar biometria na catraca.",
+                code="template_sync_failed",
+                details=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
-            devices = self._get_target_devices_for_user(instance.user)
-            for device in devices:
-                self.set_device(device)
-                response = self.update_objects(
-                    "templates",
-                    {
-                        "id": instance.id,
-                        "user_id": instance.user.id,
-                        "template": instance.template,
-                    },
-                    {"templates": {"id": instance.id}},
-                )
-                if response.status_code != status.HTTP_200_OK:
-                    return Response(
-                        {
-                            "error": f"Erro ao atualizar template na catraca {device.name}",
-                            "details": response.data,
-                        },
-                        status=response.status_code,
-                    )
-        return Response(serializer.data)
+        return Response(self.get_serializer(result.template).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        with transaction.atomic():
-            devices = self._get_target_devices_for_user(instance.user)
-            for device in devices:
-                self.set_device(device)
-                response = self.destroy_objects(
-                    "templates",
-                    {"templates": {"id": instance.id}},
-                )
-                if response.status_code != status.HTTP_204_NO_CONTENT:
-                    return Response(
-                        {
-                            "error": f"Erro ao deletar template da catraca {device.name}",
-                            "details": response.data,
-                        },
-                        status=response.status_code,
-                    )
+        try:
+            DeleteTemplateUseCase(
+                template_sync_service=self._template_sync_service(),
+            ).execute(instance)
+        except Exception as exc:
+            return api_error_response(
+                "Erro ao deletar biometria da catraca.",
+                code="template_sync_failed",
+                details=str(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
-            instance.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(status=status.HTTP_204_NO_CONTENT)
