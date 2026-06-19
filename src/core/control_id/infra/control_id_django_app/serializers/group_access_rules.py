@@ -64,3 +64,4 @@ class GroupAccessRuleSerializer(serializers.ModelSerializer):
             "portal_group_id",
         ]
         read_only_fields = ["id"]
+        validators = []

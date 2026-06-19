@@ -21,6 +21,8 @@ O endpoint antigo `GET /api/users/users/sync/`, que tentava puxar usuarios da ca
 - `BiometricEnrollmentService`: captura template biometrico via `remote_enroll`.
 - `BiometricTemplateExtractionService`: extrai template a partir da captura local do sensor.
 - `TemplateDeviceSyncService`: replica, atualiza e remove biometrias nas catracas alvo.
+- `AccessRuleDeviceSyncService`: sincroniza a regra de acesso base nas catracas.
+- `AccessRuleRelationDeviceSyncService`: sincroniza vinculos usuario-regra, grupo-regra, portal-regra e regra-zona de tempo, incluindo regras temporarias.
 
 ## Regra de alvo
 
@@ -28,6 +30,11 @@ Servicos que iteram uma catraca especifica devem chamar o gateway com
 `device_ids=[device.id]`. O estado interno de `set_device()` nao deve ser usado
 como criterio implicito de alvo para `create_objects`, `update_objects`,
 `destroy_objects` ou `create_or_update_objects`.
+
+Quando um vinculo muda de escopo entre "todas as catracas" e um grupo de
+portais, o servico deve calcular explicitamente dispositivos removidos,
+adicionados e comuns. Isso evita deixar permissoes antigas em catracas que
+sairam do escopo.
 
 ## Fora desta etapa
 

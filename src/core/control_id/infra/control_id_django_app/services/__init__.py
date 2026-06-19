@@ -1,3 +1,11 @@
+from .access_rule_device_sync_service import (
+    AccessRuleDeviceSyncError,
+    AccessRuleDeviceSyncService,
+)
+from .access_rule_relation_device_sync_service import (
+    AccessRuleRelationDeviceSyncService,
+    AccessRuleRelationSyncError,
+)
 from .biometric_enrollment_service import (
     BiometricEnrollmentError,
     BiometricEnrollmentService,
@@ -17,6 +25,10 @@ from .user_group_device_sync_service import (
 )
 
 __all__ = [
+    "AccessRuleDeviceSyncError",
+    "AccessRuleDeviceSyncService",
+    "AccessRuleRelationDeviceSyncService",
+    "AccessRuleRelationSyncError",
     "BiometricEnrollmentError",
     "BiometricEnrollmentService",
     "BiometricTemplateExtractionService",

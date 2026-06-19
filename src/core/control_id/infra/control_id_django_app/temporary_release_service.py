@@ -1,11 +1,8 @@
+from __future__ import annotations
+
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import status
 
-from src.core.__seedwork__.infra.mixins import (
-    GroupAccessRulesSyncMixin,
-    UserAccessRuleSyncMixin,
-)
 from src.core.control_id.infra.control_id_django_app.models import (
     GroupAccessRule,
     UserAccessRule,
@@ -13,22 +10,22 @@ from src.core.control_id.infra.control_id_django_app.models import (
 from src.core.control_id.infra.control_id_django_app.release_audit_service import (
     ReleaseAuditService,
 )
+from src.core.control_id.infra.control_id_django_app.services import (
+    AccessRuleRelationDeviceSyncService,
+    AccessRuleRelationSyncError,
+)
 
 
-class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
-    def _get_device_ids(self, release):
-        """Determina quais devices devem receber esta liberação."""
-        if release.portal_group:
-            return list(
-                release.portal_group.active_devices().values_list("id", flat=True)
-            )
-        return None  # None = todos os devices
+class TemporaryUserReleaseService:
+    def __init__(
+        self,
+        sync_service: AccessRuleRelationDeviceSyncService | None = None,
+    ) -> None:
+        self.sync_service = sync_service or AccessRuleRelationDeviceSyncService()
 
     def activate_release(self, release):
         if release.status != release.Status.PENDING:
             return release
-
-        device_ids = self._get_device_ids(release)
 
         with transaction.atomic():
             existing_user_rule = UserAccessRule.objects.filter(
@@ -38,25 +35,27 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
 
             if existing_user_rule:
                 raise ValueError(
-                    "O usuário já possui a regra temporária diretamente vinculada."
+                    "O usuario ja possui a regra temporaria diretamente vinculada."
                 )
 
             user_access_rule = UserAccessRule.objects.create(
                 user=release.user,
                 access_rule=release.access_rule,
+                portal_group=release.portal_group,
             )
 
-            response = self.create_in_catraca(user_access_rule, device_ids=device_ids)
-            if response.status_code != status.HTTP_201_CREATED:
+            try:
+                self.sync_service.create_user_rule(user_access_rule)
+            except AccessRuleRelationSyncError as exc:
                 user_access_rule.delete()
                 raise RuntimeError(
-                    f"Falha ao ativar liberação temporária: {response.data}"
-                )
+                    f"Falha ao ativar liberacao temporaria: {exc.details or exc}"
+                ) from exc
 
             release.user_access_rule = user_access_rule
             release.status = release.Status.ACTIVE
             release.activated_at = timezone.now()
-            release.result_message = "Liberação temporária ativada com sucesso."
+            release.result_message = "Liberacao temporaria ativada com sucesso."
             release.save(
                 update_fields=[
                     "user_access_rule",
@@ -78,19 +77,16 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
         consumed_log=None,
         consumed_at=None,
     ):
-        device_ids = self._get_device_ids(release)
-
         with transaction.atomic():
             user_access_rule = release.user_access_rule
 
             if user_access_rule:
-                response = self.delete_in_catraca(
-                    user_access_rule, device_ids=device_ids
-                )
-                if response.status_code != status.HTTP_204_NO_CONTENT:
+                try:
+                    self.sync_service.delete_user_rule(user_access_rule)
+                except AccessRuleRelationSyncError as exc:
                     raise RuntimeError(
-                        f"Falha ao remover regra temporária: {response.data}"
-                    )
+                        f"Falha ao remover regra temporaria: {exc.details or exc}"
+                    ) from exc
                 user_access_rule.delete()
 
             release.user_access_rule = None
@@ -126,20 +122,16 @@ class TemporaryUserReleaseService(UserAccessRuleSyncMixin):
         return release
 
 
-class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
-    def _get_device_ids(self, release):
-        """Determina quais devices devem receber esta liberação."""
-        if release.portal_group:
-            return list(
-                release.portal_group.active_devices().values_list("id", flat=True)
-            )
-        return None  # None = todos os devices
+class TemporaryGroupReleaseService:
+    def __init__(
+        self,
+        sync_service: AccessRuleRelationDeviceSyncService | None = None,
+    ) -> None:
+        self.sync_service = sync_service or AccessRuleRelationDeviceSyncService()
 
     def activate_release(self, release):
         if release.status != release.Status.PENDING:
             return release
-
-        device_ids = self._get_device_ids(release)
 
         with transaction.atomic():
             existing_group_rule = GroupAccessRule.objects.filter(
@@ -149,25 +141,27 @@ class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
 
             if existing_group_rule:
                 raise ValueError(
-                    "O grupo já possui a regra temporária diretamente vinculada."
+                    "O grupo ja possui a regra temporaria diretamente vinculada."
                 )
 
             group_access_rule = GroupAccessRule.objects.create(
                 group=release.group,
                 access_rule=release.access_rule,
+                portal_group=release.portal_group,
             )
 
-            response = self.create_in_catraca(group_access_rule, device_ids=device_ids)
-            if response.status_code != status.HTTP_201_CREATED:
+            try:
+                self.sync_service.create_group_rule(group_access_rule)
+            except AccessRuleRelationSyncError as exc:
                 group_access_rule.delete()
                 raise RuntimeError(
-                    f"Falha ao ativar liberação temporária: {response.data}"
-                )
+                    f"Falha ao ativar liberacao temporaria: {exc.details or exc}"
+                ) from exc
 
             release.group_access_rule = group_access_rule
             release.status = release.Status.ACTIVE
             release.activated_at = timezone.now()
-            release.result_message = "Liberação temporária ativada com sucesso."
+            release.result_message = "Liberacao temporaria ativada com sucesso."
             release.save(
                 update_fields=[
                     "group_access_rule",
@@ -189,19 +183,16 @@ class TemporaryGroupReleaseService(GroupAccessRulesSyncMixin):
         consumed_log=None,
         consumed_at=None,
     ):
-        device_ids = self._get_device_ids(release)
-
         with transaction.atomic():
             group_access_rule = release.group_access_rule
 
             if group_access_rule:
-                response = self.delete_in_catraca(
-                    group_access_rule, device_ids=device_ids
-                )
-                if response.status_code != status.HTTP_204_NO_CONTENT:
+                try:
+                    self.sync_service.delete_group_rule(group_access_rule)
+                except AccessRuleRelationSyncError as exc:
                     raise RuntimeError(
-                        f"Falha ao remover regra temporária: {response.data}"
-                    )
+                        f"Falha ao remover regra temporaria: {exc.details or exc}"
+                    ) from exc
                 group_access_rule.delete()
 
             release.group_access_rule = None

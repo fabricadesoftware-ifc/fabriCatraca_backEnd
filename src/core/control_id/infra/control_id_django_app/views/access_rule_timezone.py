@@ -1,123 +1,80 @@
-from django.db import IntegrityError
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from ..models.access_rule_timezone import AccessRuleTimeZone
-from ..serializers.access_rule_timezone import AccessRuleTimeZoneSerializer
-from src.core.__seedwork__.infra.mixins import AccessRuleTimeZoneSyncMixin
-from ..models.access_rule import AccessRule
-from ..models.timezone import TimeZone
 from drf_spectacular.utils import extend_schema
+from rest_framework import status, viewsets
+from rest_framework.response import Response
+
+from src.core.__seedwork__.infra.api_errors import api_error_response
+from src.core.control_id.infra.control_id_django_app.models import AccessRuleTimeZone
+from src.core.control_id.infra.control_id_django_app.serializers import (
+    AccessRuleTimeZoneSerializer,
+)
+from src.core.control_id.infra.control_id_django_app.services import (
+    AccessRuleRelationDeviceSyncService,
+    AccessRuleRelationSyncError,
+)
+from src.core.control_id.infra.control_id_django_app.use_cases import (
+    CreateAccessRuleTimeZoneUseCase,
+    DeleteAccessRuleTimeZoneUseCase,
+    UpdateAccessRuleTimeZoneUseCase,
+)
 
 
 @extend_schema(tags=["Access Rule Time Zone"])
-class AccessRuleTimeZoneViewSet(AccessRuleTimeZoneSyncMixin, viewsets.ModelViewSet):
+class AccessRuleTimeZoneViewSet(viewsets.ModelViewSet):
     queryset = AccessRuleTimeZone.objects.all()
     serializer_class = AccessRuleTimeZoneSerializer
     filterset_fields = ["access_rule_id", "time_zone_id"]
     search_fields = ["access_rule_id", "time_zone_id"]
     ordering_fields = ["access_rule_id", "time_zone_id"]
 
+    def _sync_service(self) -> AccessRuleRelationDeviceSyncService:
+        return AccessRuleRelationDeviceSyncService()
+
+    def _build_sync_error_response(self, exc: AccessRuleRelationSyncError):
+        return api_error_response(
+            "Erro ao sincronizar regra de acesso por zona de tempo na catraca.",
+            code="access_rule_time_zone_sync_failed",
+            details=exc.details or exc.message,
+            status_code=exc.status_code,
+        )
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        access_rule = serializer.validated_data["access_rule"]
-        time_zone = serializer.validated_data["time_zone"]
-
-        instance = AccessRuleTimeZone.objects.filter(
-            access_rule=access_rule,
-            time_zone=time_zone,
-        ).first()
-
-        if instance:
-            return Response(
-                self.get_serializer(instance).data, status=status.HTTP_200_OK
-            )
-
-        soft_deleted_instance = AccessRuleTimeZone._base_manager.filter(
-            access_rule=access_rule,
-            time_zone=time_zone,
-        ).first()
-
-        if soft_deleted_instance:
-            soft_deleted_instance.undelete()
-            instance = soft_deleted_instance
-        else:
-            try:
-                instance = serializer.save()
-            except IntegrityError:
-                instance = AccessRuleTimeZone._base_manager.filter(
-                    access_rule=access_rule,
-                    time_zone=time_zone,
-                ).first()
-                if not instance:
-                    raise
-                if getattr(instance, "deleted", None):
-                    instance.undelete()
-
-        # Criar na catraca
-        response = self.create_objects(
-            "access_rule_time_zones",
-            [
-                {
-                    "access_rule_id": instance.access_rule.id,
-                    "time_zone_id": instance.time_zone.id,
-                }
-            ],
-        )
-
-        if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()  # Reverte se falhar na catraca
-            return response
+        try:
+            result = CreateAccessRuleTimeZoneUseCase(
+                sync_service=self._sync_service(),
+            ).execute(serializer)
+        except AccessRuleRelationSyncError as exc:
+            return self._build_sync_error_response(exc)
 
         return Response(
-            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+            self.get_serializer(result.instance).data,
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
 
-        # Atualizar na catraca
-        response = self.update_objects(
-            "access_rule_time_zones",
-            {
-                "access_rule_id": instance.access_rule.id,
-                "time_zone_id": instance.time_zone.id,
-            },
-            {
-                "access_rule_time_zones": {
-                    "access_rule_id": instance.access_rule.id,
-                    "time_zone_id": instance.time_zone.id,
-                }
-            },
-        )
+        try:
+            result = UpdateAccessRuleTimeZoneUseCase(
+                sync_service=self._sync_service(),
+            ).execute(serializer, instance=instance)
+        except AccessRuleRelationSyncError as exc:
+            return self._build_sync_error_response(exc)
 
-        if response.status_code != status.HTTP_200_OK:
-            return response
-
-        return Response(serializer.data)
+        return Response(self.get_serializer(result.instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        # Deletar na catraca
-        response = self.destroy_objects(
-            "access_rule_time_zones",
-            {
-                "access_rule_time_zones": {
-                    "access_rule_id": instance.access_rule.id,
-                    "time_zone_id": instance.time_zone.id,
-                }
-            },
-        )
+        try:
+            DeleteAccessRuleTimeZoneUseCase(
+                sync_service=self._sync_service(),
+            ).execute(instance)
+        except AccessRuleRelationSyncError as exc:
+            return self._build_sync_error_response(exc)
 
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            return response
-
-        # Deletar no banco local
-        instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

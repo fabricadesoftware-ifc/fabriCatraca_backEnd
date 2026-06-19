@@ -1,115 +1,80 @@
-from django.db import IntegrityError
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from drf_spectacular.utils import extend_schema
+from rest_framework import status, viewsets
 from rest_framework.response import Response
+
+from src.core.__seedwork__.infra.api_errors import api_error_response
 from src.core.control_id.infra.control_id_django_app.models import GroupAccessRule
 from src.core.control_id.infra.control_id_django_app.serializers import (
     GroupAccessRuleSerializer,
 )
-from src.core.__seedwork__.infra.mixins import GroupAccessRulesSyncMixin
-from drf_spectacular.utils import extend_schema
+from src.core.control_id.infra.control_id_django_app.services import (
+    AccessRuleRelationDeviceSyncService,
+    AccessRuleRelationSyncError,
+)
+from src.core.control_id.infra.control_id_django_app.use_cases import (
+    CreateGroupAccessRuleUseCase,
+    DeleteGroupAccessRuleUseCase,
+    UpdateGroupAccessRuleUseCase,
+)
 
 
 @extend_schema(tags=["Group Access Rules"])
-class GroupAccessRulesViewSet(GroupAccessRulesSyncMixin, viewsets.ModelViewSet):
+class GroupAccessRulesViewSet(viewsets.ModelViewSet):
     queryset = GroupAccessRule.objects.all()
     serializer_class = GroupAccessRuleSerializer
     filterset_fields = ["id", "group", "access_rule", "portal_group"]
     search_fields = ["group__name", "access_rule__name"]
     ordering_fields = ["id", "group__name", "access_rule__name"]
 
-    def _get_device_ids(self, portal_group=None):
-        if portal_group:
-            return list(portal_group.active_devices().values_list("id", flat=True))
-        return None
+    def _sync_service(self) -> AccessRuleRelationDeviceSyncService:
+        return AccessRuleRelationDeviceSyncService()
+
+    def _build_sync_error_response(self, exc: AccessRuleRelationSyncError):
+        return api_error_response(
+            "Erro ao sincronizar regra de acesso do grupo na catraca.",
+            code="group_access_rule_sync_failed",
+            details=exc.details or exc.message,
+            status_code=exc.status_code,
+        )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        group = serializer.validated_data["group"]
-        access_rule = serializer.validated_data["access_rule"]
-        portal_group = serializer.validated_data.get("portal_group")
-
-        instance = GroupAccessRule.objects.filter(
-            group=group,
-            access_rule=access_rule,
-            portal_group=portal_group,
-        ).first()
-
-        if instance:
-            return Response(
-                self.get_serializer(instance).data, status=status.HTTP_200_OK
-            )
-
-        soft_deleted_instance = GroupAccessRule._base_manager.filter(
-            group=group,
-            access_rule=access_rule,
-            portal_group=portal_group,
-        ).first()
-
-        if soft_deleted_instance:
-            soft_deleted_instance.undelete()
-            instance = soft_deleted_instance
-        else:
-            try:
-                instance = serializer.save()
-            except IntegrityError:
-                instance = GroupAccessRule._base_manager.filter(
-                    group=group,
-                    access_rule=access_rule,
-                    portal_group=portal_group,
-                ).first()
-                if not instance:
-                    raise
-                if getattr(instance, "deleted", None):
-                    instance.undelete()
-
-        device_ids = self._get_device_ids(instance.portal_group)
-        response = self.create_in_catraca(instance, device_ids=device_ids)
-
-        if response.status_code != status.HTTP_201_CREATED:
-            instance.delete()
-            return response
+        try:
+            result = CreateGroupAccessRuleUseCase(
+                sync_service=self._sync_service(),
+            ).execute(serializer)
+        except AccessRuleRelationSyncError as exc:
+            return self._build_sync_error_response(exc)
 
         return Response(
-            self.get_serializer(instance).data, status=status.HTTP_201_CREATED
+            self.get_serializer(result.instance).data,
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        old_portal_group = instance.portal_group
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        instance = serializer.save()
 
-        old_ids = self._get_device_ids(old_portal_group)
-        new_ids = self._get_device_ids(instance.portal_group)
+        try:
+            result = UpdateGroupAccessRuleUseCase(
+                sync_service=self._sync_service(),
+            ).execute(serializer, instance=instance)
+        except AccessRuleRelationSyncError as exc:
+            return self._build_sync_error_response(exc)
 
-        if old_ids == new_ids:
-            response = self.update_in_catraca(instance, device_ids=old_ids)
-        else:
-            removed = set(old_ids or []) - set(new_ids or [])
-            added = set(new_ids or []) - set(old_ids or [])
-            common = set(old_ids or []) & set(new_ids or [])
-
-            if removed:
-                self.delete_in_catraca(instance, device_ids=list(removed))
-            if added:
-                self.create_in_catraca(instance, device_ids=list(added))
-            if common:
-                response = self.update_in_catraca(instance, device_ids=list(common))
-
-        return Response(serializer.data)
+        return Response(self.get_serializer(result.instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        device_ids = self._get_device_ids(instance.portal_group)
 
-        response = self.delete_in_catraca(instance, device_ids=device_ids)
+        try:
+            DeleteGroupAccessRuleUseCase(
+                sync_service=self._sync_service(),
+            ).execute(instance)
+        except AccessRuleRelationSyncError as exc:
+            return self._build_sync_error_response(exc)
 
-        if response.status_code != status.HTTP_204_NO_CONTENT:
-            return response
-
-        instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
